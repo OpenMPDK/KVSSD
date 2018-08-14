@@ -1,0 +1,28 @@
+KV SSD linux kernel driver package
+==================================
+
+This package includes kernel driver that operates with KV SSD.
+
+
+
+Driectory structure
+===================
+kernel_driver
+      | - README
+      | - kernel_v3.10
+      | - kernel_v4.9.5
+      | - kernel_v4.13
+      | - kernel_v4.15
+
+
+How-to build and install kernel driver
+======================================
+1) build
+cd PDK/driver/PCIe/kernel_driver/kernel_v<version>/
+make clean
+make all
+
+2) install
+cd PDK/driver/PCIe/kernel_driver/kernel_v<version>/
+sudo ./re_insmod
+
