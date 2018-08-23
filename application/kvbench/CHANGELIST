@@ -1,17 +1,33 @@
 
+KVbench is developed based on original ForestDB-Benchmark. In order to support Samsung's native Key-Value SSD interface, and different workload requirements, we made following changes. Some features in the ForestDB-Benchmark may no longer be available. 
+
+
 Features Added
 ============
 
-
-
+ - KV SSD support: Direct access to Samsung's key-value SSD with various workloads and configurations, support suerspace driver, kernel space driver, and Samsung's key-value SSD emulator
+ - Asynchronous IOs: async IO for KV SSD and aerospike, measure submission or completion latency
+ - Multi-device support: kvbench can run on top of multiple devices
+ - csv format output: run time performance can be printed out to a file in csv format
+ - memory pool: use pre-allocated memory pool for keys and values to avoid frequent memory allocation
+ - memory allocator: support different types of memory allocator: spdk, posix, and numa aware
+ - Aerospike support: synchronous and asyncronous IOs benchmark for aerospike
+ - RocksDB with user space driver: support benchmark on RocksDB's spdk version which talks to blobfs
+ - sequential insertion: generate sequential insertion workload for multiple dabases or devices
+ - insertion(pop) first: support workloads on an existing or empty database or device
+ - value size control: support up to 5 different value lengths with ratio control in percentage
+ - Additional operations: mixed workload of insert and deletion
+ - print out interval: configurable run time performance print out interval
+ - latency distribution: 99.99%
 
 Features Modified
 ============
-
-
-
-
-
+ - read/write mixed workload ratio control in a single thread without random number generation
+ - one-to-one mapping of database instance to device, not multi-database on a single device
 
 Features Removed
 ============
+ - fdb, leveldb, and wt engine is not fully tested on multi-device
+ - multiple database instances on single device
+ - compression ratio on fixed-length value size
+

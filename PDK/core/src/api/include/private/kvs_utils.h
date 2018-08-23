@@ -37,7 +37,7 @@
 
 #include <algorithm>
 #include <stdio.h>
-#include <kvs_types.h>
+#include <kvs_api.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <iostream>

@@ -40,10 +40,9 @@
 #include <cstdint>
 #include <string>
 #include <mutex>
-#include <map>
-#include <vector>
+#include <list>
 #include <condition_variable>
-#include "kvs_types.h"
+#include "kvs_api.h"
 #include "kvs_adi.h"
 
 #ifdef __cplusplus
@@ -53,36 +52,36 @@ extern "C" {
   
 class kv_device_priv {
 public:
-	kv_device_priv() {
-		nsid = 0;
-		numanode = 0;
-		iskv = 0;
-		vendorid = 0;
-		deviceid = 0;
-		isopened = false;
-		isattached = false;
-		isspdkdev = false;
-		isemul = false;
-		num_opened_qpairs = 0;
-	}
+  kv_device_priv() {
+    nsid = 0;
+    numanode = 0;
+    iskv = 0;
+    vendorid = 0;
+    deviceid = 0;
+    isopened = false;
+    isattached = false;
+    isspdkdev = false;
+    isemul = false;
+    num_opened_qpairs = 0;
+  }
 
-	~kv_device_priv();
-	char                node[1024];
-	char                spdkpath[1024];
-	int                 nsid;
-	char                trid[1024];
-	char                pci_slot_name[1024];
-	int                 numanode;
-	int                 iskv;
-	int                 vendorid;
-	int                 deviceid;
-	char                ven_dev_id[128];
-	bool                isopened;
-	bool 		    isattached;
-	bool		    isspdkdev;
-	bool		    isemul;
-	bool                iskerneldev;
-	int 		    num_opened_qpairs;
+  ~kv_device_priv();
+  char                node[1024];
+  char                spdkpath[1024];
+  int                 nsid;
+  char                trid[1024];
+  char                pci_slot_name[1024];
+  int                 numanode;
+  int                 iskv;
+  int                 vendorid;
+  int                 deviceid;
+  char                ven_dev_id[128];
+  bool                isopened;
+  bool 		    isattached;
+  bool		    isspdkdev;
+  bool		    isemul;
+  bool                iskerneldev;
+  int 		    num_opened_qpairs;
 };
 
 /*
@@ -135,6 +134,8 @@ class KvsDriver {
 public:
   kv_device_priv *dev;
   _on_iocomplete user_io_complete;
+  std::list<kvs_container*> list_containers;
+  std::list<kvs_container_handle> open_containers;
 
  public:
   KvsDriver(kv_device_priv *dev_,_on_iocomplete user_io_complete_):
@@ -167,9 +168,9 @@ public:
   virtual int32_t store_tuple(int contid, const kvs_key *key, const kvs_value *value, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false) = 0;
   virtual int32_t retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false) = 0;
   virtual int32_t delete_tuple(int contid, const kvs_key *key, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false) = 0;
-  virtual int32_t open_iterator(int contid,  uint8_t option, uint32_t bitmask, uint32_t bit_pattern, void *private1=NULL, void *private2 = NULL, bool sync = false) = 0;
-  virtual int32_t close_iterator(int contid, kvs_iterator_handle *hiter, void *private1=NULL, void *private2=NULL, bool sync = false) = 0;
-  virtual int32_t iterator_next(kvs_iterator_handle *hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false) = 0;
+  virtual int32_t open_iterator(int contid,  uint8_t option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) = 0;
+  virtual int32_t close_iterator(int contid, kvs_iterator_handle hiter) = 0;
+  virtual int32_t iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false) = 0;
   virtual float get_waf() {return 0.0;}
   virtual int32_t get_used_size() {return 0.0;}
   virtual int64_t get_total_size(){return 0;};
@@ -179,9 +180,6 @@ public:
 struct _kvs_device_handle {
   kv_device_priv * dev;
   KvsDriver* driver;
-
-  std::vector<kvs_container*> list_containers;
-  std::vector<kvs_container_handle> open_containers;
 };
 
 struct _kvs_container_handle {
@@ -189,7 +187,7 @@ struct _kvs_container_handle {
   char name[256];
 };
 
-struct kvs_iterator_handle_internal{
+struct _kvs_iterator_handle{
   kv_iterator_handle iterh_adi;
   uint32_t iterator;
 };

@@ -32,7 +32,7 @@
  */
 
 
-#include <kvs_types.h>
+#include <kvs_api.h>
 #include <kvs_utils.h>
 #include <sstream>
 #include <sstream>

@@ -3,7 +3,7 @@
 
 #include "memory.h"
 #if defined __KV_BENCH
-#include "kvs_types.h"
+#include "kvs_api.h"
 #endif
 
 FILE *cpu_fp = NULL;

@@ -117,12 +117,12 @@ couchstore_error_t couchstore_open_db(const char *filename,
         ppdb->options->compression = rocksdb::kNoCompression;
     }
 
-    ppdb->options->max_background_compactions = 8;//16; //8;
-    ppdb->options->max_background_flushes = 2;//1; //8;
-    ppdb->options->max_write_buffer_number = 2; //8;
+    ppdb->options->max_background_compactions = 8;
+    ppdb->options->max_background_flushes = 2;
+    ppdb->options->max_write_buffer_number = 2;
     ppdb->options->write_buffer_size = wbs_size;
     ppdb->options->compaction_style = rocksdb::CompactionStyle(compaction_style);
-
+    /*
     ppdb->options->min_write_buffer_number_to_merge = 1;
     ppdb->options->max_subcompactions = 1;
     ppdb->options->random_access_max_buffer_size = 1024 * 1024;
@@ -135,7 +135,7 @@ couchstore_error_t couchstore_open_db(const char *filename,
     ppdb->options->num_levels = 6;
     ppdb->options->hard_rate_limit = 2;
     ppdb->options->level0_file_num_compaction_trigger = 8;
-    ppdb->options->target_file_size_base = 134217728; //16777216;// 134217728;
+    ppdb->options->target_file_size_base = 134217728; 
     ppdb->options->max_bytes_for_level_base = 1073741824;
     ppdb->options->level0_slowdown_writes_trigger=16;
     ppdb->options->level0_stop_writes_trigger = 24;
@@ -150,7 +150,7 @@ couchstore_error_t couchstore_open_db(const char *filename,
     ppdb->options->write_thread_slow_yield_usec = 3;
     ppdb->options->rate_limit_delay_max_milliseconds = 1000;
     ppdb->options->table_cache_numshardbits = 4;
-
+    */
     //ppdb->options->row_cache = rocksdb::NewLRUCache(cache_size, 6, false, 0.0);
 
     if (cache_size || bloom_bits_per_key) {
@@ -166,17 +166,7 @@ couchstore_error_t couchstore_open_db(const char *filename,
             table_options.filter_policy.reset(
 			      rocksdb::NewBloomFilterPolicy(bloom_bits_per_key, false));
         }
-	/*
-	table_options.cache_index_and_filter_blocks = 1;
-	
-	table_options.index_type = rocksdb::BlockBasedTableOptions::kBinarySearch;
-	table_options.format_version = 2;
-	table_options.block_size = 4096;
-	table_options.block_restart_interval = 16;
-	table_options.index_block_restart_interval = 1;
-	table_options.skip_table_builder_flush = 0;
-	table_options.read_amp_bytes_per_bit = 0;
-	*/
+
         ppdb->options->table_factory.reset(
             rocksdb::NewBlockBasedTableFactory(table_options));
     }
@@ -185,7 +175,11 @@ couchstore_error_t couchstore_open_db(const char *filename,
 
     fprintf(stdout, "open db %s\n", filename);
     rocksdb::Status status = rocksdb::DB::Open(*ppdb->options, *ppdb->filename, &ppdb->db);
-
+    if (!status.ok()) {
+      fprintf(stdout, "Failed to open db %s\n", status.ToString().c_str());
+      exit(1);
+    }
+        
     ppdb->read_options = new rocksdb::ReadOptions(true, true);
     ppdb->write_options = new rocksdb::WriteOptions();
     ppdb->write_options->sync = true;
@@ -280,37 +274,25 @@ couchstore_error_t couchstore_save_documents(Db *db, Doc* const docs[], DocInfo 
 {
 
     unsigned i;
-    //uint16_t metalen;
     uint8_t *buf;
     rocksdb::Status status;
     rocksdb::WriteBatch wb;
     
-    //buf = (uint8_t*)malloc(sizeof(metalen) + METABUF_MAXLEN + DATABUF_MAXLEN);
     buf = (uint8_t*)malloc(DATABUF_MAXLEN);
     
     for (i=0;i<numdocs;++i){
-      /*
-        metalen = _docinfo_to_buf(infos[i], buf + sizeof(metalen));
-        memcpy(buf, &metalen, sizeof(metalen));
-        memcpy(buf + sizeof(metalen) + metalen, docs[i]->data.buf, docs[i]->data.size);
-
-        wb.Put(rocksdb::Slice(docs[i]->id.buf, docs[i]->id.size),
-               rocksdb::Slice((char*)buf,
-                              sizeof(metalen) + metalen + docs[i]->data.size));
-
-        infos[i]->db_seq = 0;
-      */
       memcpy(buf, docs[i]->data.buf, docs[i]->data.size);
       wb.Put(rocksdb::Slice(docs[i]->id.buf, docs[i]->id.size),
 	     rocksdb::Slice((char*)buf, docs[i]->data.size));
     }
     free(buf);
+
     status = db->db->Write(*db->write_options, &wb);
     if (!status.ok()) {
-      //printf("ERR %s \n", status.ToString().c_str());
+      printf("ERR %s \n", status.ToString().c_str());
     }
     assert(status.ok());
-    //completed += numdocs;
+
     return COUCHSTORE_SUCCESS;
 }
 

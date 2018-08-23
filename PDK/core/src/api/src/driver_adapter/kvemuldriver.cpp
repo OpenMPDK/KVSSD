@@ -47,7 +47,7 @@
 #define use_pool
 
 KvEmulator::KvEmulator(kv_device_priv *dev,_on_iocomplete user_io_complete_):
-  KvsDriver(dev, user_io_complete_), devH(0),nsH(0), sqH(0), cqH(0)
+  KvsDriver(dev, user_io_complete_), devH(0),nsH(0), sqH(0), cqH(0), int_handler(0)
 {
   queuedepth = 64 * 2;
 }
@@ -66,42 +66,58 @@ void on_io_complete(kv_io_context *context){
      && context->retcode != KV_WRN_MORE && (context->retcode != KV_ERR_ITERATOR_END)) {
     const char *cmd = (context->opcode == KV_OPC_GET)? "GET": ((context->opcode == KV_OPC_STORE)? "PUT": (context->opcode == KV_OPC_DELETE)? "DEL":"OTHER");
     fprintf(stderr, "%s failed with error 0x%x\n", cmd, context->retcode);
-  } 
+  }
   
   //const char *cmd = (context->opcode == KV_OPC_GET)? "GET": ((context->opcode == KV_OPC_STORE)? "PUT": (context->opcode == KV_OPC_DELETE)? "DEL":"OTHER");
 
   KvEmulator::kv_emul_context *ctx = (KvEmulator::kv_emul_context*)context->private_data;
   kv_iocb *iocb = &ctx->iocb;
-
-  iocb->result = context->retcode;  
+  const auto owner = ctx->owner;
+  
+  iocb->result = context->retcode;
 
   if(context->opcode == KV_OPC_OPEN_ITERATOR) {
-    iocb->iter_handle = (kvs_iterator_handle *)malloc(sizeof(kvs_iterator_handle));
-    iocb->iter_handle->iterh = (kvs_iterator_handle_internal*)malloc(sizeof(kvs_iterator_handle_internal));
-    iocb->iter_handle->iterh->iterh_adi = context->result.hiter;
-  }
-
-  if(context->opcode == KV_OPC_CLOSE_ITERATOR) {
-    if(iocb->iter_handle) free(iocb->iter_handle);
+    kvs_iterator_handle iterh = (kvs_iterator_handle)iocb->private1;
+    iterh->iterh_adi = context->result.hiter;
+    if(owner->int_handler != 0) {
+      owner->done = 1;
+      owner->done_cond.notify_one();
+    }
   }
   
-  //fprintf(stdout, "op %d, key %s\n", iocb->opcode, ctx->key->key);
-  if(ctx->on_complete && iocb) ctx->on_complete(iocb);
+  if(context->opcode == KV_OPC_CLOSE_ITERATOR) {
+    if(owner->int_handler != 0) {
+      owner->done = 1;
+      owner->done_cond.notify_one();
+    }
+  }
 
+  //fprintf(stdout, "op %d, key %s\n", iocb->opcode, ctx->key->key);
+  if(context->opcode != KV_OPC_OPEN_ITERATOR && context->opcode != KV_OPC_CLOSE_ITERATOR) {
+    if(ctx->on_complete && iocb)
+      ctx->on_complete(iocb);
+  }
+  
 #if defined use_pool
-  const auto owner = ctx->owner;
+  //const auto owner = ctx->owner;
   
   std::unique_lock<std::mutex> lock(owner->lock);
   if(ctx->key)
     owner->kv_key_pool.push(ctx->key);
   if(ctx->value)
     owner->kv_value_pool.push(ctx->value);
-  
-  memset(ctx, 0, sizeof(KvEmulator::kv_emul_context)); 
-  owner->kv_ctx_pool.push(ctx);
+
+  if(ctx->free_ctx) {
+    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context)); 
+    owner->kv_ctx_pool.push(ctx);
+  }
   lock.unlock();
 #else
-  free(ctx);
+  if(ctx->free_ctx) {
+    free(ctx);
+    ctx = NULL;
+  }
+
 #endif
 }
 
@@ -114,16 +130,18 @@ int KvEmulator::create_queue(int qdepth, uint16_t qtype, kv_queue_handle *handle
   qinfo.queue_type = qtype;
   qinfo.extended_info = NULL;
   kv_result ret = kv_create_queue(this->devH, &qinfo, handle);
-  if (ret != KV_SUCCESS) {fprintf(stderr, "kv_create_queue failed %d\n", ret);}
+  if (ret != KV_SUCCESS) {fprintf(stderr, "kv_create_queue failed 0x%x\n", ret);}
 
   if(qtype == COMPLETION_Q_TYPE && is_polling == 0) {
-    /* Interrupt mode */
+    // Interrupt mode 
     // set up interrupt handler
-    _kv_interrupt_handler int_func = {interrupt_func_emu, (void *)4, 4};
-    kv_interrupt_handler int_handler = &int_func;
-    
-    kv_set_interrupt_handler(*handle, int_handler);
+    kv_interrupt_handler int_func = (kv_interrupt_handler)malloc(sizeof(_kv_interrupt_handler));
+    int_func->handler = interrupt_func_emu;
+    int_func->private_data = 0;
+    int_func->number = 0;
+    this->int_handler = int_func;
 
+    kv_set_interrupt_handler(*handle, int_func);
   }
 
   return qid;
@@ -151,17 +169,16 @@ int32_t KvEmulator::init(const char* devpath, const char* configfile, int queued
   dev_init.is_polling = (is_polling == 1 ? TRUE : FALSE);
   
   ret = kv_initialize_device(&dev_init, &this->devH);
-  if (ret != KV_SUCCESS) { fprintf(stderr, "kv_initialize_device failed %d\n", ret);}
+  if (ret != KV_SUCCESS) { fprintf(stderr, "kv_initialize_device failed %d\n", ret); return ret;}
 
   ret = get_namespace_default(this->devH, &this->nsH);
-  if (ret != KV_SUCCESS) { fprintf(stderr, "get_namespace_default failed %d\n", ret);}
+  if (ret != KV_SUCCESS) { fprintf(stderr, "get_namespace_default failed %d\n", ret); return ret;}
   
   this->queuedepth = queuedepth;
   int cqid = create_queue(this->queuedepth, COMPLETION_Q_TYPE, &this->cqH, 0, is_polling);
   create_queue(this->queuedepth, SUBMISSION_Q_TYPE, &this->sqH, cqid, is_polling);
 
-  //fprintf(stdout, "init emulator done\n"); 
-  return 0;
+  return ret;
 }
 
 KvEmulator::kv_emul_context* KvEmulator::prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, uint8_t option, void *private1, void *private2, bool syncio){
@@ -199,7 +216,8 @@ KvEmulator::kv_emul_context* KvEmulator::prep_io_context(int opcode, int contid,
   ctx->iocb.private1 = private1;
   ctx->iocb.private2 = private2;
   ctx->owner = this;
-  
+
+  ctx->free_ctx = syncio ? 0: 1;
   return ctx;
 }
 
@@ -230,9 +248,7 @@ int32_t KvEmulator::store_tuple(int contid, const kvs_key *key, const kvs_value 
   ctx->key = (kv_key*)key;
   ctx->value = (kv_value*)value;
   
-  fprintf(stdout, "submit op %d key %s\n", ctx->iocb.opcode, key->key);
   int ret = kv_store(this->sqH, this->nsH, (kv_key*)key, (kv_value*)value, KV_STORE_OPT_DEFAULT, &f);
-  
 #endif
   
   if(syncio && ret == 0) {
@@ -241,7 +257,19 @@ int32_t KvEmulator::store_tuple(int contid, const kvs_key *key, const kvs_value 
       ret = kv_poll_completion(this->cqH, 0, &processed);
     } while (processed == 0);
     if (ret != KV_SUCCESS && ret != KV_WRN_MORE)
-      fprintf(stdout, "sync io polling failed\n");
+      //fprintf(stdout, "sync io polling failed\n");
+    if (syncio )ret = ctx->iocb.result;
+
+#if defined use_pool
+    std::unique_lock<std::mutex> lock(this->lock);
+    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+    this->kv_ctx_pool.push(ctx);
+    lock.unlock();
+#else
+    free(ctx);
+    ctx = NULL;
+#endif
+    
   }
   
   return ret;
@@ -284,6 +312,17 @@ int32_t KvEmulator::retrieve_tuple(int contid, const kvs_key *key, kvs_value *va
     } while (processed == 0);
     if (ret != KV_SUCCESS && ret != KV_WRN_MORE)
       fprintf(stdout, "sync io polling failed\n");
+    if (syncio) ret = ctx->iocb.result;
+    
+#if defined use_pool
+    std::unique_lock<std::mutex> lock(this->lock);
+    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+    this->kv_ctx_pool.push(ctx);
+    lock.unlock();
+#else
+    free(ctx);
+    ctx = NULL;
+#endif
   }
   return ret;
 }
@@ -315,55 +354,135 @@ int32_t KvEmulator::delete_tuple(int contid, const kvs_key *key, uint8_t option,
     }while (processed == 0);
     if (ret != KV_SUCCESS && ret != KV_WRN_MORE)
       fprintf(stdout, "sync io polling failed\n");
+    if (syncio )ret = ctx->iocb.result;
+
+#if defined use_pool
+    std::unique_lock<std::mutex> lock(this->lock);
+    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+    this->kv_ctx_pool.push(ctx);
+    lock.unlock();
+#else
+    free(ctx);
+    ctx = NULL;
+#endif
+    
   }
   return ret;
 }
 
-int32_t KvEmulator::open_iterator(int contid,  uint8_t option, uint32_t bitmask, uint32_t bit_pattern, void *private1, void *private2, bool syncio) {
-
-  int ret;
-  auto ctx = prep_io_context(IOCB_ASYNC_ITER_OPEN_CMD, 0, 0, 0, option, private1, private2, 0);
+int32_t KvEmulator::open_iterator(int contid,  uint8_t option, uint32_t bitmask,
+				  uint32_t bit_pattern, kvs_iterator_handle *iter_hd) {
+  
+  int ret = 0;
+  kvs_iterator_handle iterh = (kvs_iterator_handle)malloc(sizeof(struct _kvs_iterator_handle));
+  auto ctx = prep_io_context(IOCB_ASYNC_ITER_OPEN_CMD, 0, 0, 0, option, iterh, 0/*private1, private2*/, 1);
   kv_group_condition grp_cond = {bitmask, bit_pattern};
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
 
+  this->done = 0;
   ret = kv_open_iterator(this->sqH, this->nsH, (option == KVS_ITERATOR_OPT_KEY ? KV_ITERATOR_OPT_KEY : KV_ITERATOR_OPT_KV), &grp_cond, &f);
 
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_open_iterator failed with error:  0x%X\n", ret);
-    exit(1);
+    return ret;
   }
+
+  if(!this->int_handler) { // polling
+    uint32_t processed = 0;
+    do {
+      ret = kv_poll_completion(this->cqH, 0, &processed);
+    } while (processed == 0);
+  } else { // interrupt
+    std::unique_lock<std::mutex> lock(this->lock);
+    while(this->done == 0)
+      this->done_cond.wait(lock);
+  }
+
+  ret = ctx->iocb.result;
+  *iter_hd = iterh;
+#if defined use_pool
+  std::unique_lock<std::mutex> lock(this->lock);
+  memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+  this->kv_ctx_pool.push(ctx);
+  lock.unlock();
+#else
+  free(ctx);
+  ctx = NULL;
+#endif
   
-  return 0;
+  return ret;
 }
 
-int32_t KvEmulator::close_iterator(int contid, kvs_iterator_handle *hiter, void *private1, void *private2, bool syncio) {
+int32_t KvEmulator::close_iterator(int contid, kvs_iterator_handle hiter) {
 
-  int ret;
-  auto ctx = prep_io_context(IOCB_ASYNC_ITER_CLOSE_CMD, 0, 0, 0, 0, private1, private2, 0);
+  int ret = 0;
+  auto ctx = prep_io_context(IOCB_ASYNC_ITER_CLOSE_CMD, 0, 0, 0, 0, 0,0/*private1, private2*/, 1);
 
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
-  ret = kv_close_iterator(this->sqH, this->nsH, hiter->iterh->iterh_adi, &f);
+  this->done = 0;
+  ret = kv_close_iterator(this->sqH, this->nsH, hiter->iterh_adi, &f);
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_open_iterator failed with error:  0x%X\n", ret);
     exit(1);
   }
+
+  if(!this->int_handler) { // polling
+    uint32_t processed = 0;
+    do {
+      ret = kv_poll_completion(this->cqH, 0, &processed);
+    } while (processed == 0);
+  } else { // interrupt
+    std::unique_lock<std::mutex> lock(this->lock);
+    while(this->done == 0)
+      this->done_cond.wait(lock);
+  }
+
+  if(hiter) free(hiter);
+  
+#if defined use_pool
+  std::unique_lock<std::mutex> lock(this->lock);
+  memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+  this->kv_ctx_pool.push(ctx);
+  lock.unlock();
+#else
+  free(ctx);
+  ctx = NULL;
+#endif
   
   return 0;
 }
 
-int32_t KvEmulator::iterator_next(kvs_iterator_handle *hiter, kvs_iterator_list *iter_list, void *private1, void *private2, bool syncio) {
+int32_t KvEmulator::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1, void *private2, bool syncio) {
 
-  int ret;
-  auto ctx = prep_io_context(IOCB_ASYNC_ITER_NEXT_CMD, 0, 0, 0, 0, private1, private2, 0);
+  int ret = 0;
+  auto ctx = prep_io_context(IOCB_ASYNC_ITER_NEXT_CMD, 0, 0, 0, 0, private1, private2, syncio);
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
 
-  ret = kv_iterator_next(this->sqH, this->nsH, hiter->iterh->iterh_adi, (kv_iterator_list *)iter_list, &f);
+  ret = kv_iterator_next(this->sqH, this->nsH, hiter->iterh_adi, (kv_iterator_list *)iter_list, &f);
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_iterator_next failed with error:  0x%X\n", ret);
-    exit(1);
+    return ret;
+  }
+
+  if(syncio) {
+    uint32_t processed = 0;
+    do{
+      ret = kv_poll_completion(this->cqH, 0, &processed);
+    } while (processed == 0);
+    ret = ctx->iocb.result;
+
+#if defined use_pool
+    std::unique_lock<std::mutex> lock(this->lock);
+    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+    this->kv_ctx_pool.push(ctx);
+    lock.unlock();
+#else
+    free(ctx);
+    ctx = NULL;
+#endif
   }
   
-  return 0;
+  return ret;
 }
 
 float KvEmulator::get_waf(){
@@ -413,6 +532,30 @@ KvEmulator::~KvEmulator() {
     this->kv_ctx_pool.pop();
     delete p;
   }
+
+  // shutdown device
+  if(this->int_handler) {
+    free(int_handler);
+  }
+  /*
+  while (get_queued_commands_count(cqH) > 0 || get_queued_commands_count(sqH) > 0){
+    usleep(10);
+  }
+  */
+
+  if (kv_delete_queue(this->devH, this->sqH) != KV_SUCCESS) {
+    fprintf(stderr, "kv delete submission queue failed\n");
+    exit(1);
+  }
+
+  if (kv_delete_queue(this->devH, this->cqH) != KV_SUCCESS) {
+    fprintf(stderr, "kv delete completion queue failed\n");
+    exit(1);
+  }
+
+  kv_delete_namespace(devH, nsH);
+  kv_cleanup_device(devH);
+  
 }
 
 

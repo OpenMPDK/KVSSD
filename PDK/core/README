@@ -26,25 +26,28 @@ How to build:
        * The pre-build library is on gcc version 5.4.0
        * https://github.com/OpenMPDK/uNVMe
 
-    4. make -j<# of cores>
-
+    4. make -j<# of jobs>
+       * # of jobs: execute multiple recipes simultaneously
+       
 
 ---
 How to test
     library and test binaries are at:
     build/
 
+
+    0. ./sample_code_async -h
+    
     1. Test with Kernel Driver
     - nvme kernel module needs to be compiled and installed
 
-    ./sample_test --h
+    sudo ./sample_code_async -d device_path [-n num_ios] [-q queue_depth] [-o op_type] [-k klen] [-v vlen] [-p is_polling]
+    
+    e.g. ./sample_code_async -d /dev/nvme0n1 -n 100 -q 64 -o 1 -k 16 -v 4096
 
-    ./sample_test -d device_path [-n num_ios] [-q queue_depth] [-o op_type] [-k klen] [-v vlen] [-p is_polling]
+    2. Test with SPDK Driver
+     - /KVSSD/PDK/core/tools/setup.sh
+     - ./sample_code_async -d 0000:06:00.0 -n 100 -q 64 -o 1 -k 16 -v 4096
+     - /KVSSD/PDK/core/tools/setup.sh reset
+     
 
-
-
-TODO:
----
-  1. Add sample test code for SPDK
-  2. Add iteration sample test code
-  

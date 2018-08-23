@@ -42,6 +42,7 @@
 #include <mutex>
 #include <algorithm>
 #include <queue>
+#include <atomic>
 #include <kvs_adi.h>
 
 class KvEmulator: public KvsDriver
@@ -51,6 +52,7 @@ class KvEmulator: public KvsDriver
   kv_namespace_handle nsH ;
   kv_queue_handle     sqH ;
   kv_queue_handle     cqH ;
+  //kv_interrupt_handler int_handler;
   int queuedepth;
 
 public:
@@ -61,7 +63,12 @@ public:
     kv_key *key;
     kv_value *value;
     KvEmulator* owner;
+    int free_ctx;
   } kv_emul_context;
+  
+  kv_interrupt_handler int_handler;
+  std::condition_variable done_cond;
+  std::atomic<int> done;
   std::mutex lock;
   std::queue<kv_key*> kv_key_pool;
   std::queue<kv_value*> kv_value_pool;
@@ -75,9 +82,9 @@ public:
   virtual int32_t store_tuple(int contid, const kvs_key *key, const kvs_value *value, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false) override;
   virtual int32_t retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false) override;
   virtual int32_t delete_tuple(int contid, const kvs_key *key, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false) override;
-  virtual int32_t open_iterator(int contid,  uint8_t option, uint32_t bitmask, uint32_t bit_pattern, void *private1=NULL, void *private2=NULL, bool sync = false) override;
-  virtual int32_t iterator_next(kvs_iterator_handle *hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false) override;
-  virtual int32_t close_iterator(int contid, kvs_iterator_handle *hiter, void *private1=NULL, void *private2=NULL, bool sync = false) override;
+  virtual int32_t open_iterator(int contid,  uint8_t option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) override;
+  virtual int32_t iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false) override;
+  virtual int32_t close_iterator(int contid, kvs_iterator_handle hiter) override;
   virtual float get_waf() override;
   virtual int32_t get_used_size()override;
   virtual int64_t get_total_size() override;

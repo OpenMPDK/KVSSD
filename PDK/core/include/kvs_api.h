@@ -93,148 +93,114 @@ extern "C" {
 
 #define KVS_MIN_KEY_LEN 16
 #define KVS_MAX_KEY_LEN 255
-#define KVS_MIN_VALUE_LEN 64
+#define KVS_MIN_VALUE_LEN 16//64
 #define KVS_MAX_VALUE_LEN (2*1024*1024)
 
   
 /** Possible return values of KV APIs
  * 
  * \ingroup EnumTypes
- * \see kvs_errstr to convert the return value to a string
  */
 enum kvs_result {
   // Generic command status                
-  KVS_SUCCESS                         =    0x0,        ///< success
+  KVS_SUCCESS                         =    0x0,        /*!< success */
   
   // warnings                
-  KVS_WRN_COMPRESS                    =  0x0B0,        ///< compression is not support and ignored
-  KVS_WRN_MORE                        =  0x300,        ///< more data is available, but buffer is not enough
+  KVS_WRN_COMPRESS                    =  0x0B0,        /*! < compression is not support and ignored */
+  KVS_WRN_MORE                        =  0x300,        /*! < more data is available, but buffer is not enough */
   
   // errors                  
-  KVS_ERR_DEV_CAPACITY                =  0x012,        ///< device does not have enough space
-  KVS_ERR_DEV_INIT                    =  0x070,        ///< device initialization failed
-  KVS_ERR_DEV_INITIALIZED             =  0x071,        ///< device was initialized already
-  KVS_ERR_DEV_NOT_EXIST               =  0x072,        ///< no device exists 
-  KVS_ERR_DEV_SANITIZE_FAILED         =  0x01C,        ///< the previous sanitize operation failed
-  KVS_ERR_DEV_SANITIZE_IN_PROGRESS    =  0x01D,        ///< the sanitization operation is in progress
-  KVS_ERR_ITERATOR_IN_PROGRESS        =  0x090,        ///< iterator is in progress and operation fails because it is not allowed during iterator is in progress.
+  KVS_ERR_DEV_CAPACITY                =  0x012,        /*! < device does not have enough space */
+  KVS_ERR_DEV_INIT                    =  0x070,        /*! < device initialization failed */
+  KVS_ERR_DEV_INITIALIZED             =  0x071,        /*! < device was initialized already */
+  KVS_ERR_DEV_NOT_EXIST               =  0x072,        /*! < no device exists  */
+  KVS_ERR_DEV_SANITIZE_FAILED         =  0x01C,        /*! < the previous sanitize operation failed */
+  KVS_ERR_DEV_SANITIZE_IN_PROGRESS    =  0x01D,        /*! < the sanitization operation is in progress */
+  KVS_ERR_ITERATOR_IN_PROGRESS        =  0x090,        /*! < iterator is in progress and operation fails because it is not allowed during iterator is in progress. */
   
-  KVS_ERR_ITERATOR_NOT_EXIST          =  0x394,        ///< no iterator exists
-  KVS_ERR_KEY_INVALID                 =  0x395,        ///< key invalid (value of key is NULL)
-  KVS_ERR_KEY_LENGTH_INVALID          =  0x003,        ///< key length is out of range (unsupported key length)
-  KVS_ERR_KEY_NOT_EXIST               =  0x010,        ///< given key doesn't exist
-  KVS_ERR_NS_DEFAULT                  =  0x095,        ///< default namespace cannot be modified, deleted, attached, or detached
-  KVS_ERR_NS_INVALID                  =  0x00B,        ///< namespace does not exist
-  KVS_ERR_OPTION_INVALID              =  0x004,        ///< device does not support the specified options
-  KVS_ERR_PARAM_NULL                  =  0x101,        ///< no input pointer can be NULL
-  KVS_ERR_PURGE_IN_PRGRESS            =  0x084,        ///< purge operation is in progress
-  KVS_ERR_SYS_IO                      =  0x303,        ///< host failed to communicate with the device
-  KVS_ERR_SYS_PERMISSION              =  0x415,        ///< caller does not have a permission to call this interface
-  KVS_ERR_VALUE_LENGTH_INVALID        =  0x001,        ///< value length is out of range
-  KVS_ERR_VALUE_LENGTH_MISALIGNED     =  0x008,        ///< value length is misaligned. Value length shall be multiples of 4 bytes.
-  KVS_ERR_VALUE_OFFSET_INVALID        =  0x002,        ///< value offset is invalid meaning that offset is out of bound.
-  KVS_ERR_VENDOR                      =  0x0F0,        ///< vendor-specific error is returned, check the system log for more details
+  KVS_ERR_ITERATOR_NOT_EXIST          =  0x394,        /*! < no iterator exists */
+  KVS_ERR_KEY_INVALID                 =  0x395,        /*! < key invalid (value of key is NULL) */
+  KVS_ERR_KEY_LENGTH_INVALID          =  0x003,        /*! < key length is out of range (unsupported key length) */
+  KVS_ERR_KEY_NOT_EXIST               =  0x010,        /*! < given key doesn't exist */
+  KVS_ERR_NS_DEFAULT                  =  0x095,        /*! < default namespace cannot be modified, deleted, attached, or detached */
+  KVS_ERR_NS_INVALID                  =  0x00B,        /*! < namespace does not exist */
+  KVS_ERR_OPTION_INVALID              =  0x004,        /*! < device does not support the specified options */
+  KVS_ERR_PARAM_NULL                  =  0x101,        /*! < no input pointer can be NULL */
+  KVS_ERR_PURGE_IN_PRGRESS            =  0x084,        /*! < purge operation is in progress */
+  KVS_ERR_SYS_IO                      =  0x303,        /*! < host failed to communicate with the device */
+  KVS_ERR_SYS_PERMISSION              =  0x415,        /*! < caller does not have a permission to call this interface */
+  KVS_ERR_VALUE_LENGTH_INVALID        =  0x001,        /*! < value length is out of range  */
+  KVS_ERR_VALUE_LENGTH_MISALIGNED     =  0x008,        /*! < value length is misaligned. Value length shall be multiples of 4 bytes.  */
+  KVS_ERR_VALUE_OFFSET_INVALID        =  0x002,        /*! < value offset is invalid meaning that offset is out of bound. */
+  KVS_ERR_VENDOR                      =  0x0F0,        /*! < vendor-specific error is returned, check the system log for more details */
   
   // command specific status(errors)                
-  KVS_ERR_BUFFER_SMALL                =  0x301,        ///< provided buffer size too small for iterator_next operation
-  KVS_ERR_DEV_MAX_NS                  =  0x191,        ///< maximum number of namespaces was created
-  KVS_ERR_ITERATOR_COND_INVALID       =  0x192,        ///< iterator condition is not valid
-  KVS_ERR_KEY_EXIST                   =  0x080,        ///< given key already exists (with KV_STORE_IDEMPOTENT option)
-  KVS_ERR_NS_ATTAHED                  =  0x118,        ///< namespace was alredy attached
-  KVS_ERR_NS_CAPACITY                 =  0x181,        ///< namespace capacity limit exceeds
-  KVS_ERR_NS_NOT_ATTACHED             =  0x11A,        ///< device cannot detach a namespace since it has not been attached yet
-  KVS_ERR_QUEUE_CQID_INVALID          =  0x401,        ///< completion queue identifier is invalid
-  KVS_ERR_QUEUE_SQID_INVALID          =  0x402,        ///< submission queue identifier is invalid
-  KVS_ERR_QUEUE_DELETION_INVALID      =  0x403,        ///< cannot delete completion queue since submission queue has not been fully deleted
+  KVS_ERR_BUFFER_SMALL                =  0x301,        /*! < provided buffer size too small for iterator_next operation */
+  KVS_ERR_DEV_MAX_NS                  =  0x191,        /*! < maximum number of namespaces was created */
+  KVS_ERR_ITERATOR_COND_INVALID       =  0x192,        /*! < iterator condition is not valid */
+  KVS_ERR_KEY_EXIST                   =  0x080,        /*! < given key already exists (with KV_STORE_IDEMPOTENT option) */
+  KVS_ERR_NS_ATTAHED                  =  0x118,        /*! < namespace was alredy attached */
+  KVS_ERR_NS_CAPACITY                 =  0x181,        /*! < namespace capacity limit exceeds */
+  KVS_ERR_NS_NOT_ATTACHED             =  0x11A,        /*! < device cannot detach a namespace since it has not been attached yet */
+  KVS_ERR_QUEUE_CQID_INVALID          =  0x401,        /*! < completion queue identifier is invalid */
+  KVS_ERR_QUEUE_SQID_INVALID          =  0x402,        /*! < submission queue identifier is invalid */
+  KVS_ERR_QUEUE_DELETION_INVALID      =  0x403,        /*! < cannot delete completion queue since submission queue has not been fully deleted */
   
-  KVS_ERR_QUEUE_MAX_QUEUE             =  0x104,        ///< maximum number of queues are already created
-  KVS_ERR_QUEUE_QID_INVALID           =  0x405,        ///< queue identifier is invalid
-  KVS_ERR_QUEUE_QSIZE_INVALID         =  0x406,        ///< queue size is invalid 
+  KVS_ERR_QUEUE_MAX_QUEUE             =  0x104,        /*! < maximum number of queues are already created */
+  KVS_ERR_QUEUE_QID_INVALID           =  0x405,        /*! < queue identifier is invalid */
+  KVS_ERR_QUEUE_QSIZE_INVALID         =  0x406,        /*! < queue size is invalid  */
   
-  KVS_ERR_TIMEOUT                     =  0x195,        ///< timer expired and no operation is completed yet. 
+  KVS_ERR_TIMEOUT                     =  0x195,        /*! < timer expired and no operation is completed yet.  */
 
   // media and data integratiy status (error)                
-  KVS_ERR_UNCORRECTIBLE               =  0x781,        ///< uncorrectable error occurs
+  KVS_ERR_UNCORRECTIBLE               =  0x781,        /*! < uncorrectable error occurs */
   
   // quue in shutdown
-  KVS_ERR_QUEUE_IN_SHUTDOWN               =  0x900,        ///< queue in shutdown mode
+  KVS_ERR_QUEUE_IN_SHUTDOWN           =  0x900,        /*! < queue in shutdown mode */
 
   // queue is full, unable to accept more IO
-  KVS_ERR_QUEUE_IS_FULL                   =  0x901,        ///< queue is full
+  KVS_ERR_QUEUE_IS_FULL               =  0x901,        /*! < queue is full */
 
   // the beginning state after being accepted into a submission queue
-  KVS_ERR_COMMAND_SUBMITTED               =  0x902,        ///< accepted state when a command is submitted   
+  KVS_ERR_COMMAND_SUBMITTED           =  0x902,        /*! < accepted state when a command is submitted */   
   
   // too many iterators open that exceeded supported max number of iterators
-  KVS_ERR_TOO_MANY_ITERATORS_OPEN     =  0x091,        ///< Exceeded max number of opened iterators
+  KVS_ERR_TOO_MANY_ITERATORS_OPEN     =  0x091,        /*! < Exceeded max number of opened iterators */
   
-  KVS_ERR_ITERATOR_END                =  0x093,        ///< Indicate end of iterator operation
+  KVS_ERR_ITERATOR_END                =  0x093,        /*! < Indicate end of iterator operation */
 
   // Added for iterator next call that can return empty results
-  KVS_ERR_SYS_BUSY                    =  0x905,        ///< Retry is recommended
+  KVS_ERR_SYS_BUSY                    =  0x905,        /*! < Retry is recommended */
   
   // initialized by caller before submission
-  KVS_ERR_COMMAND_INITIALIZED             =  0x999,        ///< start state when a command is initialized 
+  KVS_ERR_COMMAND_INITIALIZED         =  0x999,        /*! < start state when a command is initialized  */
 
   //
   // from udd
   //
-  KVS_ERR_MISALIGNED_VALUE_OFFSET = 0x09,                  /**<  misaligned value offset */
-  KVS_ERR_MISALIGNED_KEY_SIZE = 0x0A,                      /**<  misaligned key length(size) */
-  KVS_ERR_UNRECOVERED_ERROR = 0x11,                        /**<  internal I/O error */
-  KVS_ERR_MAXIMUM_VALUE_SIZE_LIMIT_EXCEEDED = 0x81,        /**<  value of given key is already full(KV_MAX_TOTAL_VALUE_LEN) */
-  KVS_ERR_ITERATE_HANDLE_ALREADY_OPENED = 0x92,            /**<  fail to open iterator with given prefix/bitmask as it is already opened */
-  KVS_ERR_ITERATE_REQUEST_FAIL = 0x94,                     /**<  fail to process the iterate request due to FW internal status */
-  KVS_ERR_DD_NO_DEVICE = 0x100,
-  KVS_ERR_DD_INVALID_QUEUE_TYPE = 0x102,
-  KVS_ERR_DD_NO_AVAILABLE_RESOURCE = 0x103,
-  KVS_ERR_DD_UNSUPPORTED_CMD = 0x105,
+  KVS_ERR_MISALIGNED_VALUE_OFFSET     = 0x09,           /**<  misaligned value offset */
+  KVS_ERR_MISALIGNED_KEY_SIZE         = 0x0A,           /**<  misaligned key length(size) */
+  KVS_ERR_UNRECOVERED_ERROR           = 0x11,           /**<  internal I/O error */
+  KVS_ERR_MAXIMUM_VALUE_SIZE_LIMIT_EXCEEDED = 0x81,     /**<  value of given key is already full(KV_MAX_TOTAL_VALUE_LEN) */
+  KVS_ERR_ITERATE_HANDLE_ALREADY_OPENED = 0x92,         /**<  fail to open iterator with given prefix/bitmask as it is already opened */
+  KVS_ERR_ITERATE_REQUEST_FAIL        = 0x94,           /**<  fail to process the iterate request due to FW internal status */
+  KVS_ERR_DD_NO_DEVICE                = 0x100,
+  KVS_ERR_DD_INVALID_QUEUE_TYPE       = 0x102,
+  KVS_ERR_DD_NO_AVAILABLE_RESOURCE    = 0x103,
+  KVS_ERR_DD_UNSUPPORTED_CMD          = 0x105,
 
   //0x200 ~ 0x2FF for SDK Error
-  KVS_ERR_SDK_OPEN = 0x200,                                /**<  device(sdk) open failed */
-  KVS_ERR_SDK_CLOSE = 0x201,                               /**<  device(sdk) close failed */
-  KVS_ERR_CACHE_NO_CACHED_KEY = 0x202,                     /**<  (kv cache) cache miss */
-  KVS_ERR_CACHE_INVALID_PARAM = 0x203,                     /**<  (kv cache) invalid parameters */
-  KVS_ERR_HEAP_ALLOC_FAILURE = 0x204,                      /**<  heap allocation fail for sdk operations */
-  KVS_ERR_SLAB_ALLOC_FAILURE = 0x205,                      /**<  slab allocation fail for sdk operations */
-  KVS_ERR_SDK_INVALID_PARAM = 0x206,                       /**<  invalid parameters for sdk operations */
-  
-  KVS_ERR_DECOMPRESSION = 0x302,                           /**<  retrieveing uncompressed value with KV_RETRIEVE_DECOMPRESSION option */
+  KVS_ERR_SDK_OPEN                    = 0x200,          /**<  device(sdk) open failed */
+  KVS_ERR_SDK_CLOSE                   = 0x201,          /**<  device(sdk) close failed */
+  KVS_ERR_CACHE_NO_CACHED_KEY         = 0x202,          /**<  (kv cache) cache miss */
+  KVS_ERR_CACHE_INVALID_PARAM         = 0x203,          /**<  (kv cache) invalid parameters */
+  KVS_ERR_HEAP_ALLOC_FAILURE          = 0x204,          /**<  heap allocation fail for sdk operations */
+  KVS_ERR_SLAB_ALLOC_FAILURE          = 0x205,          /**<  slab allocation fail for sdk operations */
+  KVS_ERR_SDK_INVALID_PARAM           = 0x206,          /**<  invalid parameters for sdk operations */
+
+  KVS_ERR_DECOMPRESSION               = 0x302,          /**<  retrieveing uncompressed value with KV_RETRIEVE_DECOMPRESSION option */
 };    
   
-#if 0
-enum kvs_result {
-  KVS_SUCCESS = 0, 			/*!< Success  */
-  KVS_ERR_ALIGNMENT = -1,               /*!< Alignment error */
-  KVS_ERR_CAPAPCITY = -2,               /*!< Error in a container capacity parameter */
-  KVS_ERR_CLOSE = -3,                   /*!< Error in closing a device */
-  KVS_ERR_CONT_EXIST = -4,              /*!< Container exists */
-  KVS_ERR_CONT_NAME = -5,               /*!< Invalid container name */
-  KVS_ERR_CONT_NOT_EXIST = -6,          /*!< Container not found */
-  KVS_ERR_DEVICE_NOT_EXIST = -7,        /*!< Device not found */
-  KVS_ERR_GROUP = -8,                   /*!< Error in a group parameter  */
-  KVS_ERR_INDEX= -9,                    /*!< Wrong index in a group operation */
-  KVS_ERR_IO = -10,                     /*!< IO Error */
-  KVS_ERR_KEY = -11,                    /*!< Error in a key parameter */
-  KVS_ERR_KEY_TYPE = -12,               /*!< Not supported key type */
-  KVS_ERR_MEMORY = -13,                 /*!< Not enough memory  */
-  KVS_ERR_NULL_INPUT = -14,             /*!< NULL values in input parameters */
-  KVS_ERR_OFFSET = -15,                 /*!< Wrong value in an offset parameter */
-  KVS_ERR_OPEN = -16,                   /*!< Open failed */
-  KVS_ERR_OPTION_NOT_SUPPORTED = -17,   /*!< Not supported */
-  KVS_ERR_PERMISSION = -18,             /*!< Not enough permission */
-  KVS_ERR_SPACE = -19,                  /*!< Out of disk space */
-  KVS_ERR_TIMEOUT = -20,                /*!< Timeout */
-  KVS_ERR_TUPLE_EXIST = -21,            /*!< Tuple exists */
-  KVS_ERR_TUPLE_NOT_EXIST = -22,        /*!< Tuple not found */
-  KVS_ERR_VALUE = -23,                  /*!< Error in a value parameter */
-  KVS_ERR_NOT_ENOUGH_CORES = -24,       /*!< Not enough cores in the core mask */
-  KVS_ERR_ITER_NOT_EXIST = -25,		/*!< Iterator not found  */
-  KVS_ERR_INVALID_CONFIGURATION = -26,	/*!< Invalid configuration  */
-  KVS_ERR_KEY_MORE = -27,               /*!< more data is available but buffer is not enough */
-  KVS_ERR_ITER_END = -28                /*!< iterator end - (EOF) udd */
-};
-#endif
 /** Key-Value I/O options, used in
  *  \ref kvs_store_context, \ref kvs_retrieve_context, \ref kvs_delete_context
  * \ingroup EnumTypes
@@ -256,8 +222,8 @@ enum kvs_io_options {
  */
 /* TODO: revisit this with other io options */
 typedef enum {
-  KVS_ITERATOR_OPT_KEY = 0x00, ///< [DEFAULT] iterator command gets only key entries without values
-  KVS_ITERATOR_OPT_KV  = 0x01, ///< iterator command gets key and value pairs
+  KVS_ITERATOR_OPT_KEY = 0x00, /*! < [DEFAULT] iterator command gets only key entries without values */
+  KVS_ITERATOR_OPT_KV  = 0x01, /*! < iterator command gets key and value pairs */
 } kvs_iterator_option;
 
 /** Operation code 
@@ -265,6 +231,7 @@ typedef enum {
  * Specify the type of I/O operation. It will be used in the opcode field in \ref kv_iocb. 
  * \ingroup EnumTypes
  */
+
 enum kvs_op {
     IOCB_ASYNC_PUT_CMD=1,
     IOCB_ASYNC_GET_CMD=2,
@@ -277,10 +244,11 @@ enum kvs_op {
 /**
  * @brief options for SSD driver types
  */
+  
 enum kv_driver_types {
-  KV_UDD  = 0x00,            /**< KV spdk driver */
-  KV_KDD  = 0x01,            /**< KV kernel driver */
-  KV_EMUL = 0x02,            /**< KV emulator */
+  KV_UDD  = 0x00,            /*!< KV spdk driver */
+  KV_KDD  = 0x01,            /*!< KV kernel driver */
+  KV_EMUL = 0x02,            /*!< KV emulator */
 };
 
 typedef uint8_t kvs_key_t;
@@ -305,19 +273,19 @@ typedef struct {
 } kvs_value;
 
 #define G_ITER_KEY_SIZE_FIXED 16;
-typedef struct {
-  struct kvs_iterator_handle_internal *iterh;  /*!< for kdd */
-  uint32_t iterator;         /*!< for udd */  
-} kvs_iterator_handle;
 
-/**
- * This structure is for kernel driver
- */
+struct _kvs_iterator_handle;
+typedef struct _kvs_iterator_handle * kvs_iterator_handle;
+
+  /**
+     kvs_iterator_list
+     kvs_iterator_list represents an iterator group entries.  it is used for retrieved iterator entries as a return value for  kvs_interator_next() operation. nit specifies how many entries in the returned iterator list(it_list). it_list has the nit number of <key_length, key> entries when iterator is set with KV_ITERATOR_OPT_KEY and the nit number of <key_length, key, value_length, value> entries when iterator is set with KV_ITERATOR_OPT_KV.
+  */  
 typedef struct {
-  uint32_t num_entries;   ///< the number of iterator entries in the list
-  uint32_t size;      ///< buffer size
-  int      end;    ///< represent if there are more keys to iterate (end = 0) or not (end = 1)
-  void    *it_list;  ///< iterator list buffer
+  uint32_t num_entries;   /*!< the number of iterator entries in the list */
+  uint32_t size;          /*!< buffer size */
+  int      end;           /*!< represent if there are more keys to iterate (end = 0) or not (end = 1) */
+  void    *it_list;       /*!< iterator list buffer */
 } kvs_iterator_list;
 
 /** Result of an asynchronous IO operation 
@@ -327,18 +295,18 @@ typedef struct {
  *  and its result.
  */
 typedef struct {
-        uint8_t opcode;     /*!< an operation code (see \ref kvs_op) */
-	uint32_t contid;    /*!< container ID */
-	void *key;          /*!< key buffer */
-	uint32_t keysize;   /*!< key size */
-	void *value;             /*!< value buffer */
-	uint32_t value_offset;   /*!< value offset */
-	uint32_t valuesize;      /*!< valuesize */
-	void *private1;          /*!< a pointer passed from a user */
-	void *private2;          /*!< a pointer passed from a user */
-	uint8_t option;          /*!< option */
-	int64_t result;          /*!< I/O result (see \ref kvs_result) */
-        kvs_iterator_handle *iter_handle;  /*!< iterator handler  */
+  uint8_t opcode;          /*!< an operation code (see \ref kvs_op) */
+  uint32_t contid;         /*!< container ID */
+  void *key;               /*!< key buffer */
+  uint32_t keysize;        /*!< key size */
+  void *value;             /*!< value buffer */
+  uint32_t value_offset;   /*!< value offset */
+  uint32_t valuesize;      /*!< valuesize */
+  void *private1;          /*!< a pointer passed from a user */
+  void *private2;          /*!< a pointer passed from a user */
+  uint8_t option;          /*!< option */
+  int64_t result;          /*!< I/O result (see \ref kvs_result) */
+  kvs_iterator_handle *iter_handle;  /*!< iterator handler  */
 } kv_iocb;
 
 typedef pthread_t kvs_thread_t;
@@ -358,34 +326,29 @@ typedef void (*_on_iothreadinit)(kvs_thread_t id);
  * \see kvs_init_env() that initializes the library
  */
 typedef struct {
-	struct {
-		int use_dpdk;                 /*!< use DPDK as a memory allocator. It should be 1 if SPDK driver is in use. */
-		int dpdk_mastercoreid;        /*!< specify a DPDK master core ID */
-		int nr_hugepages_per_socket;  /*!< number of 2MB huge pages per socket available in the socket mask */
-		uint16_t socketmask;          /*!< a bitmask for CPU sockets to be used */
-		uint64_t max_memorysize_mb;   /*!< the maximum amount of memory */
-		uint64_t max_cachesize_mb;    /*!< the maximum cache size in MB */
-	} memory;
+  struct {
+    int use_dpdk;                 /*!< use DPDK as a memory allocator. It should be 1 if SPDK driver is in use. */
+    int dpdk_mastercoreid;        /*!< specify a DPDK master core ID */
+    int nr_hugepages_per_socket;  /*!< number of 2MB huge pages per socket available in the socket mask */
+    uint16_t socketmask;          /*!< a bitmask for CPU sockets to be used */
+    uint64_t max_memorysize_mb;   /*!< the maximum amount of memory */
+    uint64_t max_cachesize_mb;    /*!< the maximum cache size in MB */
+  } memory;
 
-	struct {
-		uint64_t iocoremask;          /*!< a bitmask for CPUs to be used for I/O */
-		uint32_t queuedepth;          /*!< a maximum queue depth */
-	        int is_polling;               /*!< polling or interrupt mode */
-		_on_iocomplete iocomplete_fn; /*!< a pointer to an I/O callback function (e.g. void iocomplete(kv_iocb*)) */
-	} aio;
-  /*
-	struct {
-	  //int need_persisency;         //< let emulator stores in-memory data on exit and loads them back on init 
-	  int use_emul;
-	} emul;
-*/
-        int ssd_type;
-        struct {
-	  char core_mask_str[256];
-	  char cq_thread_mask[256];
-	  uint32_t mem_size_mb;
-	} udd;
-        const char *emul_config_file;
+  struct {
+    uint64_t iocoremask;          /*!< a bitmask for CPUs to be used for I/O */
+    uint32_t queuedepth;          /*!< a maximum queue depth */
+    int is_polling;               /*!< polling or interrupt mode */
+    _on_iocomplete iocomplete_fn; /*!< a pointer to an I/O callback function (e.g. void iocomplete(kv_iocb*)) */
+  } aio;
+
+  int ssd_type;
+  struct {
+    char core_mask_str[256];
+    char cq_thread_mask[256];
+    uint32_t mem_size_mb;
+  } udd;
+  const char *emul_config_file;
 } kvs_init_options;
 
 /** options for \ref kvs_delete_tuple()
@@ -418,25 +381,14 @@ typedef struct {
 
 } kvs_retrieve_context;
 
-/**
- * kv_group_condition
-  This structure defines information for kv_open_iterator() that will set up a group of keys matched with given bit_pattern within a range of bits masked by bitmask for iteration. For more details, \see kv_open_iterator
-*/
-/*
-typedef struct {
-  uint32_t bitmask;     ///< bit mask for bit pattern to use
-  uint32_t bit_pattern; ///< bit pattern for condition
-} kvs_group_condition;
-*/
-
 /** options for \ref kvs_open_iterator()
  */
 typedef struct {
   uint32_t option :8;           /*!< an option for a iterator operation. one of the iterator options specified in \ref kv_iterator_option */
   //kvs_group_condition *grp_cond;
-  uint32_t bitmask;     ///< bit mask for bit pattern to use
-  uint32_t bit_pattern; ///< bit pattern for condition
-  void *private1;               /*!< a pointer to a user's I/O context information, which will be delivered to a callback function, unmodified */
+  uint32_t bitmask;             /*!< bit mask for bit pattern to use */
+  uint32_t bit_pattern;         /*!< bit pattern for condition */
+  void *private1;               /*!< a pointer to a user's I/O context information, which will be delivered to a callback function, unmodified , only used for iterator_next call */
   void *private2;               /*!< the second pointer to a user's I/O context information */  
 } kvs_iterator_context;
 
@@ -446,14 +398,14 @@ typedef struct {
  * This structure contains the information of a KV device. 
  */
 typedef struct {
-    char                node[1024];                  /*!< device path that is recognized by OS   */
-    char                spdkpath[1024];              /*!< device path that is recognized by our KV driver for SPDK */
-    int                 nsid;                        /*!< namespace ID */
-    char                pci_slot_name[1024];         /*!< PCI address to a device */
-    int                 numanode;                    /*!< numa node ID that this device is connected to */
-    int                 vendorid;                    /*!< vendor ID */
-    int                 deviceid;                    /*!< device ID */
-    char                ven_dev_id[128];             /*!< vendor + device ID */
+  char node[1024];                  /*!< device path that is recognized by OS   */
+  char spdkpath[1024];              /*!< device path that is recognized by our KV driver for SPDK */
+  int  nsid;                        /*!< namespace ID */
+  char pci_slot_name[1024];         /*!< PCI address to a device */
+  int  numanode;                    /*!< numa node ID that this device is connected to */
+  int  vendorid;                    /*!< vendor ID */
+  int  deviceid;                    /*!< device ID */
+  char ven_dev_id[128];             /*!< vendor + device ID */
 } kv_device_info;
 
 /*! KV Device 
@@ -527,19 +479,17 @@ int32_t kvs_exit_env();
 
 /*! Open a KV device 
  * 
- *  It opens a device and returns a handle to the device.
- * 
  *  The device path can be either a kernel device path or a SPDK device path that 
  *  can be retrieved from \ref kv_device_info. The corresponding device driver will 
  *  be loaded internally. 
  * 
  *  TO open a KV emulator, please use the pseudo device path of "/dev/kvemul"
  *
- * \return \ref kv_device : a device handle
+ * \return \ref kv_device_handle : a device handle
  * 
  *\ingroup KV_API
  */
-kvs_device_handle kvs_open_device(const char *dev_path);
+int32_t kvs_open_device(const char *dev_path, kvs_device_handle *dev_hd);
 
 /*! Close a KV device 
  * 
@@ -559,19 +509,16 @@ int32_t kvs_close_device(kvs_device_handle user_dev);
  * \param name name of container
  * \param sz_4kb capacity of a container with respect to tuple size (key size + value size) in 4KB units 
  * \param ctx: group information to create container groups
- */  
+ */
+
+  /* Container related features are not supported yet 
+   * A dummy container will be created after the call
+   */
 int32_t *kvs_create_container (kvs_device_handle dev_hd, const char *name, uint64_t sz_4kb, const kvs_container_context *ctx);
-
-
-
   
 int32_t kvs_delete_container (kvs_device_handle dev_hd, const char *cont_name);
 
-  
-  
-kvs_container_handle kvs_open_container (kvs_device_handle dev_hd, const char* name);
-
-
+int32_t kvs_open_container (kvs_device_handle dev_hd, const char* name, kvs_container_handle *cont_hd);
   
 int32_t kvs_close_container (kvs_container_handle cont_hd);
     
@@ -583,12 +530,11 @@ int32_t kvs_close_container (kvs_container_handle cont_hd);
  * 
  *  It should be called within the same thread that issued the I/O. 
  *
- *  \param dev device handle  
+ *  \param cont_hd container handle  
  *  \param maxevents the maximum number of I/O events to process
  *  \return the number of events processed
  *  \ingroup KV_API
  */
-  
 int32_t kvs_get_ioevents(kvs_container_handle cont_hd, int maxevents);
 
 /*! Store a KV pair 
@@ -601,7 +547,7 @@ int32_t kvs_get_ioevents(kvs_container_handle cont_hd, int maxevents);
  * Currently no option flags specified in \ref kvs_io_options are supported. \ref KVS_SYNC_IO flag is supported to 
  * enable synchronous I/O while asynchrnous I/O is being used. 
  * 
- * \param dev device handle
+ * \param cont_hd container handle
  * \param key key to retrieve
  * \param value value to store
  * \param ctx options 
@@ -619,7 +565,7 @@ int32_t kvs_store_tuple(kvs_container_handle cont_hd, const kvs_key *key, const 
  * 
  * No retrieve options are supported yet except KVS_SYNC_IO. 
  * 
- * \param dev device handle
+ * \param cont_hd container handle
  * \param key key to retrieve
  * \param value a value buffer where the output will be stored  [in/out]
  * \param ctx options 
@@ -633,7 +579,7 @@ int32_t kvs_retrieve_tuple(kvs_container_handle cont_hd, const kvs_key *key, kvs
  * 
  * No delete options are supported yet except KVS_SYNC_IO. 
  * 
- * \param dev device handle
+ * \param cont_hd container handle
  * \param key key to delete
  * \param ctx options 
  * \ingroup KV_API
@@ -642,33 +588,32 @@ int32_t kvs_delete_tuple(kvs_container_handle cont_hd, const kvs_key *key, const
 
 /*! Open an iterator
  *
- * \param dev device handle
+ * \param cont_hd container handle
  * \param ctx options
- * \return \ref iterator : an iterator handler
+ * \param iter_hd : a pointer to iterator handler
  * \ingroup KV_API
  */
-int32_t kvs_open_iterator(kvs_container_handle cont_hd, const kvs_iterator_context *ctx);
-
+int32_t kvs_open_iterator(kvs_container_handle cont_hd, const kvs_iterator_context *ctx, kvs_iterator_handle *iter_hd);
 /*! close an iterator
  * 
- * \param dev device handle
+ * \param cont_hd container handle
  * \param hiter the iterator handler
  * \param ctx options
  * \ingroup KV_API
  */
-int32_t kvs_close_iterator(kvs_container_handle cont_hd, kvs_iterator_handle *hiter, const kvs_iterator_context *ctx);
+int32_t kvs_close_iterator(kvs_container_handle cont_hd, kvs_iterator_handle hiter, const kvs_iterator_context *ctx);
 
 /*! iterator next
  *
  * retrieve a next group of keys or key-value pairs in the iterator group 
  *
- * \param dev device handle
+ * \param cont_hd container handle
  * \param hiter the iterator handler
  * \param iter_list output buffer for a set of keys or key-value pairs
  * \param ctx options
  * \ingroup KV_API
  */
-int32_t kvs_iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle *hiter, kvs_iterator_list *iter_list, const kvs_iterator_context *ctx);
+int32_t kvs_iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle hiter, kvs_iterator_list *iter_list, const kvs_iterator_context *ctx);
 
 /*! Get WAF (Write Amplificaton Factor) in a KV NMVe Device 
  * \param dev device handle
@@ -685,15 +630,15 @@ int32_t kvs_iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle *hit
 int32_t kvs_get_device_utilization(kvs_device_handle dev);
 
 int64_t kvs_get_device_capacity(kvs_device_handle dev);
-  
-/*! Returns an error string 
- * 
- *  It interpretes the return value of the functions listed here. 
+
+/*! Returns an error string
+ *
+ *  It interpretes the return value of the functions listed here.
  *
  *\ingroup KV_API
  */
-//const char *kvs_errstr(int64_t errorno);
-
+const char *kvs_errstr(int32_t errorno);
+  
 // memory
 #define _FUNCTIONIZE(a,b)  a(b)
 #define _STRINGIZE(a)      #a

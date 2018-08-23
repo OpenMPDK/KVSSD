@@ -14,7 +14,7 @@ BUILD ==========================================================================
     cd kvbench
     mkdir build_rxdb && cd build_rxdb
     cmake -DCMAKE_INCLUDE_PATH=<YOUR ROCKSDB HEADER FILE DIR> -DCMAKE_LIBRARY_PATH=<YOUR ROCKSDB LIB FILE DIR> ../
-    make rockdb_bench
+    make rocksdb_bench
 
 2. RocksDB (SPDK)
   2.0 A working version of source code for intel SPDK and RocksDB(SPDK) is included in kvbench package
@@ -68,6 +68,7 @@ Step 1. create & modify cpu config file
     1.1 cd kvbench/build_kv
     1.3 LD_LIBRARY_PATH=<YOUR_API_LIB_DIR> ./kv_bench -c
     	# This will generate default cpu.txt file
+	# This cpu.txt only needs to be generated once and can be used for all tests on the same system. User can copy it to other 'build' directories where the executable files reside (e.g. build_as for as_bench)
     1.4 Modify cpu.txt for (nodeid,coreid,deviceid) mapping if needed
 
 Step 2. modify bench_config.ini for workloads
@@ -91,11 +92,16 @@ Step 3. Setup environment
 
   * RocksDB on SPDK
     - Prepare the spdk configuration file
-      <spdk_repo_path>/scripts/gen_nvme.sh >> <your_conf_file>
-      NRHUGE=<num_hugepages> <spdk_repo_path>/scripts/setup.sh
+      # cp /KVSSD/application/kvbench/spdk/spdk/etc/spdk/rocksdb.conf.in /tmp/rocksdb.conf 
+      # /KVSSD/application/kvbench/spdk/spdk/scripts/gen_nvme.sh >> /tmp/rocksdb.conf
+    - Reserve hugepage
+      cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+      echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+    - Setup spdk environment
+      /KVSSD/application/kvbench/spdk/spdk/scripts/setup.sh
     - Create BlobFS on the device
-      <spdk_repo_path>/test/lib/blobfs/mkfs/mkfs <your_conf_file> <device_name>
-      e.g. ./test/lib/blobfs/mkfs/mkfs <your_conf_file> Nvme0n1
+      /KVSSD/application/kvbench/spdk/spdk/test/lib/blobfs/mkfs/mkfs <your_conf_file> <device_name>
+      e.g. ./test/lib/blobfs/mkfs/mkfs /tmp/rocksdb.conf Nvme0n1
 
   * KV SSD direct access
     - setup spdk environment if running with spdk driver
@@ -109,12 +115,13 @@ Step 3. Setup environment
       service aerospike start	
 
 Step 4. run benchmark
-    LD_LIBRARY_PATH=<YOUR_SIRIUS_LIB_DIR> ./kv_bench -f bench_config.ini
-    LD_LIBRARY_PATH="<YOUR_INSDB _LIB_DIR>:<YOUR_KVDB_LIB_DIR>" ./kvdb_bench -f bench_config.ini
-    LD_LIBRARY_PATH=<YOUR_ROCKSDB_LIB_DIR> ./rocksdb_bench -f bench_config.ini
-    LD_LIBRARY_PATH=<YOUR_SPDKROCKSDB_LIB_DIR> ./blobfs_rocksdb_bench -f bench_config.ini
-    LD_LIBRARY_PATH=<YOUR_AEROSPIKE_LIB_DIR> ./as_bench -f bench_config.ini
+    sudo LD_LIBRARY_PATH=<YOUR_SIRIUS_LIB_DIR> ./kv_bench -f bench_config.ini
+    sudo LD_LIBRARY_PATH="<YOUR_INSDB _LIB_DIR>:<YOUR_KVDB_LIB_DIR>" ./kvdb_bench -f bench_config.ini
+    sudo LD_LIBRARY_PATH=<YOUR_ROCKSDB_LIB_DIR> ./rocksdb_bench -f bench_config.ini
+    sudo LD_LIBRARY_PATH=<YOUR_SPDKROCKSDB_LIB_DIR> ./blobfs_rocksdb_bench -f bench_config.ini
+    sudo LD_LIBRARY_PATH=<YOUR_AEROSPIKE_LIB_DIR> ./as_bench -f bench_config.ini
 
+    # If you see a "Double allocated SPDK thread" message when running RocksDB on SPDK, it is harmless and can be ignored
 
 CONFIGURATION =====================================================================
 0. Two phases during each run:

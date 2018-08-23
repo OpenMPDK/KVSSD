@@ -31,24 +31,22 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-
 #include <stdio.h>
 #include <stdint.h>
+#include <unistd.h>
 #include <mutex>
 #include <atomic>
-#include <kvs_types.h>
-#include <kvs_utils.h>
 #include <queue>
-#include <kvs_adi.h>
+#include <kvs_api.h>
 
 static int use_udd = 0;
 std::atomic<int> submitted(0);
 std::atomic<int> completed(0);
-std::atomic<int> cur_qdepth_i(0);
+std::atomic<int> cur_qdepth(0);
 pthread_mutex_t lock;
 
 struct iterator_info{
-  kvs_iterator_handle *iter_handle;
+  kvs_iterator_handle iter_handle;
   kvs_iterator_list iter_list;
   int has_iter_finish;
   int g_iter_mode;
@@ -100,7 +98,7 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list, int g_iter_mode){
 void complete(kv_iocb* ioctx) {
 
   if (ioctx->result != 0 && ioctx->result != KVS_WRN_MORE && ioctx->result != KVS_ERR_ITERATOR_END && ioctx->result != KVS_ERR_KEY_NOT_EXIST) {
-    fprintf(stderr, "io error: op = %d, key = %s, result = 0x%lx\n", ioctx->opcode, (char*)ioctx->key, ioctx->result/*kvs_errstr(ioctx->result)*/);
+    fprintf(stderr, "io error: op = %d, key = %s, result = 0x%lx, err = %s\n", ioctx->opcode, (char*)ioctx->key, ioctx->result, kvs_errstr(ioctx->result));
     exit(1);
   } else {
     //fprintf(stderr, "io_complete: op = %d, key = %s, result = 0x%x\n", ioctx->opcode, (char*)ioctx->key, ioctx->result);
@@ -108,17 +106,8 @@ void complete(kv_iocb* ioctx) {
 
   auto owner = (struct iterator_info*) ioctx->private1;
   switch(ioctx->opcode) {
-  case IOCB_ASYNC_ITER_OPEN_CMD:
-    fprintf(stdout, "Iterator opened successfully \n");
-    owner->iter_handle = ioctx->iter_handle;
-    completed++;
-    break;
   case IOCB_ASYNC_ITER_NEXT_CMD:
     owner->has_iter_finish = 1;
-    completed++;
-    break;
-  case IOCB_ASYNC_ITER_CLOSE_CMD:
-    fprintf(stdout, "Iterator closed successfully \n");
     completed++;
     break;
   default:
@@ -131,8 +120,9 @@ void complete(kv_iocb* ioctx) {
     if(ioctx->value)
       valuepool->push((char*)ioctx->value); 
     pthread_mutex_unlock(&lock);
+    
     completed++;
-    cur_qdepth_i--; 
+    cur_qdepth--; 
     break;
   }
 }
@@ -151,7 +141,7 @@ int perform_iterator(kvs_container_handle cont_hd, int is_polling, int iter_kv)
   
   int nr = 0;
   int ret;
-  int total_entries = 0;
+  static int total_entries = 0;
 
 
   fprintf(stdout, "\n===========\n");
@@ -168,33 +158,15 @@ int perform_iterator(kvs_container_handle cont_hd, int is_polling, int iter_kv)
   for (int i = 0; i < 4; i++){
     PREFIX_KV |= (prefix_str[i] << i*8);
   }
-  iter_ctx_open.bit_pattern = PREFIX_KV;
-  iter_ctx_open.private1 = iter_info;
-  iter_ctx_open.private2 = NULL;
   
+  iter_ctx_open.bit_pattern = PREFIX_KV;
+  iter_ctx_open.private1 = NULL;
+  iter_ctx_open.private2 = NULL;
   iter_ctx_open.option = (iter_kv == 0 ? KVS_ITERATOR_OPT_KEY : KVS_ITERATOR_OPT_KV);
 
   submitted = completed = 0;
   
-  uint32_t iterator = kvs_open_iterator(cont_hd, &iter_ctx_open);
-  submitted++;
-  
-  if(use_udd == 0) {
-    if(is_polling) {
-      nr = 0;
-      while(nr != 1) {
-	nr = kvs_get_ioevents(cont_hd, 1);
-      }
-    } else {
-      while(completed < submitted)
-	usleep(1);
-    }
-  } else {
-    iter_info->iter_handle = (kvs_iterator_handle*)malloc(sizeof(kvs_iterator_handle));
-    iter_info->iter_handle->iterator = iterator;
-    fprintf(stdout, "kvbench open iterator %d\n", iter_info->iter_handle->iterator);
-    
-  }
+  kvs_open_iterator(cont_hd, &iter_ctx_open, &iter_info->iter_handle); 
   
   /* Do iteration */
   submitted = completed = 0;
@@ -209,10 +181,14 @@ int perform_iterator(kvs_container_handle cont_hd, int is_polling, int iter_kv)
   iter_ctx_next.private2 = NULL;
 
   nr = 0;
-  iter_info->iter_list.end = FALSE;
+  iter_info->iter_list.end = 0;
   iter_info->iter_list.num_entries = 0;
+
+  struct timespec t1, t2;
+  clock_gettime(CLOCK_REALTIME, &t1);
   
   while(1) {
+    iter_info->iter_list.size = iter_buff;
     kvs_iterator_next(cont_hd, iter_info->iter_handle, &iter_info->iter_list, &iter_ctx_next);
     submitted++;
     if(is_polling) {
@@ -225,7 +201,7 @@ int perform_iterator(kvs_container_handle cont_hd, int is_polling, int iter_kv)
     }
 
     total_entries += iter_info->iter_list.num_entries;
-    //print_iterator_keyvals(&iter_info->iter_list, iter_info->g_iter_mode);
+    print_iterator_keyvals(&iter_info->iter_list, iter_info->g_iter_mode);
     nr = 0;
 
     if(iter_info->iter_list.end) {
@@ -237,28 +213,26 @@ int perform_iterator(kvs_container_handle cont_hd, int is_polling, int iter_kv)
     }
   }
 
+  clock_gettime(CLOCK_REALTIME, &t2);
+  unsigned long long start, end;
+  start = t1.tv_sec * 1000000000L + t1.tv_nsec;
+  end = t2.tv_sec * 1000000000L + t2.tv_nsec;
+  double sec = (double)(end - start) / 1000000000L;
+  fprintf(stdout, "Total time %.2f sec; Throughput %.2f keys/sec\n", sec, (double)total_entries /sec );
+  
+
   /* Close iterator */
-  submitted = completed = 0;
   kvs_iterator_context iter_ctx_close;
   iter_ctx_close.option = KVS_ITER_DEFAULT;
-  iter_ctx_close.private1 = iter_info;
+  iter_ctx_close.private1 = NULL;
   iter_ctx_close.private2 = NULL;
-  submitted++;
+
   ret = kvs_close_iterator(cont_hd, iter_info->iter_handle, &iter_ctx_close);
   if(ret != KVS_SUCCESS) {
     fprintf(stderr, "Failed to close iterator\n");
     exit(1);
   }
 
-  if(is_polling) {
-    nr = 0;
-    while(nr == 0) {
-      nr = kvs_get_ioevents(cont_hd, 1);
-    }
-  } else {
-    while(completed < submitted) usleep(1);
-  }
-  
   if(buffer) kvs_free(buffer);
   if(iter_info) free(iter_info);
 
@@ -266,7 +240,6 @@ int perform_iterator(kvs_container_handle cont_hd, int is_polling, int iter_kv)
 }
 
 int perform_read(kvs_container_handle cont_hd, int count, int maxdepth, uint16_t klen, uint32_t vlen, int is_polling) {
-    int cur_qdepth = 0;
     int num_submitted = 0;
     std::queue<char *> keypool;
     std::queue<char *> valuepool;
@@ -286,7 +259,10 @@ int perform_read(kvs_container_handle cont_hd, int count, int maxdepth, uint16_t
     fprintf(stdout, "\n===========\n");
     fprintf(stdout, "   Do Read Operation %s\n", is_polling ? "Polling" : "Interrupt");
     fprintf(stdout, "===========\n");
-    
+
+    struct timespec t1, t2;
+    clock_gettime(CLOCK_REALTIME, &t1);
+        
     long int seq = 1;
     while (num_submitted < count) {
 
@@ -303,7 +279,7 @@ int perform_read(kvs_container_handle cont_hd, int count, int maxdepth, uint16_t
 	sprintf(key, "%0*ld", klen - 1, seq++);
 	int ret = kvs_retrieve_tuple(cont_hd, &kvskey, &kvsvalue, &ret_ctx);
 	if (ret != KVS_SUCCESS) {
-	  fprintf(stderr, "retrieve tuple failed\n"); exit(1);
+	  fprintf(stderr, "retrieve tuple failed with err %s\n",  kvs_errstr(ret)); exit(1);
 	}
 
 	cur_qdepth++;
@@ -312,8 +288,7 @@ int perform_read(kvs_container_handle cont_hd, int count, int maxdepth, uint16_t
 
       if(is_polling) {
 	if (cur_qdepth > 0) {
-	  int nr = kvs_get_ioevents(cont_hd, maxdepth);
-	  cur_qdepth        -= nr;
+	  kvs_get_ioevents(cont_hd, maxdepth);
 	}
       }
       
@@ -323,8 +298,7 @@ int perform_read(kvs_container_handle cont_hd, int count, int maxdepth, uint16_t
     // wait until it finishes
     if(is_polling) {
       while (cur_qdepth > 0) {
-	int nr = kvs_get_ioevents(cont_hd, maxdepth);
-	cur_qdepth        -= nr;
+	kvs_get_ioevents(cont_hd, maxdepth);
       }
     } else {
       while(completed < num_submitted) {
@@ -332,6 +306,13 @@ int perform_read(kvs_container_handle cont_hd, int count, int maxdepth, uint16_t
       }
     }
 
+    clock_gettime(CLOCK_REALTIME, &t2);
+    unsigned long long start, end;
+    start = t1.tv_sec * 1000000000L + t1.tv_nsec;
+    end = t2.tv_sec * 1000000000L + t2.tv_nsec;
+    double sec = (double)(end - start) / 1000000000L;
+    fprintf(stdout, "Total time %.2f sec; Throughput %.2f ops/sec\n", sec, (double)count /sec );
+        
     while(!keypool.empty()) {
       auto p = keypool.front();
       keypool.pop();
@@ -349,7 +330,6 @@ int perform_read(kvs_container_handle cont_hd, int count, int maxdepth, uint16_t
 
 
 int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, uint16_t klen, uint32_t vlen, bool is_polling) {
-  int cur_qdepth = 0;
   int num_submitted = 0;
   std::queue<char *> keypool;
   std::queue<char *> valuepool;
@@ -369,6 +349,9 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, uin
   fprintf(stdout, "\n===========\n");
   fprintf(stdout, "   Do Write Operation %s\n", is_polling ? "Polling" : "Interrupt");
   fprintf(stdout, "===========\n");
+
+  struct timespec t1, t2;
+  clock_gettime(CLOCK_REALTIME, &t1);
   
   while (num_submitted < count) {
     while (cur_qdepth < maxdepth) {
@@ -382,6 +365,7 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, uin
 	fprintf(stderr, "no mem is allocated\n");
 	exit(1);
       }
+
       sprintf(key, "%0*ld", klen - 1, seq++);
       sprintf(value, "value%ld", seq);
       const kvs_store_context put_ctx = { KVS_STORE_POST , 0, &keypool, &valuepool };
@@ -390,7 +374,7 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, uin
       int ret = kvs_store_tuple(cont_hd, &kvskey, &kvsvalue, &put_ctx);
       
       while (ret != KVS_SUCCESS) {
-	fprintf(stderr, "store tuple failed %d\n", ret); exit(1);
+	fprintf(stderr, "store tuple failed with err %s\n", kvs_errstr(ret)); exit(1);
 	ret = kvs_store_tuple(cont_hd, &kvskey, &kvsvalue, &put_ctx);
       }    
 
@@ -398,11 +382,9 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, uin
       num_submitted++;
     }
 
-
     if(is_polling) {
       if (cur_qdepth > 0) {
-	int nr = kvs_get_ioevents(cont_hd, maxdepth);
-	cur_qdepth        -= nr;
+	kvs_get_ioevents(cont_hd, maxdepth);
       }
     }
     if (cur_qdepth == maxdepth) usleep(1);
@@ -412,8 +394,7 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, uin
   // wait until it finishes
   if(is_polling) {
     while (cur_qdepth > 0) {
-      int nr = kvs_get_ioevents(cont_hd, maxdepth);
-      cur_qdepth        -= nr;
+      kvs_get_ioevents(cont_hd, maxdepth);
     }
   } else {
     while(completed < num_submitted) {
@@ -421,6 +402,13 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, uin
     }
   }
 
+  clock_gettime(CLOCK_REALTIME, &t2);
+  unsigned long long start, end;
+  start = t1.tv_sec * 1000000000L + t1.tv_nsec;
+  end = t2.tv_sec * 1000000000L + t2.tv_nsec;
+  double sec = (double)(end - start) / 1000000000L;
+  fprintf(stdout, "Total time %.2f sec; Throughput %.2f ops/sec\n", sec, (double)count /sec );
+  
   while(!keypool.empty()) {
     auto p = keypool.front();
     keypool.pop();
@@ -437,7 +425,6 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, uin
 }
 
 int perform_delete(kvs_container_handle cont_hd, int count, int maxdepth, uint16_t klen, uint32_t vlen, int is_polling) {
-  int cur_qdepth = 0;
   int num_submitted = 0;
   std::queue<char *> keypool;
   std::queue<char *> valuepool;
@@ -459,7 +446,10 @@ int perform_delete(kvs_container_handle cont_hd, int count, int maxdepth, uint16
   fprintf(stdout, "\n===========\n");
   fprintf(stdout, "   Do Delete Operation %s\n", is_polling ? "Polling" : "Interrupt");
   fprintf(stdout, "===========\n"); 
-  
+
+  struct timespec t1, t2;
+  clock_gettime(CLOCK_REALTIME, &t1);
+    
   while (num_submitted < count) {
     while (cur_qdepth < maxdepth) {
       if (num_submitted >= count) break;
@@ -471,7 +461,7 @@ int perform_delete(kvs_container_handle cont_hd, int count, int maxdepth, uint16
       const kvs_delete_context del_ctx = { KVS_DELETE_TUPLE , 0, &keypool, &valuepool};
       int ret = kvs_delete_tuple(cont_hd, &kvskey, &del_ctx);
       if (ret != KVS_SUCCESS) {
-	fprintf(stderr, "delete tuple failed\n"); exit(1);
+	fprintf(stderr, "delete tuple failed with err %s\n", kvs_errstr(ret)); exit(1);
       }
       
       cur_qdepth++;
@@ -480,9 +470,7 @@ int perform_delete(kvs_container_handle cont_hd, int count, int maxdepth, uint16
     
     if(is_polling) {
       if (cur_qdepth > 0) {
-	int nr = kvs_get_ioevents(cont_hd, maxdepth);
-	cur_qdepth        -= nr;
-
+	kvs_get_ioevents(cont_hd, maxdepth);
       }
     }
     
@@ -492,8 +480,7 @@ int perform_delete(kvs_container_handle cont_hd, int count, int maxdepth, uint16
   // wait until it finishes
   if(is_polling) {
     while (cur_qdepth > 0) {
-      int nr = kvs_get_ioevents(cont_hd, maxdepth);
-      cur_qdepth        -= nr;
+      kvs_get_ioevents(cont_hd, maxdepth);
     }
   } else {
     while(completed < num_submitted) {
@@ -501,6 +488,13 @@ int perform_delete(kvs_container_handle cont_hd, int count, int maxdepth, uint16
     }
   }
 
+  clock_gettime(CLOCK_REALTIME, &t2);
+  unsigned long long start, end;
+  start = t1.tv_sec * 1000000000L + t1.tv_nsec;
+  end = t2.tv_sec * 1000000000L + t2.tv_nsec;
+  double sec = (double)(end - start) / 1000000000L;
+  fprintf(stdout, "Total time %.2f sec; Throughput %.2f ops/sec\n", sec, (double)count /sec );
+    
   while(!keypool.empty()) {
     auto p = keypool.front();
     keypool.pop();
@@ -556,7 +550,7 @@ int main(int argc, char *argv[]) {
       break;
     default:
       usage(argv[0]);
-      break;
+      exit(0);
     }
   }
 
@@ -610,12 +604,14 @@ int main(int argc, char *argv[]) {
   kvs_init_env(&options);
 
   kvs_device_handle dev;
-  dev = kvs_open_device(dev_path);
-
+  kvs_open_device(dev_path, &dev);
+  
   kvs_container_context ctx;
   kvs_create_container(dev, "test", 4, &ctx);
-  kvs_container_handle cont_handle = kvs_open_container(dev, "test");
   
+  kvs_container_handle cont_handle;
+  kvs_open_container(dev, "test", &cont_handle);
+    
   switch(op_type) {
   case WRITE_OP:
     perform_insertion(cont_handle, num_ios, qdepth, klen, vlen, is_polling);
@@ -632,14 +628,13 @@ int main(int argc, char *argv[]) {
     perform_insertion(cont_handle, num_ios, qdepth, klen, vlen, is_polling);
     perform_iterator(cont_handle, is_polling, 0);
     /* Iterator a key-value pair only works in emulator */
-    //perform_iterator(dev, is_polling, 1);
+    //perform_iterator(cont_handle, is_polling, 1);
     break;
   default:
     fprintf(stderr, "Please specify a correct op_type for testing\n");
     exit(1);
 
   }
-  
 
   kvs_close_container(cont_handle);
   kvs_delete_container(dev, "test");

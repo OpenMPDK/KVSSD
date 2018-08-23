@@ -83,7 +83,7 @@ struct bench_info {
     instance_info_t *instances;
     cpu_info *cpuinfo;
   
-    //JP: kv bench
+    //kv bench
     char *device_path;
     char *kv_device_path;
     char *kv_emul_configfile;
@@ -1389,8 +1389,8 @@ couchstore_error_t couchstore_open_document_kvrocks(Db *db,
 couchstore_error_t couchstore_delete_document_kv(Db *db,
 					 sized_buf *key,
 					 couchstore_open_options options);
-couchstore_error_t couchstore_iterator_open(Db *db, int options, int *use_udd);
-couchstore_error_t couchstore_iterator_close(Db *db, int *use_udd);
+couchstore_error_t couchstore_iterator_open(Db *db, int options);
+couchstore_error_t couchstore_iterator_close(Db *db);
 couchstore_error_t couchstore_iterator_next(Db *db);
 bool couchstore_iterator_check_status(Db *db);
 int couchstore_iterator_get_numentries(Db *db);
@@ -1441,10 +1441,13 @@ void * bench_thread(void *voidargs)
 
   rq_id.buf = NULL;
   db = args->db;
-#if defined __KV_BENCH
-  db_idx = args->id % binfo->nfiles;
+#if defined __KV_BENCH 
+  db_idx = args->id % binfo->nfiles; // for kvssd, # files = # devices, single thread pre device
+#elif defined __BLOBFS_ROCKS_BENCH
+  int singledb_thread_num = binfo->nreaders + binfo->niterators + binfo->nwriters + binfo->ndeleters;
+  db_idx = args->id / singledb_thread_num;
 #else
-  db_idx = 0; // for aerospike
+  db_idx = 0; 
 #endif
   op_med = 0; //op_w = op_r = op_w_cum = op_r_cum = 0;
   elapsed_us = 0;
@@ -1476,13 +1479,14 @@ void * bench_thread(void *voidargs)
   IoContext_t *contexts[256];
 
 #if defined __KV_BENCH
-  int use_udd;
+  //int use_udd;
   if(binfo->with_iterator > 0) {
     if(binfo->kv_write_mode == 1) {
       fprintf(stdout, "WARN: Only support iterator under ASYNC mode\n");
       exit(0);
     }
-    couchstore_iterator_open(db[db_idx], binfo->iterator_mode, &use_udd);
+    couchstore_iterator_open(db[db_idx], binfo->iterator_mode);
+    /*
     if(use_udd == 0) {
       int nr = 0;
       while(nr != 1) {
@@ -1493,6 +1497,8 @@ void * bench_thread(void *voidargs)
       fprintf(stdout, "udd open iter done \n");
       //exit(0);
     }
+    */
+    fprintf(stdout, "Iterator open done \n");
   }
 #endif
 
@@ -1508,7 +1514,7 @@ void * bench_thread(void *voidargs)
 	continue;
       }
     }
-    if (args->op_signal & OP_REOPEN) { // JP: REOPEN is only set for compaction by couchbase or FDB
+    if (args->op_signal & OP_REOPEN) {
 #if defined(__BLOBFS_ROCKS_BENCH)
       // As of now, BlobFS has no directory support, so it has not been tested
       // with multiple DBs
@@ -1613,7 +1619,7 @@ void * bench_thread(void *voidargs)
 	DeAllocate(rq_doc->id.buf, args->keypool);
 	rq_doc->id.buf = NULL;
 #else
-	err = couchstore_save_document(db[0], rq_doc, NULL, binfo->compression);
+	err = couchstore_save_document(db[db_idx], rq_doc, NULL, binfo->compression);
 	//DeAllocate(rq_doc->id.buf, args->keypool);
 
 #endif
@@ -1694,14 +1700,14 @@ void * bench_thread(void *voidargs)
 	rq_doc->data.buf = NULL;
 
 #elif defined __ROCKS_BENCH || defined(__KVDB_BENCH)
-	err = couchstore_open_document(db[0], rq_id.buf,
+	err = couchstore_open_document(db[db_idx], rq_id.buf,
 				       rq_id.size, NULL, monitoring);
 #elif defined __KVROCKS_BENCH
-	err = couchstore_open_document_kvrocks(db[0], rq_doc->id.buf,
+	err = couchstore_open_document_kvrocks(db[db_idx], rq_doc->id.buf,
 				       rq_doc->id.size, rq_doc->data.size,
 				       NULL, monitoring);
 #else
-	err = couchstore_open_document(db[0], rq_doc->id.buf,
+	err = couchstore_open_document(db[db_idx], rq_doc->id.buf,
 				       rq_doc->id.size, NULL, monitoring);
 
 #if defined __FDB_BENCH || defined __LEVEL_BENCH//|| defined __WT_BENCH
@@ -1771,7 +1777,7 @@ void * bench_thread(void *voidargs)
 #if defined __KV_BENCH || defined __AS_BENCH
 	couchstore_delete_document_kv(db[db_idx], &rq_doc->id, monitoring);
 #else
-	err = couchstore_delete_document(db[0], rq_doc->id.buf, rq_doc->id.size, monitoring);
+	err = couchstore_delete_document(db[db_idx], rq_doc->id.buf, rq_doc->id.size, monitoring);
 #endif
 	DeAllocate(rq_doc->id.buf, args->keypool);
 	rq_doc->id.buf = NULL;
@@ -1924,7 +1930,7 @@ void * bench_thread(void *voidargs)
 
 #else
 
-	  couchstore_open_document(db[0], rq_doc->id.buf, rq_doc->id.size, NULL, monitoring);
+	  couchstore_open_document(db[db_idx], rq_doc->id.buf, rq_doc->id.size, NULL, monitoring);
 #endif
 	} else { // delete
 	  /*
@@ -1970,7 +1976,7 @@ void * bench_thread(void *voidargs)
 #if defined __KV_BENCH || defined __AS_BENCH
 	  couchstore_delete_document_kv(db[db_idx], &rq_doc->id, monitoring);
 #else
-	  couchstore_delete_document(db[0], rq_doc->id.buf, rq_doc->id.size, monitoring);
+	  couchstore_delete_document(db[db_idx], rq_doc->id.buf, rq_doc->id.size, monitoring);
 #endif
 	}
 	args->cur_qdepth++;
@@ -2040,8 +2046,9 @@ void * bench_thread(void *voidargs)
 #if defined __KV_BENCH
   if(binfo->with_iterator > 0) {
     int nr = 0;
-    int use_udd;
-    couchstore_iterator_close(db[db_idx], &use_udd);
+    //int use_udd;
+    couchstore_iterator_close(db[db_idx]);
+    /*
     if(use_udd == 0) {
       while(nr != 1) {
 	nr = getevents(db[db_idx], 0, 1, contexts);
@@ -2049,6 +2056,8 @@ void * bench_thread(void *voidargs)
       if(contexts[0]) notify(contexts[0], args->keypool, args->valuepool);
       //got_signal = 1;
     }
+    */
+    fprintf(stdout, "Iterator close done \n");
   }
     
 #endif
@@ -2602,7 +2611,6 @@ void do_bench(struct bench_info *binfo)
       
       stopwatch_start(&sw);
       population(db, binfo);
-      //exit(0);
       
 #if  defined(__PRINT_IOSTAT) && \
   (defined(__LEVEL_BENCH) || defined(__ROCKS_BENCH)  || defined(__BLOBFS_ROCKS_BENCH) || defined(__KVDB_BENCH))
@@ -2631,7 +2639,7 @@ void do_bench(struct bench_info *binfo)
 	      print_filesize_approx(w_per_doc, bodybuf), waf_a);
 #endif
 
-#if !defined __KVROCKS_BENCH && !defined __KV_BENCH
+#if !defined __KVROCKS_BENCH && !defined __KV_BENCH && !defined __BLOBFS_ROCKS_BENCH
 #if defined __AS_BENCH
       for (i=0; i<(int)binfo->nfiles * binfo->pop_nthreads; ++i){
 	printf("close db %d\n", i);
@@ -2694,7 +2702,7 @@ void do_bench(struct bench_info *binfo)
 
   compaction_turn = 0;
 
-#if defined(__ROCKS_BENCH) || defined(__BLOBFS_ROCKS_BENCH) || defined (__LEVEL_BENCH) || defined(__KVDB_BENCH)
+#if defined(__ROCKS_BENCH) || defined (__LEVEL_BENCH) || defined(__KVDB_BENCH) // || defined(__BLOBFS_ROCKS_BENCH) 
   couchstore_set_wbs_size(binfo->wbs_bench);
 #endif
 #if defined(__FDB_BENCH)
@@ -2818,9 +2826,9 @@ void do_bench(struct bench_info *binfo)
 			   ((binfo->sync_write)?(0x10):(0x0)),
 			   &info_handle[j]);
       }
-      #endif
+#endif
     }
-#elif defined(__ROCKS_BENCH) || defined(__BLOBFS_ROCKS_BENCH) || defined (__LEVEL_BENCH) || defined(__KVDB_BENCH)
+#elif defined(__ROCKS_BENCH) || defined (__LEVEL_BENCH) || defined(__KVDB_BENCH) //|| defined(__BLOBFS_ROCKS_BENCH) 
     if (i % singledb_thread_num ==0) {
       b_args[i].db = (Db**)malloc(sizeof(Db*));
       sprintf(curfile, "%s/%d", binfo->filename, i / singledb_thread_num);
@@ -2832,7 +2840,7 @@ void do_bench(struct bench_info *binfo)
       b_args[i].db = b_args[first_db_idx].db;
 
     }
-#elif defined (__KVROCKS_BENCH) //|| defined(__BLOBFS_ROCKS_BENCH)
+#elif defined (__KVROCKS_BENCH) || defined(__BLOBFS_ROCKS_BENCH)
     b_args[i].db = db;
 #elif defined(__KV_BENCH)
     /*
@@ -3181,7 +3189,6 @@ void do_bench(struct bench_info *binfo)
     b_args[i].terminate_signal = 1;
   }
 
-  // JP: waiting for all job threads finish
   for (i=0;i<bench_threads;++i){
     thread_join(bench_worker[i], &bench_worker_ret[i]);
   }
@@ -3346,11 +3353,11 @@ void do_bench(struct bench_info *binfo)
     }
     free(b_args[i].db);
   }
-#elif defined(__KV_BENCH) || defined(__KVROCKS_BENCH)
+#elif defined(__KV_BENCH) || defined(__KVROCKS_BENCH) || defined __BLOBFS_ROCKS_BENCH
   for (j=0;j<(int)binfo->nfiles;++j){
     couchstore_close_db(db[j]); 
   }
-#elif defined(__BLOBFS_ROCKS_BENCH) || defined (__LEVEL_BENCH)
+#elif defined (__LEVEL_BENCH) //|| defined __BLOBFS_ROCKS_BENCH
   //for (j=0;j<(int)binfo->nfiles;++j){
   for (j = 0; j < bench_threads; j+= singledb_thread_num){
     couchstore_close_db(b_args[j].db[0]);

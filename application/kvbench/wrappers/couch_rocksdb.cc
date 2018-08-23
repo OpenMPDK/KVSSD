@@ -89,7 +89,7 @@ couchstore_error_t couchstore_open_db_ex(const char *filename,
     ppdb->options->max_write_buffer_number = 2;
     ppdb->options->write_buffer_size = wbs_size;
     ppdb->options->compaction_style = rocksdb::CompactionStyle(compaction_style);
-
+    /*
     ppdb->options->min_write_buffer_number_to_merge = 1;
     ppdb->options->max_subcompactions = 1;
     ppdb->options->random_access_max_buffer_size = 1024 * 1024;
@@ -117,7 +117,7 @@ couchstore_error_t couchstore_open_db_ex(const char *filename,
     ppdb->options->write_thread_slow_yield_usec = 3;
     ppdb->options->rate_limit_delay_max_milliseconds = 1000;
     ppdb->options->table_cache_numshardbits = 4;
-
+    */
     if (cache_size || bloom_bits_per_key) {
         rocksdb::BlockBasedTableOptions table_options;
         if (cache_size) {

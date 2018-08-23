@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <mutex>
 
-#include "kvs_types.h"
+#include "kvs_api.h"
 #include "libcouchstore/couch_db.h"
 #include "stopwatch.h"
 #include "arch.h"
@@ -42,7 +42,7 @@ struct _db {
   pthread_mutex_t mutex;
 
   /* For iterator  */
-  kvs_iterator_handle *iter_handle;
+  kvs_iterator_handle iter_handle;
   int has_iter_finish;
   kvs_iterator_list iter_list;
 
@@ -58,7 +58,7 @@ char udd_cq_thread_masks[256];
 uint32_t udd_mem_size_mb = 1024;
 int g_iter_mode = KVS_ITERATOR_OPT_KEY;
 int g_iter_key_size = 16;
-int udd_iter_read_size = 32 * 1024;
+int iter_read_size = 32 * 1024;
 
 std::atomic_uint_fast64_t ctx_count;
 
@@ -277,6 +277,7 @@ void on_io_complete(kv_iocb* ioctx) {
 	owner->contexts[context_idx].valuelength = 0;
 	l_stat = owner->l_delete;
 	break;
+	/*
       case IOCB_ASYNC_ITER_OPEN_CMD:
 	owner->iter_handle = ioctx->iter_handle;
 	owner->iter_list.end = 0;
@@ -298,6 +299,7 @@ void on_io_complete(kv_iocb* ioctx) {
 	owner->contexts[context_idx].key = NULL;
 	owner->contexts[context_idx].value = NULL;
 	break;
+	*/
       case IOCB_ASYNC_ITER_NEXT_CMD:
 	//print_iterator_keyvals(&owner->iter_list);
 	owner->contexts[context_idx].op= OP_ITER_NEXT;
@@ -345,6 +347,7 @@ void on_io_complete(kv_iocb* ioctx) {
 	ctx->keylength = ioctx->keysize;
 	l_stat = owner->l_delete;
 	break;
+	/*
       case IOCB_ASYNC_ITER_OPEN_CMD:
 	owner->iter_handle = ioctx->iter_handle;
 	owner->iter_list.end = 0;
@@ -366,6 +369,7 @@ void on_io_complete(kv_iocb* ioctx) {
 	ctx->key = NULL;
 	ctx->value = NULL;
 	break;
+	*/
       case IOCB_ASYNC_ITER_NEXT_CMD:
 	//print_iterator_keyvals(&owner->iter_list);
 	ctx->op= OP_ITER_NEXT;
@@ -560,7 +564,7 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
   *pDb = (Db*)malloc(sizeof(Db));
   ppdb = *pDb;
 
-  ppdb->dev = kvs_open_device(dev_path);
+  kvs_open_device(dev_path, &ppdb->dev);
   ppdb->id = id;
   ppdb->context_idx = 0;
   ppdb->iter_handle = NULL;
@@ -591,7 +595,7 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
   /* Container related op */
   kvs_container_context ctx;
   kvs_create_container(ppdb->dev, "test_container", 4, &ctx);
-  ppdb->cont_hd = kvs_open_container(ppdb->dev, "test");
+  kvs_open_container(ppdb->dev, "test", &ppdb->cont_hd);
   
   fprintf(stdout, "device open %s\n", dev_path);
 
@@ -632,8 +636,13 @@ couchstore_error_t kvs_store_sync(Db *db, Doc* const docs[],
     const kvs_store_context put_ctx = { KVS_STORE_POST | KVS_SYNC_IO, 0, db, NULL};
     const kvs_key kvskey = {docs[i]->id.buf, (uint16_t)docs[i]->id.size};
     const kvs_value kvsvalue = { docs[i]->data.buf, (uint32_t)docs[i]->data.size , 0 };
-    
+
     ret = kvs_store_tuple(db->cont_hd, &kvskey, &kvsvalue, &put_ctx);
+
+    if(ret != KVS_SUCCESS) {
+      fprintf(stderr, "KVBENCH: store tuple sync failed %s\n", (char*)docs[i]->id.buf);
+      exit(1);
+    }
   }
 
   return COUCHSTORE_SUCCESS;
@@ -697,7 +706,7 @@ couchstore_error_t couchstore_save_document(Db *db, const Doc *doc, DocInfo *inf
 }
 
 
-couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode, int *use_udd_it) {
+couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
 
   kvs_iterator_context iter_ctx;
   if(db->iter_handle != NULL) {
@@ -718,8 +727,22 @@ couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode, int *use_
   iter_ctx.private1 = db;
   iter_ctx.private2 = NULL;
 
-  uint32_t iterator = kvs_open_iterator(db->cont_hd, &iter_ctx);
+  kvs_open_iterator(db->cont_hd, &iter_ctx, &db->iter_handle);
+  db->iter_list.end = 0;
+  db->iter_list.num_entries = 0;
+  db->iter_list.size = iter_read_size;
+  if(use_udd)
+    db->iter_list.it_list = kvs_zalloc(iter_read_size, 4096);
+  else {
+    uint8_t *buffer;
+    posix_memalign((void **)&buffer, 4096, iter_read_size);
+    memset(buffer, 0, iter_read_size);
+    db->iter_list.it_list = (uint8_t*) buffer;
+  }
+
   
+  //uint32_t iterator = kvs_open_iterator(db->cont_hd, &iter_ctx);
+  /*
   if(use_udd) {
     db->iter_handle = (kvs_iterator_handle*)malloc(sizeof(kvs_iterator_handle));
     db->iter_handle->iterator = iterator;
@@ -734,14 +757,15 @@ couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode, int *use_
       exit(1);
     }
   }
-
-  *use_udd_it = use_udd;
+  */
+  
+  //*use_udd_it = use_udd;
   return COUCHSTORE_SUCCESS; 
 }
 
-couchstore_error_t couchstore_iterator_close(Db *db, int *use_udd_it) {
+couchstore_error_t couchstore_iterator_close(Db *db) {
   int ret;
-  *use_udd_it = use_udd;
+  //*use_udd_it = use_udd;
   if(db->iter_handle) {
     kvs_iterator_context iter_ctx;
     iter_ctx.option = KVS_ITER_DEFAULT;
@@ -749,6 +773,7 @@ couchstore_error_t couchstore_iterator_close(Db *db, int *use_udd_it) {
     iter_ctx.private2 = NULL;
     ret = kvs_close_iterator(db->cont_hd, db->iter_handle, &iter_ctx);
     db->iter_handle = NULL;
+    if(db->iter_list.it_list) free(db->iter_list.it_list);
     fprintf(stdout, "Iterator closed \n");
   }
   return COUCHSTORE_SUCCESS;
@@ -828,8 +853,14 @@ couchstore_error_t kvs_get_async(Db *db, sized_buf *key, sized_buf *value,
   const kvs_retrieve_context ret_ctx = { KVS_RETRIEVE_IDEMPOTENT | KVS_SYNC_IO, 0, db, NULL };
   const kvs_key  kvskey = { key->buf, (uint16_t)key->size };
   kvs_value kvsvalue = { value->buf, (uint32_t)value->size , 0 /*offset */};
-  ret = kvs_retrieve_tuple(db->cont_hd, &kvskey, &kvsvalue, &ret_ctx);
   
+  ret = kvs_retrieve_tuple(db->cont_hd, &kvskey, &kvsvalue, &ret_ctx);
+
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "KVBENCH: retrieve tuple sync failed for %s, err 0x%x\n", (char*)key->buf, ret);
+    //exit(1);
+  } 
+    
   return COUCHSTORE_SUCCESS; 
 }
  

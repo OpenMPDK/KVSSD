@@ -1,0 +1,13 @@
+
+Release History
+
+---   v0.5.1
+   KV API changes to align with SNIA standard
+   KV API support for SYNC & ASYNC IOs
+   Buf fix
+
+
+---   v0.5.0
+   Initial commit for KVSSD software package
+
+

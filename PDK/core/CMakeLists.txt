@@ -55,15 +55,38 @@ target_include_directories(kvkdd_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/
 set_target_properties(kvkdd PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY ./deps)
 
+set(KVADI_LIBS -L${CMAKE_CURRENT_SOURCE_DIR}/build/deps -Wl,--no-as-needed -lkvkdd_static)
+
 #
 # kv api
 #
-set(KVADI_LIBS -L${CMAKE_CURRENT_SOURCE_DIR}/build/deps -Wl,--no-as-needed -lkvkdd_static)
-set(SOURCES_API
+SET(SOURCES_API
   ${SOURCES_API}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/driver_adapter/kvemuldriver.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/driver_adapter/kvkdd.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/cfrontend.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/kvsdevice.cpp
   )
+
+include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include)
+include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/private)
+set(KVAPI_CXXFLAGS "-O2 -std=c++11 -MMD -MP -Wall -D_FILE_OFFSET_BITS=64 -fPIC -fpermissive -march=native")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVAPI_CFLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KVAPI_CXXFLAGS}")
+set(KVAPI_LIBS ${KVAPI_LIBS} -pthread -Wl,--no-as-needed -fPIC -lnuma -lrt ${KVADI_LIBS} -march=native)
+
+
+add_library(kvapi SHARED ${SOURCES_API} ${HEADERS_API})
+target_include_directories(kvapi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/private)
+target_link_libraries (kvapi ${KVAPI_LIBS} kvkdd_static)
+
+add_executable(sample_code_async ${CMAKE_CURRENT_SOURCE_DIR}/sample_code/test_async.cpp ${SOURCES_API} ${HEADERS_API})
+target_link_libraries(sample_code_async ${KVAPI_LIBS})
+add_dependencies(sample_code_async kvapi)
+
+add_executable(sample_code_sync ${CMAKE_CURRENT_SOURCE_DIR}/sample_code/test_sync.cpp ${SOURCES_API} ${HEADERS_API})
+target_link_libraries(sample_code_sync ${KVAPI_LIBS})
+add_dependencies(sample_code_sync kvapi)
 
 
 elseif(WITH_EMU)
@@ -98,7 +121,7 @@ SET(HEADERS_EMU
 )
 
 #
-# library build rules (shared)
+# emu library build rules (shared)
 #
 add_definitions(-DWITH_EMU)
 add_library(kvemul_static STATIC ${SOURCES_EMU} ${HEADERS_EMU})
@@ -109,60 +132,80 @@ set_target_properties(kvemul PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY ./deps)
 
 set(KVADI_LIBS -L${CMAKE_CURRENT_SOURCE_DIR}/build/deps -Wl,--no-as-needed -lkvemul_static)
+
+
+#
+# kv api
+#
 SET(SOURCES_API
   ${SOURCES_API}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/driver_adapter/kvemuldriver.cpp 
   ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/driver_adapter/kvkdd.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/cfrontend.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/kvsdevice.cpp
   )
 
+include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include)
+include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/private)
+set(KVAPI_CXXFLAGS "-O2 -std=c++11 -MMD -MP -Wall -D_FILE_OFFSET_BITS=64 -fPIC -fpermissive -march=native")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVAPI_CFLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KVAPI_CXXFLAGS}")
+set(KVAPI_LIBS ${KVAPI_LIBS} -pthread -Wl,--no-as-needed -fPIC -lnuma -lrt ${KVADI_LIBS} -march=native)
+
+
+add_library(kvapi SHARED ${SOURCES_API} ${HEADERS_API})
+target_include_directories(kvapi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/private)
+target_link_libraries (kvapi ${KVAPI_LIBS} kvemul_static)
+
+add_executable(sample_code_async ${CMAKE_CURRENT_SOURCE_DIR}/sample_code/test_async.cpp ${SOURCES_API} ${HEADERS_API})
+target_link_libraries(sample_code_async ${KVAPI_LIBS})
+add_dependencies(sample_code_async kvapi)
+
+add_executable(sample_code_sync ${CMAKE_CURRENT_SOURCE_DIR}/sample_code/test_sync.cpp ${SOURCES_API} ${HEADERS_API})
+target_link_libraries(sample_code_sync ${KVAPI_LIBS})
+add_dependencies(sample_code_sync kvapi)
+
 elseif(WITH_SPDK)
+  include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include)
+  include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/private)
+  
   set(KVKUDD_LIBS -L${CMAKE_CURRENT_SOURCE_DIR}/lib -Wl,--no-as-needed -lkvnvmedd -ldl)
   SET(SOURCES_API
     ${SOURCES_API}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/uddenv.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/driver_adapter/kvudd.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/cfrontend.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/kvsdevice.cpp
     )
   set(KVAPI_LIBS ${KVAPI_LIBS} ${KVKUDD_LIBS} -lrt)
   add_definitions(-DWITH_SPDK)
   message("SPDK is enabled")
 
+  set(KVAPI_CXXFLAGS "-O2 -std=c++11 -MMD -MP -Wall -D_FILE_OFFSET_BITS=64 -fPIC -fpermissive -march=native")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVAPI_CFLAGS}")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KVAPI_CXXFLAGS}")
+  set(KVAPI_LIBS ${KVAPI_LIBS} -pthread -Wl,--no-as-needed -fPIC -lnuma -lrt ${KVADI_LIBS} -march=native)
+
+  add_library(kvapi SHARED ${SOURCES_API} ${HEADERS_API})
+  target_include_directories(kvapi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/private)
+  target_link_libraries (kvapi ${KVAPI_LIBS})
+
+  add_executable(sample_code_async ${CMAKE_CURRENT_SOURCE_DIR}/sample_code/test_async.cpp ${SOURCES_API} ${HEADERS_API})
+  target_link_libraries(sample_code_async ${KVAPI_LIBS})
+  add_dependencies(sample_code_async kvapi)
+
+  add_executable(sample_code_sync ${CMAKE_CURRENT_SOURCE_DIR}/sample_code/test_sync.cpp ${SOURCES_API} ${HEADERS_API})
+  target_link_libraries(sample_code_sync ${KVAPI_LIBS})
+  add_dependencies(sample_code_sync kvapi)
+  
 else()
   message( FATAL_ERROR "Please specify device driver type for compilation." )
 
 endif()
 
-#
-# kv api
-#
-include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include)
-include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/private)
-set(KVAPI_LIBS ${KVAPI_LIBS} -pthread -Wl,--no-as-needed -fPIC -lnuma -lrt ${KVADI_LIBS} -march=native)
-set(KVAPI_CXXFLAGS "-O2 -std=c++11 -MMD -MP -Wall -D_FILE_OFFSET_BITS=64 -fPIC -fpermissive -march=native")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVAPI_CFLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KVAPI_CXXFLAGS}")
-
-# SOURCE CODE
-SET(SOURCES_API
-  ${SOURCES_API}
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/cfrontend.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/kvsdevice.cpp
-  )
-
-SET(HEADERS_API
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/kvs_types.h
-  )
-
-#
-# KVAPI-C++ library build rules (shared)
-#
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVAPI_CFLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KVAPI_CXXFLAGS}")
-add_library(kvapi SHARED ${SOURCES_API} ${HEADERS_API})
-target_include_directories(kvapi PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/private)
-target_link_libraries (kvapi ${KVAPI_LIBS})
-
-#
-# Test case build rules
-add_executable(sample_test ${CMAKE_CURRENT_SOURCE_DIR}/sample_code/test.cpp ${SOURCES_API} ${HEADERS_API})
-target_link_libraries(sample_test ${KVAPI_LIBS})
+if (0)
+add_executable(sample_code_sync ${CMAKE_CURRENT_SOURCE_DIR}/sample_code/test_sync.cpp ${SOURCES_API} ${HEADERS_API})
+target_link_libraries(sample_code_sync ${KVAPI_LIBS})
+add_dependencies(sample_code_sync kvapi)
+endif()

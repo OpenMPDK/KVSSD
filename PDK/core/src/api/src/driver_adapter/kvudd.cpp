@@ -64,7 +64,7 @@ void udd_iterate_cb(kv_iterate *it, unsigned int result, unsigned int status) {
   iocb->result = status;
   if(status != KV_SUCCESS){
     if(status ==  0x93 /*KV_ERR_ITERATE_READ_EOF*/){ //TODO: fix this with SNIA
-      fprintf(stderr, "[%s] EOF result=%d status=%d length=%d\n", __FUNCTION__, result, status, it->kv.value.length);
+      //fprintf(stderr, "[%s] EOF result=%d status=%d length=%d\n", __FUNCTION__, result, status, it->kv.value.length);
       iocb->result = KVS_ERR_ITERATOR_END;
       ctx->iter_list->end = TRUE;
     }else {
@@ -76,19 +76,25 @@ void udd_iterate_cb(kv_iterate *it, unsigned int result, unsigned int status) {
   iocb->valuesize = it->kv.value.length;
   ctx->iter_list->it_list = it->kv.value.value;
   ctx->iter_list->num_entries = it->kv.value.length / G_ITER_KEY_SIZE_FIXED;
+  ctx->iter_list->size = it->kv.value.length;
   if(ctx->on_complete && iocb) ctx->on_complete(iocb);
 
   if (ctx) {
     free(ctx);
+    ctx = NULL;
+  }
+  if(it) {
+    free(it);
+    it = NULL;
   }
 }
 
 
 void udd_write_cb(kv_pair *kv, unsigned int result, unsigned int status) {
 
-  if(status != KV_SUCCESS){
-    fprintf(stderr, "[%s] error. key=%s option=%d value.length=%d value.offset=%d status code =%d\n", __FUNCTION__, (char*)kv->key.key, kv->param.io_option.store_option,kv->value.length, kv->value.offset, status);
-    exit(1);
+  if(status != KV_SUCCESS && status != KV_ERR_KEY_NOT_EXIST /*use adi's err code macro*/ ){
+    fprintf(stderr, "[%s] error. key=%s option=%d value.length=%d value.offset=%d status code = 0x%x\n", __FUNCTION__, (char*)kv->key.key, kv->param.io_option.store_option,kv->value.length, kv->value.offset, status);
+    //exit(1);
   }
 
   KUDDriver::kv_udd_context *ctx = (KUDDriver::kv_udd_context*)kv->param.private_data;
@@ -105,6 +111,7 @@ void udd_write_cb(kv_pair *kv, unsigned int result, unsigned int status) {
   if (ctx) {
     //owner->udd_context_pool.push(ctx);
     free(ctx);
+    ctx = NULL;
   }
   if (kv) {
     std::unique_lock<std::mutex> lock(owner->lock);
@@ -141,7 +148,7 @@ int32_t KUDDriver::init(const char* devpath, bool syncio, uint64_t sq_core, uint
 
   ret = kv_nvme_init(devpath, &options, ssd_type);  
   if(ret) {
-    fprintf(stderr, "Failed to do kv_nvme_init %d\n", ret);
+    fprintf(stderr, "Failed to do kv_nvme_init 0x%x\n", ret);
   }
 
   cpu_set_t cpuset;
@@ -163,7 +170,7 @@ int32_t KUDDriver::init(const char* devpath, bool syncio, uint64_t sq_core, uint
     this->kv_pair_pool.push(kv);
   }
   
-  return 0;
+  return ret;
 }
 
 
@@ -229,10 +236,10 @@ int32_t KUDDriver::store_tuple(int contid, const kvs_key *key, const kvs_value *
   kv->param.io_option.store_option = 0x00; // TODO: change this option
 
   if(syncio) {
-    if(kv_nvme_write(handle, kv))
-      return -EINVAL;
-    else
-      this->kv_pair_pool.push(kv);
+    ret = kv_nvme_write(handle, kv);
+    this->kv_pair_pool.push(kv);
+    free(ctx);
+    ctx = NULL;
   } else {
     while (ret) {
       ret = kv_nvme_write_async(handle, kv);
@@ -244,7 +251,7 @@ int32_t KUDDriver::store_tuple(int contid, const kvs_key *key, const kvs_value *
     }
   }
 
-  return 0;
+  return ret;
 }
 
 int32_t KUDDriver::retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, uint8_t option, void *private1, void *private2, bool syncio) {
@@ -274,10 +281,10 @@ int32_t KUDDriver::retrieve_tuple(int contid, const kvs_key *key, kvs_value *val
 
 
   if(syncio) {
-    if(kv_nvme_read(handle, kv))
-      return -EINVAL;
-    else
-      this->kv_pair_pool.push(kv);
+    ret = kv_nvme_read(handle, kv);
+    this->kv_pair_pool.push(kv);
+    free(ctx);
+    ctx = NULL;
   } else {
     while (ret) {
       ret = kv_nvme_read_async(handle, kv);
@@ -289,7 +296,7 @@ int32_t KUDDriver::retrieve_tuple(int contid, const kvs_key *key, kvs_value *val
     }
   }
   
-  return 0;
+  return ret;
 }
 
 int32_t KUDDriver::delete_tuple(int contid, const kvs_key *key, uint8_t option, void *private1, void *private2, bool syncio) {
@@ -314,10 +321,10 @@ int32_t KUDDriver::delete_tuple(int contid, const kvs_key *key, uint8_t option, 
   kv->param.private_data = ctx;
 
   if(syncio){
-    if(kv_nvme_delete(handle, kv))
-      return -EINVAL;
-    else
-      this->kv_pair_pool.push(kv);
+    ret = kv_nvme_delete(handle, kv);
+    this->kv_pair_pool.push(kv);
+    free(ctx);
+    ctx = NULL;
   } else {
     while(ret){
       ret = kv_nvme_delete_async(handle, kv);
@@ -329,10 +336,11 @@ int32_t KUDDriver::delete_tuple(int contid, const kvs_key *key, uint8_t option, 
     }	
   }
   
-  return 0;
+  return ret;
 }
 
-int32_t KUDDriver::open_iterator(int contid,  uint8_t option, uint32_t bitmask, uint32_t bit_pattern, void *private1, void *private2, bool syncio) {
+int32_t KUDDriver::open_iterator(int contid,  uint8_t option, uint32_t bitmask,
+				 uint32_t bit_pattern, kvs_iterator_handle *iter_hd) {
   
   int ret;
   if(option == KVS_ITERATOR_OPT_KEY) fprintf(stdout, "key only\n");
@@ -345,10 +353,10 @@ int32_t KUDDriver::open_iterator(int contid,  uint8_t option, uint32_t bitmask, 
   if (ret == KV_SUCCESS) {
     for(int i=0;i<nr_iterate_handle;i++){
       if(info[i].status == ITERATE_HANDLE_OPENED){
-	fprintf(stderr, "close iterate_handle : %d\n", info[i].handle_id);
+	//fprintf(stderr, "close iterate_handle : %d\n", info[i].handle_id);
 	kv_nvme_iterate_close(handle, info[i].handle_id);
       } else {
-	fprintf(stdout, "iterate %d is closed\n", i);
+	//fprintf(stdout, "iterate %d is closed\n", i);
       }
     }
   }
@@ -358,20 +366,26 @@ int32_t KUDDriver::open_iterator(int contid,  uint8_t option, uint32_t bitmask, 
 
   if(iterator != KV_INVALID_ITERATE_HANDLE){
     fprintf(stdout, "Iterate_Open Success: iterator id=%d\n", iterator);
-    return iterator;
+    kvs_iterator_handle iterh = (kvs_iterator_handle)malloc(sizeof(struct _kvs_iterator_handle));
+    iterh->iterator = iterator;
+    *iter_hd = iterh;
   }
-  return 0;
+  return ret;
 }
 
-int32_t KUDDriver::close_iterator(int contid, kvs_iterator_handle *hiter, void *private1, void *private2, bool syncio) {
-  
+int32_t KUDDriver::close_iterator(int contid, kvs_iterator_handle hiter) {
+
+  int ret = 0;
   if(hiter->iterator > 0)
-    return kv_nvme_iterate_close(handle, hiter->iterator);
+    ret = kv_nvme_iterate_close(handle, hiter->iterator);
 
-  return 0;
+  if(hiter) free(hiter);
+  
+  return ret;
 }
 
-int32_t KUDDriver::iterator_next(kvs_iterator_handle *hiter, kvs_iterator_list *iter_list, void *private1, void *private2, bool syncio) {
+int32_t KUDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1, void *private2, bool syncio) {
+
   int ret = -EINVAL;
 
   auto ctx = prep_io_context(IOCB_ASYNC_ITER_NEXT_CMD, 0, 0, 0, 0, private1, private2, syncio);
@@ -395,17 +409,34 @@ int32_t KUDDriver::iterator_next(kvs_iterator_handle *hiter, kvs_iterator_list *
   it->kv.param.async_cb = udd_iterate_cb;
   it->kv.param.private_data = ctx;
   it->kv.param.io_option.iterate_read_option =  0x00;//KV_ITERATE_READ_DEFAULT;
-
-  while(ret) {
-    ret = kv_nvme_iterate_read_async(handle, it);
-    if(ret) {
-      usleep(1);
-    } else {
-      break;
+  if (syncio) {
+    ret = kv_nvme_iterate_read(handle, it);
+    if(ret == KVS_ERR_ITERATOR_END)
+      iter_list->end = TRUE;
+    iter_list->num_entries = it->kv.value.length / G_ITER_KEY_SIZE_FIXED;
+    iter_list->it_list = it->kv.value.value;
+    iter_list->size = it->kv.value.length;
+    
+    if (it) {
+      free(it);
+      it = NULL;
+    }
+    if(ctx) {
+      free(ctx);
+      ctx = NULL;
+    } 
+  } else { // async
+    while(ret) {
+      ret = kv_nvme_iterate_read_async(handle, it);
+      if(ret) {
+	usleep(1);
+      } else {
+	break;
+      }
     }
   }
   
-  return 0;
+  return ret;
 }  
 
 float KUDDriver::get_waf(){
@@ -432,13 +463,13 @@ int32_t KUDDriver::process_completions(int max)
 
 KUDDriver::~KUDDriver() {
   int ret;
-  fprintf(stdout, "kv close device %s, handle %ld\n", trid, handle);
+  //fprintf(stdout, "kv close device %s, handle %ld\n", trid, handle);
   ret = kv_nvme_close(handle);
   if(ret){
     fprintf(stderr, "Failed to close nvme, ret %d\n", ret);
   }
   ret = kv_nvme_finalize(trid);
-  fprintf(stdout, "kv finalize done - %s\n", trid);
+  //fprintf(stdout, "kv finalize done - %s\n", trid);
 
   while(!this->kv_pair_pool.empty()) {
     auto p = this->kv_pair_pool.front();
