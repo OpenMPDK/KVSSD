@@ -4,6 +4,10 @@ about: Create a report to help us improve
 
 ---
 
+**Location (Korea, USA, China, India, etc.)**
+Put your location for prompt support.
+
+
 **Describe the bug**
 A clear and concise description of what the bug is.
 
