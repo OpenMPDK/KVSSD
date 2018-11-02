@@ -55,6 +55,10 @@ kv_device_internal *kv_namespace_internal::get_dev() {
     return m_dev;
 }
 
+kv_result kv_namespace_internal::get_init_status() {
+    return m_init_status;
+}
+
 kv_namespace_internal::kv_namespace_internal(kv_device_internal *dev, uint32_t nsid, const kv_namespace *ns) {
     m_nsid = nsid;
     m_dev = dev;
@@ -91,9 +95,16 @@ kv_namespace_internal::kv_namespace_internal(kv_device_internal *dev, uint32_t n
 
         m_dummy   = new kv_noop_emulator(m_ns_stat.capacity);
         m_kvstore = m_emul;
+
     } else {
         fprintf(stderr, "Unsupported device detected, please validate device path and reinitialize.\n");
         abort();
+    }
+
+    if (m_kvstore == NULL) {
+        m_init_status = KV_ERR_DEV_INIT;
+    } else {
+        m_init_status = m_kvstore->get_init_status();
     }
 }
 
@@ -113,7 +124,7 @@ void kv_namespace_internal::set_purge_in_progress(bool_t in_progress) {
 
 kv_result kv_namespace_internal::kv_get_namespace_info(kv_namespace *nsinfo) {
     if (nsinfo == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
     *nsinfo = m_ns_info;
     return KV_SUCCESS;
@@ -121,7 +132,7 @@ kv_result kv_namespace_internal::kv_get_namespace_info(kv_namespace *nsinfo) {
 
 kv_result kv_namespace_internal::kv_get_namespace_stat(kv_namespace_stat *ns_st) {
     if (ns_st == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     // update space consumption from kvstore
@@ -151,7 +162,7 @@ kv_result kv_namespace_internal::kv_purge(kv_purge_option option, void *ioctx) {
 // directly work with kvstore
 kv_result kv_namespace_internal::kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) {
     if (key == NULL || value == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_result res = m_kvstore->kv_store(key, value, option, consumed_bytes, ioctx);
@@ -166,7 +177,7 @@ kv_result kv_namespace_internal::kv_store(const kv_key *key, const kv_value *val
 
 kv_result kv_namespace_internal::kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) {
     if (key == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_result res = m_kvstore->kv_delete(key, option, recovered_bytes, ioctx);
@@ -179,16 +190,16 @@ kv_result kv_namespace_internal::kv_delete(const kv_key *key, uint8_t option, ui
 }
 
 
-kv_result kv_namespace_internal::kv_exist(const kv_key *key, uint32_t &keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) {
+kv_result kv_namespace_internal::kv_exist(const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) {
     if (key == NULL || value== NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
     return m_kvstore->kv_exist(key, keycount, value, valuesize, ioctx);
 }
 
 kv_result kv_namespace_internal::kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx) {
     if (key == NULL || value == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     return m_kvstore->kv_retrieve(key, option, value, ioctx);
@@ -198,7 +209,7 @@ kv_result kv_namespace_internal::kv_retrieve(const kv_key *key, uint8_t option, 
 // at this stage to interact with kvstore, these APIs are all synchronous
 kv_result kv_namespace_internal::kv_open_iterator(const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_iterator_handle *iter_hdl, void *ioctx) {
     if (iter_hdl == NULL || it_cond == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     return m_kvstore->kv_open_iterator(it_op, it_cond, m_dev->is_keylen_fixed(), iter_hdl, ioctx);
@@ -212,7 +223,7 @@ kv_result kv_namespace_internal::kv_close_iterator(kv_iterator_handle iter_hdl, 
 
 kv_result kv_namespace_internal::kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, void *ioctx) {
     if (iter_hdl == NULL || iter_list == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     return m_kvstore->kv_iterator_next_set(iter_hdl, iter_list, ioctx);
@@ -221,7 +232,7 @@ kv_result kv_namespace_internal::kv_iterator_next_set(kv_iterator_handle iter_hd
 
 kv_result kv_namespace_internal::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key, kv_value *value, void *ioctx) {
     if (iter_hdl == NULL || key == NULL || value == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     return m_kvstore->kv_iterator_next(iter_hdl, key, value, ioctx);
@@ -229,7 +240,7 @@ kv_result kv_namespace_internal::kv_iterator_next(kv_iterator_handle iter_hdl, k
 
 kv_result kv_namespace_internal::kv_list_iterators(kv_iterator *kv_iters, uint32_t *iter_cnt, void *ioctx) {
     if (kv_iters == NULL || iter_cnt == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     return m_kvstore->kv_list_iterators(kv_iters, iter_cnt, ioctx);
@@ -237,10 +248,18 @@ kv_result kv_namespace_internal::kv_list_iterators(kv_iterator *kv_iters, uint32
 
 kv_result kv_namespace_internal::kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) {
     if (grp_cond == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     return m_kvstore->kv_delete_group(grp_cond, recovered_bytes, ioctx);
+}
+
+uint64_t kv_namespace_internal::get_total_capacity() {
+    return m_kvstore->get_total_capacity();
+}
+
+uint64_t kv_namespace_internal::get_available() {
+    return m_kvstore->get_available();
 }
 
 // only use it for emulator
@@ -251,7 +270,13 @@ void kv_namespace_internal::swap_device(bool usedummy) {
 }
 
 uint64_t kv_namespace_internal::get_consumed_space() {
-    return (m_ns_stat.capacity - m_ns_stat.unallocated_capacity);
+    uint64_t capacity = m_kvstore->get_total_capacity();
+    m_ns_stat.capacity = capacity;
+
+    uint64_t available = m_kvstore->get_available();
+    m_ns_stat.unallocated_capacity = available;
+
+    return (capacity - available);
 }
 
 

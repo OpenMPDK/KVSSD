@@ -136,7 +136,7 @@ kv_result _kv_bypass_namespace(const kv_device_handle dev_hdl, const kv_namespac
 kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_purge_option option, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -146,7 +146,7 @@ kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_purge
 kv_result kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL || it_cond == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -155,7 +155,7 @@ kv_result kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, 
 
 kv_result kv_close_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_postprocess_function *post_fn) {
     if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -166,7 +166,7 @@ kv_result kv_close_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
 kv_result kv_iterator_next(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == NULL || iter_list == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -175,7 +175,7 @@ kv_result kv_iterator_next(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, 
 
 kv_result kv_list_iterators(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator *kv_iters, uint32_t *iter_cnt, kv_postprocess_function  *post_fn) {
     if (que_hdl == NULL || ns_hdl == NULL || kv_iters == NULL || iter_cnt == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -185,7 +185,7 @@ kv_result kv_list_iterators(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
 kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_delete_option option, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -195,7 +195,7 @@ kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const k
 kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_group_condition *grp_cond, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL || grp_cond == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -206,7 +206,7 @@ kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, k
 kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, uint32_t key_cnt, uint32_t buffer_size, uint8_t *buffer, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL || buffer == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -215,7 +215,7 @@ kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv
 
 kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_retrieve_option option, kv_value *value, const kv_postprocess_function *post_fn) {
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL || value == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -226,7 +226,7 @@ kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const
 kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, const kv_value *value, kv_store_option option, const kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL || value == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -236,7 +236,7 @@ kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv
 
 kv_result kv_poll_completion(kv_queue_handle que_hdl, uint32_t timeout_usec, uint32_t *num_events) {
     if (que_hdl == NULL || num_events == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -245,7 +245,7 @@ kv_result kv_poll_completion(kv_queue_handle que_hdl, uint32_t timeout_usec, uin
 
 kv_result kv_set_interrupt_handler(kv_queue_handle que_hdl, const kv_interrupt_handler int_hdl) {
     if (que_hdl == NULL || int_hdl == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -255,7 +255,7 @@ kv_result kv_set_interrupt_handler(kv_queue_handle que_hdl, const kv_interrupt_h
 
 kv_result get_namespace_default(kv_device_handle dev_hdl, kv_namespace_handle *ns_hdl) {
     if (dev_hdl == NULL  || ns_hdl == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
     kv_device_internal *dev = (kv_device_internal *) dev_hdl->dev;
     if (dev == NULL) {

@@ -53,19 +53,31 @@ struct nvme_passthru_cmd {
 	__u32	result;
 };
 
-enum nvme_kv_opcode {
-    nvme_cmd_kv_store	= 0x81,
-	nvme_cmd_kv_append	= 0x83,
-	nvme_cmd_kv_retrieve	= 0x90,
-	nvme_cmd_kv_delete	= 0xA1,
-	nvme_cmd_kv_iter_req	= 0xB1,
-	nvme_cmd_kv_iter_read	= 0xB2,
-        nvme_cmd_kv_exist       = 0xB3,
+#define	KVS_SUCCESS		0
+#define KVS_ERR_ALIGNMENT	(-1)
+#define KVS_ERR_CAPAPCITY	(-2)
+#define KVS_ERR_CLOSE	(-3)
+#define KVS_ERR_CONT_EXIST	(-4)
+#define KVS_ERR_CONT_NAME	(-5)
+#define KVS_ERR_CONT_NOT_EXIST	(-6)
+#define KVS_ERR_DEVICE_NOT_EXIST (-7)
+#define KVS_ERR_GROUP	(-8)
+#define KVS_ERR_INDEX	(-9)
+#define KVS_ERR_IO	(-10)
+#define KVS_ERR_KEY	(-11)
+#define KVS_ERR_KEY_TYPE	(-12)
+#define KVS_ERR_MEMORY	(-13)
+#define KVS_ERR_NULL_INPUT	(-14)
+#define KVS_ERR_OFFSET	(-15)
+#define KVS_ERR_OPEN	(-16)
+#define KVS_ERR_OPTION_NOT_SUPPORTED	(-17)
+#define KVS_ERR_PERMISSION	(-18)
+#define KVS_ERR_SPACE	(-19)
+#define KVS_ERR_TIMEOUT	(-20)
+#define KVS_ERR_TUPLE_EXIST	(-21)
+#define KVS_ERR_TUPLE_NOT_EXIST	(-22)
+#define KVS_ERR_VALUE	(-23)
 
-};
-
-#define KVCMD_INLINE_KEY_MAX	(16)
-#define KVCMD_MAX_KEY_SIZE		(255)
 
 struct nvme_passthru_kv_cmd {
 	__u8	opcode;

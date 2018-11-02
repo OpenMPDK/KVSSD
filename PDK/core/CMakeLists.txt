@@ -12,7 +12,6 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ./deps)
 
 include_directories (include)
 include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/device_abstract_layer/include)
-include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/udd)
 
 if(WITH_KDD)
 
@@ -93,7 +92,8 @@ elseif(WITH_EMU)
 
 set(kvemul_CFLAGS "-MMD -MP -Wall -DLINUX -D_FILE_OFFSET_BITS=64 -fPIC  -march=native")
 set(kvemul_CXXFLAGS "-O2 -g -std=c++11 -MMD -MP -Wall -DLINUX -D_FILE_OFFSET_BITS=64 -fPIC  -march=native")
- 
+
+
 # SOURCE CODE
 SET(SOURCES_EMU
     ${CMAKE_CURRENT_SOURCE_DIR}/src/device_abstract_layer/emulator/src/io_cmd.cpp
@@ -167,9 +167,10 @@ add_dependencies(sample_code_sync kvapi)
 
 elseif(WITH_SPDK)
   include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include)
+  include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/udd)
   include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/private)
   
-  set(KVKUDD_LIBS -L${CMAKE_CURRENT_SOURCE_DIR}/lib -Wl,--no-as-needed -lkvnvmedd -ldl)
+  set(KVKUDD_LIBS -L${CMAKE_CURRENT_SOURCE_DIR}/lib -Wl,--no-as-needed -lkvnvmedd -ldl -luuid)
   SET(SOURCES_API
     ${SOURCES_API}
     ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/uddenv.cpp
@@ -204,8 +205,3 @@ else()
 endif()
 
 
-if (0)
-add_executable(sample_code_sync ${CMAKE_CURRENT_SOURCE_DIR}/sample_code/test_sync.cpp ${SOURCES_API} ${HEADERS_API})
-target_link_libraries(sample_code_sync ${KVAPI_LIBS})
-add_dependencies(sample_code_sync kvapi)
-endif()

@@ -98,6 +98,15 @@ struct nvme_kaioctx
 static struct nvme_kaioctx **g_kaioctx_tb = NULL;
 static spinlock_t g_kaioctx_tb_spinlock;
 
+
+struct aio_user_ctx {
+	int nents;
+	int len;
+	struct page ** pages;
+	struct scatterlist *sg;
+	char data[1];
+};
+
 struct nvme_kaiocb
 {
 	struct list_head aiocb_list;
@@ -108,6 +117,8 @@ struct nvme_kaiocb
 	struct nvme_iod *iod;
 	struct scatterlist meta_sg;
 	void *meta;
+	char *kv_data;
+	struct aio_user_ctx *user_ctx;
 };
 
 static void remove_kaioctx(struct nvme_kaioctx * ctx)
@@ -429,11 +440,31 @@ static void kv_async_completion(struct nvme_dev *dev, void *ctx, struct nvme_com
 #if 0
 	printk("kv_async_completion: call unmap...\n");
 #endif
+    if (cmdinfo->kv_data && cmdinfo->user_ctx) {
+		if (is_kv_retrieve_cmd(cmdinfo->opcode) || is_kv_iter_read_cmd(cmdinfo->opcode)) {
+#if 0
+            char *data = cmdinfo->kv_data;
+            pr_err("recevied data %c:%c:%c:%c: %c:%c:%c:%c.\n",
+                    data[0], data[1], data[2], data[3],
+                    data[4], data[5], data[6], data[7]);
+#endif
+			(void)sg_copy_from_buffer(cmdinfo->user_ctx->sg, cmdinfo->user_ctx->nents,
+					cmdinfo->kv_data, cmdinfo->user_ctx->len);
+        }
+    }
+
 	if (cmdinfo->iod) {
 		nvme_unmap_user_pages(dev, kv_nvme_is_write(cmdinfo->opcode), cmdinfo->iod);
 		nvme_free_iod(dev, cmdinfo->iod);
 	}
 
+	if (cmdinfo->user_ctx) { 
+		int i = 0;
+		for (i = 0; i < cmdinfo->user_ctx->nents; i++)
+			put_page(sg_page(&cmdinfo->user_ctx->sg[i]));
+		kfree(cmdinfo->user_ctx);
+	}
+	if (cmdinfo->kv_data) kfree(cmdinfo->kv_data);
 
 	if (cmdinfo->use_meta) {
 		dma_unmap_sg(&dev->pci_dev->dev, &cmdinfo->meta_sg, 1, DMA_TO_DEVICE);
@@ -1842,6 +1873,120 @@ static int nvme_user_admin_cmd(struct nvme_dev *dev,
 
 
 #if 1
+struct nvme_iod *nvme_map_kernel_pages(struct nvme_dev *dev, int write,
+		unsigned long addr, unsigned length)
+{
+	int i, err, count, nents, offset;
+	struct scatterlist *sg;
+	struct page **pages;
+	struct page *page = NULL;
+	struct nvme_iod *iod;
+	char *src_data = NULL;
+
+	if (addr & 3)
+		return ERR_PTR(-EINVAL);
+	if (!length || length > INT_MAX - PAGE_SIZE)
+		return ERR_PTR(-EINVAL);
+
+	offset = offset_in_page(addr);
+	count = DIV_ROUND_UP(offset + length, PAGE_SIZE);
+	pages = kcalloc(count, sizeof(*pages), GFP_KERNEL);
+	if (!pages)
+		return ERR_PTR(-ENOMEM);
+
+	src_data = (char *)addr;
+	for (i = 0; i < count; i ++) {
+		page = virt_to_page(src_data);
+		get_page(page);
+		pages[i] = page;
+		src_data += PAGE_SIZE;
+	}				
+
+	iod = nvme_alloc_iod(count, length, GFP_KERNEL);
+	sg = iod->sg;
+	sg_init_table(sg, count);
+	for (i = 0; i < count; i++) {
+		sg_set_page(&sg[i], pages[i],
+				min_t(unsigned, length, PAGE_SIZE - offset),
+				offset);
+		length -= (PAGE_SIZE - offset);
+		offset = 0;
+	}
+	sg_mark_end(&sg[i - 1]);
+	iod->nents = count;
+
+	err = -ENOMEM;
+	nents = dma_map_sg(&dev->pci_dev->dev, sg, count,
+			write ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
+	if (!nents)
+		goto free_iod;
+
+	kfree(pages);
+	return iod;
+
+free_iod:
+	kfree(iod);
+	for (i = 0; i < count; i++)
+		put_page(pages[i]);
+	kfree(pages);
+	return ERR_PTR(err);
+}
+
+
+
+static int user_addr_npages(int offset, int size)
+{
+	unsigned count = DIV_ROUND_UP(offset + size, PAGE_SIZE);
+	return count;
+}
+
+static struct aio_user_ctx *get_aio_user_ctx(void __user *addr, unsigned len)
+{
+	int offset = offset_in_page(addr);
+	int datalen = len;
+	int num_page = user_addr_npages(offset,len);
+	int size = 0;
+	struct aio_user_ctx  *user_ctx = NULL;
+	int mapped_pages = 0;
+	int i = 0;
+
+	size = sizeof (struct aio_user_ctx) + sizeof(__le64 *) * num_page
+			+ sizeof(struct scatterlist) * num_page -1;
+	/* need to keep user address to map to copy when complete request */
+	user_ctx = (struct aio_user_ctx *)kmalloc(size, GFP_KERNEL);
+	if (!user_ctx) {
+		return NULL;
+    }
+
+    user_ctx->nents = 0;
+	user_ctx->pages =(struct page **)user_ctx->data;
+	user_ctx->sg = (struct scatterlist *)(user_ctx->data + sizeof(__le64 *) * num_page);
+	mapped_pages = get_user_pages_fast((unsigned long)addr, num_page,
+			0, user_ctx->pages);
+	if (mapped_pages != num_page) {
+		user_ctx->nents = mapped_pages;
+		goto exit;
+	}
+    user_ctx->nents = num_page;
+    user_ctx->len = datalen;
+    sg_init_table(user_ctx->sg, num_page);
+    for(i = 0; i < num_page; i++) {
+        sg_set_page(&user_ctx->sg[i], user_ctx->pages[i],
+                min_t(unsigned, datalen, PAGE_SIZE - offset),
+                offset);
+        datalen -= (PAGE_SIZE - offset);
+        offset = 0;
+    }
+    sg_mark_end(&user_ctx->sg[i -1]);
+	return user_ctx;
+exit:
+	if (user_ctx) {
+		for (i = 0; i < user_ctx->nents; i++)
+			put_page(user_ctx->pages[i]);
+		kfree(user_ctx);
+	}
+	return NULL;
+}
 
 int nvme_submit_async_kv_cmd(struct nvme_queue *nvmeq, struct nvme_command* cmd,
 		u32 *result, unsigned timeout, struct nvme_kaiocb *aiocb) {
@@ -1880,8 +2025,11 @@ int __nvme_submit_kv_user_cmd(struct nvme_ns *ns, struct nvme_command *cmd,
 	unsigned length = 0;
 	int ret = 0;
 	void* meta = NULL;
+	char* kv_data = NULL;
 	bool set_meta = false;
+	bool need_to_copy = false;
 	struct page *p_page = NULL;
+	struct aio_user_ctx * user_ctx = NULL;
 	if (aio) {
 		aiocb = get_aiocb(pthr_cmd->reqid);
 		if (!aiocb)
@@ -1889,16 +2037,48 @@ int __nvme_submit_kv_user_cmd(struct nvme_ns *ns, struct nvme_command *cmd,
 	}
 
 	if (ubuffer && bufflen) {
-		iod = nvme_map_user_pages(dev, kv_nvme_is_write(pthr_cmd->opcode), (unsigned long)ubuffer, bufflen);
-		if (IS_ERR(iod))
-			return PTR_ERR(iod);
+		if ((unsigned long)ubuffer & 3) {
+			int len = DIV_ROUND_UP(bufflen, PAGE_SIZE)*PAGE_SIZE;
+			need_to_copy = true;
+			kv_data = kmalloc(len, GFP_KERNEL);
+			if (kv_data == NULL) {
+				ret = -ENOMEM;
+				goto out;	
+			}
+
+			user_ctx = get_aio_user_ctx(ubuffer, bufflen);
+			if (user_ctx == NULL) {
+				ret = -ENOMEM;
+				goto free_out;
+			}
+			if (is_kv_store_cmd(cmd->common.opcode) || is_kv_append_cmd(cmd->common.opcode)) {
+				(void)sg_copy_to_buffer(user_ctx->sg, user_ctx->nents,
+						kv_data, user_ctx->len);
+#if 0
+				pr_err("copied data %c:%c:%c:%c: %c:%c:%c:%c.\n",
+						kv_data[0], kv_data[1], kv_data[2], kv_data[3],
+						kv_data[4], kv_data[5], kv_data[6], kv_data[7]);
+#endif
+			}
+
+			iod = nvme_map_kernel_pages(dev, kv_nvme_is_write(pthr_cmd->opcode), (unsigned long)kv_data, bufflen);
+		} else {
+			iod = nvme_map_user_pages(dev, kv_nvme_is_write(pthr_cmd->opcode), (unsigned long)ubuffer, bufflen);
+		}
+		if (IS_ERR(iod)) {
+			ret = -ENOMEM;
+			goto free_out;
+		}
 		length = nvme_setup_prps(dev, &cmd->common, iod, bufflen, GFP_KERNEL);
 		if (length != bufflen) {
 			ret = -ENOMEM;
 			goto out_unmap;
 		}
-		if (aio)
+		if (aio) {
 			aiocb->iod = iod;
+			aiocb->kv_data = kv_data;
+			aiocb->user_ctx = user_ctx;
+		}
 	}
 	if (meta_buffer && meta_len) {
 		int offset = 0, len = 0;
@@ -1960,6 +2140,19 @@ int __nvme_submit_kv_user_cmd(struct nvme_ns *ns, struct nvme_command *cmd,
 		ret = nvme_submit_sync_cmd(nvmeq, cmd, result, timeout);
 		*status = ret;
 	}
+    if (!ret && need_to_copy) {
+		if (is_kv_retrieve_cmd(cmd->common.opcode) || is_kv_iter_read_cmd(cmd->common.opcode)) {
+#if 0
+            char *data = kv_data;
+            pr_err("recevied data %c:%c:%c:%c: %c:%c:%c:%c.\n",
+                    data[0], data[1], data[2], data[3],
+                    data[4], data[5], data[6], data[7]);
+#endif
+			(void)sg_copy_from_buffer(user_ctx->sg, user_ctx->nents,
+					kv_data, user_ctx->len);
+        }
+    }
+
 out_unmap:
 	if (iod) {
 		nvme_unmap_user_pages(dev, kv_nvme_is_write(pthr_cmd->opcode), iod);
@@ -1970,6 +2163,14 @@ out_unmap:
 			dma_unmap_sg(&dev->pci_dev->dev, meta_sg_ptr, 1, DMA_TO_DEVICE);
 		put_page(sg_page(meta_sg_ptr));
 	}
+free_out:
+	if (user_ctx)  {
+		int i = 0;
+		for (i = 0; i < user_ctx->nents; i++)
+			put_page(sg_page(&user_ctx->sg[i]));
+		kfree(user_ctx);
+	}
+	if (kv_data) kfree(kv_data);
 out:
 	if (aio)
 		mempool_free(aiocb, kaiocb_mempool);
@@ -2012,11 +2213,6 @@ static int nvme_user_kv_cmd(struct nvme_ns *ns, struct nvme_passthru_kv_cmd __us
 			option = cpu_to_le32(cmd.cdw4);
 			c.kv_store.offset = cpu_to_le32(cmd.cdw5);
 			/* validate key length */
-			if (cmd.cdw11 && (cmd.key_length != cmd.cdw11 + 1)) {
-				cmd.result = KVS_ERR_KEY;
-				status = -EINVAL;
-				goto exit;
-			}
 			if (cmd.key_length >  KVCMD_MAX_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
 				status = -EINVAL;
@@ -2024,13 +2220,13 @@ static int nvme_user_kv_cmd(struct nvme_ns *ns, struct nvme_passthru_kv_cmd __us
 			}
 			c.kv_store.key_len = cpu_to_le32(cmd.key_length -1); /* key len -1 */
 			c.kv_store.option = (option & 0xff);
-			/* validate data length */
-			if (cmd.cdw10 && (cmd.data_length != (cmd.cdw10 << 2))) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
-			}
-			c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2));
+            /* set value size */
+            if (cmd.data_length % 4) {
+                c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2) + 1);
+                c.kv_store.invalid_byte = 4 - (cmd.data_length % 4);
+            } else {
+                c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2));
+            }
 
 			if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
 				metadata = (void __user*)cmd.key_addr;
@@ -2043,11 +2239,6 @@ static int nvme_user_kv_cmd(struct nvme_ns *ns, struct nvme_passthru_kv_cmd __us
 			option = cpu_to_le32(cmd.cdw4);
 			c.kv_retrieve.offset = cpu_to_le32(cmd.cdw5);
 			/* validate key length */
-			if (cmd.cdw11 && (cmd.key_length != cmd.cdw11 + 1)) {
-				cmd.result = KVS_ERR_KEY;
-				status = -EINVAL;
-				goto exit;
-			} 
 			if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
 					cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
@@ -2056,12 +2247,6 @@ static int nvme_user_kv_cmd(struct nvme_ns *ns, struct nvme_passthru_kv_cmd __us
 			}
 			c.kv_retrieve.key_len = cpu_to_le32(cmd.key_length -1); /* key len - 1 */
 			c.kv_retrieve.option = (option & 0xff);
-			/* validate data length */
-			if (cmd.cdw10 && (cmd.data_length != (cmd.cdw10 << 2))) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
-			}
 			c.kv_retrieve.value_len = cpu_to_le32((cmd.data_length >> 2));
 
 			if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
@@ -2073,11 +2258,7 @@ static int nvme_user_kv_cmd(struct nvme_ns *ns, struct nvme_passthru_kv_cmd __us
 			break;
 		case nvme_cmd_kv_delete:
 			option = cpu_to_le32(cmd.cdw4);
-			if (cmd.cdw11 && (cmd.key_length != cmd.cdw11 + 1)) {
-				cmd.result = KVS_ERR_KEY;
-				status = -EINVAL;
-				goto exit;
-			} 
+			/* validate key length */
 			if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
 					cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
@@ -2095,11 +2276,7 @@ static int nvme_user_kv_cmd(struct nvme_ns *ns, struct nvme_passthru_kv_cmd __us
 			break;
 		case nvme_cmd_kv_exist:
 			option = cpu_to_le32(cmd.cdw4);
-			if (cmd.cdw11 && (cmd.key_length != cmd.cdw11 + 1)) {
-				cmd.result = KVS_ERR_KEY;
-				status = -EINVAL;
-				goto exit;
-			} 
+			/* validate key length */
 			if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
 					cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
@@ -2129,12 +2306,6 @@ static int nvme_user_kv_cmd(struct nvme_ns *ns, struct nvme_passthru_kv_cmd __us
 			iter_handle = cpu_to_le32(cmd.cdw5);
 			c.kv_iter_read.iter_handle = iter_handle & 0xff;
 			c.kv_iter_read.option = option & 0xff;
-			/* validate data length */
-			if (cmd.cdw10 && (cmd.data_length != (cmd.cdw10 << 2))) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
-			}
 			c.kv_iter_read.value_len = cpu_to_le32((cmd.data_length >> 2));
 			break;
 		default:

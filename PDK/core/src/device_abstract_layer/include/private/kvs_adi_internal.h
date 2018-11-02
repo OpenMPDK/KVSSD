@@ -43,15 +43,13 @@
 #include "kvs_adi.h"
 #include "kvs_utils.h"
 
-#define KVSSD_EMULATOR_PATH "/dev/kvemul"
-
 class kv_device_api {
 public:
     virtual ~kv_device_api() {}
     //basic operations
     virtual kv_result kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) =0;
     virtual kv_result kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx) =0;
-    virtual kv_result kv_exist(const kv_key *key, uint32_t &keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) =0;
+    virtual kv_result kv_exist(const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) =0;
     virtual kv_result kv_purge(kv_purge_option option, void *ioctx) =0;
     virtual kv_result kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) =0;
 
@@ -68,6 +66,8 @@ public:
     // for operating in interrtupt mode, which should have a service running checking
     // IO completion automatically.
     virtual kv_result set_interrupt_handler(const kv_interrupt_handler int_hdl) = 0;
+    virtual kv_interrupt_handler get_interrupt_handler() = 0;
+
     // for operating in polling mode, need to call poll API repeatedly to check IO 
     // completion status.
     virtual kv_result poll_completion(uint32_t timeout_usec, uint32_t *num_events) = 0;
@@ -75,6 +75,9 @@ public:
     // capacity
     virtual uint64_t get_total_capacity() =0;
     virtual uint64_t get_available() =0;
+
+    // get initialization status
+    virtual kv_result get_init_status() { return KV_SUCCESS; }
 };
 
 #ifdef __cplusplus
@@ -125,7 +128,6 @@ struct _kv_iterator_handle {
     bool_t end;
 };
 
-#define KVSSD_LINUX_KERNEL_PATH "/dev/nvme"
 #define KVSSD_EMULATOR_PATH "/dev/kvemul"
 
 typedef enum {

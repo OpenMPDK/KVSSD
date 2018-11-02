@@ -139,9 +139,10 @@ inline unsigned long get_curcpu(int *chip, int *core)
     *core = c & 0xFFF;
     return ((unsigned long)a) | (((unsigned long)d) << 32);;
 }
-
+/*
 inline void kvs_print_env_opts(kvs_init_options* options) {
-	fprintf(stderr, "kvs_init_options: memsize %7ldMB, cachesize %7ldMB, use DPDK = %s { mastercore = %d%s}, use AIO = %s",
+  fprintf(stderr, "kvs_init_options: memsize %7ldMB, cachesize %7ldMB, use DPDK = %s { mastercore = %d%s}, use AIO = %s",
+	  
 			options->memory.max_memorysize_mb,
 			options->memory.max_cachesize_mb,
 			(options->memory.use_dpdk == 1)? "true":"false",
@@ -158,7 +159,7 @@ inline void kvs_print_env_opts(kvs_init_options* options) {
 
 	fprintf(stderr, "\n");
 }
-
+*/
 inline int run_shellcmd(const char *buf)
 {
     int status = system(buf);
@@ -259,15 +260,15 @@ static inline void trim(std::string &s) {
 
 static inline int32_t validate_request(const kvs_key *key, const kvs_value *value) {
   if (key) {
-    if(key->length < KVS_MIN_KEY_LEN || key->length > KVS_MAX_KEY_LEN) {
-      WRITE_WARNING("key size is out of range\n");
-      exit(1);
+    if(key->length < KVS_MIN_KEY_LENGTH || key->length > KVS_MAX_KEY_LENGTH) {
+      WRITE_WARNING("key size is out of range, key size = %d\n", key->length);
+      return KVS_ERR_KEY_LENGTH_INVALID;
     }
   }
   if(value) {
-    if(value->length < KVS_MIN_VALUE_LEN || value->length > KVS_MAX_VALUE_LEN) {
-      WRITE_WARNING("value size is out of range\n");
-      exit(1);
+    if(value->length < KVS_MIN_VALUE_LENGTH || value->length > KVS_MAX_VALUE_LENGTH) {
+      WRITE_WARNING("value size is out of range, value size = %d\n", value->length);
+      return KVS_ERR_VALUE_LENGTH_INVALID;
     }
   }
   return 0;

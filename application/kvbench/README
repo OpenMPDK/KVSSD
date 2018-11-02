@@ -1,8 +1,12 @@
+KV-Benchmark is a benchmark program for embedded key-value storage engines, based on a sophisticated workload generation which is more realistic than performing a bunch of read/write operations. It is based on ForestDB-benchmark tool, with an extension of KVS API support.
 
 BUILD ========================================================================== 
 0. Install libraries
    0.1  sudo apt-get install libsnappy-dev libev-dev libbz2-dev liblz4-dev libzstd-dev libjemalloc-dev libnuma-dev libgflags-dev
-   #0.2 (CentOS) sudo yum install snappy-devel libev-devel bzip2-devel lz4-devel
+   0.2 (CentOS) sudo yum install snappy-devel libev-devel bzip2-devel lz4-devel gflags-devel jemalloc-devel
+
+   You can download and install zstd library from the following link:
+      https://github.com/facebook/zstd
 
 1. RocksDB (Linux filesystem)
   1.1 Build rocksdb from source code
@@ -16,24 +20,7 @@ BUILD ==========================================================================
     cmake -DCMAKE_INCLUDE_PATH=<YOUR ROCKSDB HEADER FILE DIR> -DCMAKE_LIBRARY_PATH=<YOUR ROCKSDB LIB FILE DIR> ../
     make rocksdb_bench
 
-2. RocksDB (SPDK)
-  2.0 A working version of source code for intel SPDK and RocksDB(SPDK) is included in kvbench package
-  2.1 Build SPDK library
-    cd kvbench/spdk/spdk
-    ./configure
-    make
-    cd ../
-  2.2 Build RocksDB(SPDK)
-    cd kvbench/spdk/rocksdb
-    make static_lib
-    cd ../../
-  2.3 build blobfs_rocksdb_bench
-    cd kvbench
-    mkdir build_spdk && cd build_spdk
-    cmake ../
-    make blobfs_rocksdb_bench
-
-3. KV Stack on KV SSD (Direct operation to KV SSD)
+2. KV Stack on KV SSD (Direct operation to KV SSD)
   3.1 Download and build kvapi library
   3.2 Build kv_bench
     cd kvbench
@@ -44,13 +31,13 @@ BUILD ==========================================================================
     make kv_bench
 
 /* KVDB is not yet supported */
-4. KVDB
+3. KVDB
     cd kvbench
     mkdir build_kvdb && cd build_kvdb
     cmake -DCMAKE_INCLUDE_PATH=<YOUR KVDB API HEADER FILE DIR> -DCMAKE_LIBRARY_PATH="-L<YOUR KVDB API LIB FILE DIR> -L<YOUR INSDB API LIB FILE DIR>" ../
     make kv_bench
 
-5. Aerospike
+4. Aerospike
   5.1 Download & install aerospike server
     https://www.aerospike.com/docs/operations/install/linux/ubuntu
   5.2 Build as_bench
@@ -90,19 +77,6 @@ Step 3. Setup environment
      filename = /mnt/rocksdb"
      RockDB data will be loaded to /mnt/rocksdb/0, ..., /mnt/rocksdb/N, N is the number of total block devices set in bench_config.ini (e.g. [system] device_path = /dev/nvme0n1,/dev/nvme1n1). File system needs to be created and mounted accordingly before starting kvbench. 
 
-  * RocksDB on SPDK
-    - Prepare the spdk configuration file
-      # cp /KVSSD/application/kvbench/spdk/spdk/etc/spdk/rocksdb.conf.in /tmp/rocksdb.conf 
-      # /KVSSD/application/kvbench/spdk/spdk/scripts/gen_nvme.sh >> /tmp/rocksdb.conf
-    - Reserve hugepage
-      cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
-      echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
-    - Setup spdk environment
-      /KVSSD/application/kvbench/spdk/spdk/scripts/setup.sh
-    - Create BlobFS on the device
-      /KVSSD/application/kvbench/spdk/spdk/test/lib/blobfs/mkfs/mkfs <your_conf_file> <device_name>
-      e.g. ./test/lib/blobfs/mkfs/mkfs /tmp/rocksdb.conf Nvme0n1
-
   * KV SSD direct access
     - setup spdk environment if running with spdk driver
       /KVSSD/PDK/core/tools/setup.sh
@@ -118,10 +92,7 @@ Step 4. run benchmark
     sudo LD_LIBRARY_PATH=<YOUR_SIRIUS_LIB_DIR> ./kv_bench -f bench_config.ini
     sudo LD_LIBRARY_PATH="<YOUR_INSDB _LIB_DIR>:<YOUR_KVDB_LIB_DIR>" ./kvdb_bench -f bench_config.ini
     sudo LD_LIBRARY_PATH=<YOUR_ROCKSDB_LIB_DIR> ./rocksdb_bench -f bench_config.ini
-    sudo LD_LIBRARY_PATH=<YOUR_SPDKROCKSDB_LIB_DIR> ./blobfs_rocksdb_bench -f bench_config.ini
     sudo LD_LIBRARY_PATH=<YOUR_AEROSPIKE_LIB_DIR> ./as_bench -f bench_config.ini
-
-    # If you see a "Double allocated SPDK thread" message when running RocksDB on SPDK, it is harmless and can be ignored
 
 CONFIGURATION =====================================================================
 0. Two phases during each run:
@@ -142,10 +113,10 @@ ndocs = 100000  # insert 100k kv pairs during `load`
 
 [system]
 allocator = posix   # 'posix' or 'numa' for block device; 'spdk' for KV SSD only
-key_pool_size = 128 # number of units to create for key mempool
-key_pool_unit = 16  # size of units per key mempool; this should match the key size
+key_pool_size = 128 # number of units to create for key mempool. This value should be equal to or larger than the queue depth if async IO is used in kv_bench or as_bench. For sync IO, any value larger than 1 works. 
+key_pool_unit = 16  # size of units per key mempool; this should match the key length; If testing with various key lengths, this unit should be equal to or larger than the maximum key size;
 key_pool_alignment = 4096  # memory will be aligned in this unit
-value_pool_size = 128  # same as above
+value_pool_size = 128  # same as above. This value should be equal to or larger than the queue depth if async IO is used in kv_bench or as_bench. For sync IO, any value larger than 1 works.
 value_pool_unit = 4096 # same as above
 value_pool_alignment = 4096   # same as above
 device_path = /dev/nvme0n1,/dev/nvme3n1  # kernel device path for block devices
@@ -162,17 +133,11 @@ with_iterator = true   # running iterator mixed with read/write workloads
 
 iterator_mode = key    # [DEFAULT] iterator command gets only key entries without values
 	      = value  # iterator command gets key and value pairs
-is_polling    = true   # kv ssd ASYNC IO completion handled in polling mode
-	      = false  # kv ssd ASYNc IO completion handled in interruption mode 
 
 [aerospike]
 hosts = 127.0.0.1  # aerospike host ip
 port = 3000    # port number
 namespace = test2  # namespace used in aerospike test, also refer to aerospike's server config file
-
-[blobfs]
-spdk_conf_file = /kvbench/spdk/spdk/etc/spdk/rocksdb.conf # rocksdb-spdk config file
-spdk_cache_size = 4096    # spdk cache size
 
 [db_file]
 filename = /mnt/rocksdb  # if N devices are used in '[system] device_path', workload will be generated to /mnt/rocksdb/0, /mnt/rocksdb/2, ..., /mnt/rocksdb/N; make sure devices are properly mounted before the run
@@ -202,6 +167,20 @@ duration = 10 # run benchmark for 10 seconds after insertion
 nops = 10000  # run benchmark for total 10000 operations after insertion, kvbench will run under either 'duration' or 'nops' mode
 batch_distribution = uniform # key space distribution: uniform; zipfian;
 read_write_insert_delete = 50:50:0:0 # operation ratios for read/write/insert/delete, see above [threads] config. If 'insert' ratio is larger than 0, set 'nops' instead of 'duration' for benchmark test.
+
+
+Benchmark Result  ===================================================================== 
+
+Performance measurement result files are in ./logs directory.
+    - KVS-ops.txt: result summary that is same as those printed to the screen, including configuration parameters, total run time, average throughput, tail latency, etc.
+    - Insertion phase:
+      i.    KVS-insert.latency.csv: latency measured during "insertion" phase. IO latency is measured in a sampling rate defined in [latency_monitory] 'rate' section (in the unit of Hertz). Result .csv file shows the latency percentile (1% - 99%) for each type of operations. e.g. a line '50,24,20,5' in the file indicates 50% percentile latency for write, read & delete is 24us, 20us, and 5us respectively.
+      ii.   KVS-insert.ops.csv: throughput measured during "insertion" phase. Throughput is measured in a time interval defined in [latency_monitor]'print_term_ms' section (in the unit of millisecond). Result .csv file shows the throughput over time. e.g. a line '30,160,80,5000' in the file indicates at runtime of 30 second, the overall average throughput is 160ops/sec, instant throughput during the last 'print_term_ms' period is 80op/sec, and total operations finished is 5000.
+    - Benchmark phase:
+      i.    KVS-run.latnecy.csv: similar to KVS-insert.latency.csv
+      ii.   KVS-run.ops.csv: similar to KVS-insert.ops.csv
+
+
 
 
 More information on ForestDB Benchmark website:

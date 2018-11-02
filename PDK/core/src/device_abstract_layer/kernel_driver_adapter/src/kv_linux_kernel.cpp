@@ -35,13 +35,14 @@
 #include <algorithm>
 #include <bitset>
 #include <string>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "kv_linux_kernel.hpp"
 #include "io_cmd.hpp"
-#include <errno.h>
 #include <sys/ioctl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/eventfd.h>
 #include <sys/select.h>
 #include <fcntl.h>
@@ -59,6 +60,241 @@
 // linux kernel based kvstore
 //
 namespace kvadi {
+
+    //////////////////////////////////////////////////////
+    // for capacity from device
+    struct nvme_lbaf {
+            __le16                  ms;
+            __u8                    ds;
+            __u8                    rp;
+    };
+    
+    struct nvme_admin_cmd {
+            __u8    opcode;
+            __u8    flags;
+            __u16   rsvd1;
+            __u32   nsid;
+            __u32   cdw2;
+            __u32   cdw3;
+            __u64   metadata;
+            __u64   addr;
+            __u32   metadata_len;
+            __u32   data_len;
+            __u32   cdw10;
+            __u32   cdw11;
+            __u32   cdw12;
+            __u32   cdw13;
+            __u32   cdw14;
+            __u32   cdw15;
+            __u32   timeout_ms;
+            __u32   result;
+    };
+    
+    struct nvme_id_ns {
+            __le64                  nsze;
+            __le64                  ncap;
+            __le64                  nuse;
+            __u8                    nsfeat;
+            __u8                    nlbaf;
+            __u8                    flbas;
+            __u8                    mc;
+            __u8                    dpc;
+            __u8                    dps;
+            __u8                    nmic;
+            __u8                    rescap;
+            __u8                    fpi;
+            __u8                    dlfeat;
+            __le16                  nawun;
+            __le16                  nawupf;
+            __le16                  nacwu;
+            __le16                  nabsn;
+            __le16                  nabo;
+            __le16                  nabspf;
+            __le16                  noiob;
+            __u8                    nvmcap[16];
+            __u8                    rsvd64[28];
+            __le32                  anagrpid;
+            __u8                    rsvd96[3];
+            __u8                    nsattr;
+            __le16                  nvmsetid;
+            __le16                  endgid;
+            __u8                    nguid[16];
+            __u8                    eui64[8];
+            struct nvme_lbaf        lbaf[16];
+            __u8                    rsvd192[192];
+            __u8                    vs[3712];
+    };
+    
+
+    struct nvme_id_power_state {
+    	__le16			max_power;	/* centiwatts */
+    	__u8			rsvd2;
+    	__u8			flags;
+    	__le32			entry_lat;	/* microseconds */
+    	__le32			exit_lat;	/* microseconds */
+    	__u8			read_tput;
+    	__u8			read_lat;
+    	__u8			write_tput;
+    	__u8			write_lat;
+    	__le16			idle_power;
+    	__u8			idle_scale;
+    	__u8			rsvd19;
+    	__le16			active_power;
+    	__u8			active_work_scale;
+    	__u8			rsvd23[9];
+    };
+
+    struct nvme_id_ctrl {
+            __le16                  vid;
+            __le16                  ssvid;
+            char                    sn[20];
+            char                    mn[40];
+            char                    fr[8];
+            __u8                    rab;
+            __u8                    ieee[3];
+            __u8                    cmic;
+            __u8                    mdts;
+            __le16                  cntlid;
+            __le32                  ver;
+            __le32                  rtd3r;
+            __le32                  rtd3e;
+            __le32                  oaes;
+            __le32                  ctratt;
+            __u8                    rsvd100[156];
+            __le16                  oacs;
+            __u8                    acl;
+            __u8                    aerl;
+            __u8                    frmw;
+            __u8                    lpa;
+            __u8                    elpe;
+            __u8                    npss;
+            __u8                    avscc;
+            __u8                    apsta;
+            __le16                  wctemp;
+            __le16                  cctemp;
+            __le16                  mtfa;
+            __le32                  hmpre;
+            __le32                  hmmin;
+            __u8                    tnvmcap[16];
+            __u8                    unvmcap[16];
+            __le32                  rpmbs;
+            __u8                    rsvd316[4];
+            __le16                  kas;
+            __u8                    rsvd322[190];
+            __u8                    sqes;
+            __u8                    cqes;
+            __le16                  maxcmd;
+            __le32                  nn;
+            __le16                  oncs;
+            __le16                  fuses;
+            __u8                    fna;
+            __u8                    vwc;
+            __le16                  awun;
+            __le16                  awupf;
+            __u8                    nvscc;
+            __u8                    rsvd531;
+            __le32                  sgls;
+            __le16                  acwu;
+            __u8                    rsvd534[2];
+            __u8                    rsvd540[228];
+            char                    subnqn[256];
+            __u8                    rsvd1024[768];
+            __le32                  ioccsz;
+            __le32                  iorcsz;
+            __le16                  icdoff;
+            __u8                    ctrattr;
+            __u8                    msdbd;
+            __u8                    rsvd1804[244];
+            struct nvme_id_power_state      psd[32];
+            __u8                    vs[1024];
+    };
+
+
+    struct nvme_smart_log {
+            __u8                    critical_warning;
+            __u8                    temperature[2];
+            __u8                    avail_spare;
+            __u8                    spare_thresh;
+            __u8                    percent_used;
+            __u8                    rsvd6[26];
+            __u8                    data_units_read[16];
+            __u8                    data_units_written[16];
+            __u8                    host_reads[16];
+            __u8                    host_writes[16];
+            __u8                    ctrl_busy_time[16];
+            __u8                    power_cycles[16];
+            __u8                    power_on_hours[16];
+            __u8                    unsafe_shutdowns[16];
+            __u8                    media_errors[16];
+            __u8                    num_err_log_entries[16];
+            __le32                  warning_temp_time;
+            __le32                  critical_comp_time;
+            __le16                  temp_sensor[8];
+            __le32                  thm_temp1_trans_count;
+            __le32                  thm_temp2_trans_count;
+            __le32                  thm_temp1_total_time;
+            __le32                  thm_temp2_total_time;
+            __u8                    rsvd232[280];
+    };
+    
+    #define NVME_IOCTL_ID           _IO('N', 0x40)
+    #define NVME_IOCTL_ADMIN_CMD    _IOWR('N', 0x41, struct nvme_admin_cmd)
+    #define NVME_IOCTL_SUBMIT_IO    _IOW('N', 0x42, struct nvme_user_io)
+    //////////////////////////////////////////////////////
+
+
+    static int nvme_submit_admin_passthru(int fd, struct nvme_passthru_cmd *cmd)
+    {
+    	return ioctl(fd, NVME_IOCTL_ADMIN_CMD, cmd);
+    }
+
+    #define NVME_IDENTIFY_DATA_SIZE 4096
+    int nvme_identify13(int fd, __u32 nsid, __u32 cdw10, __u32 cdw11, void *data)
+    {
+    	struct nvme_admin_cmd cmd;
+        memset(&cmd, 0, sizeof(cmd));
+        cmd.opcode = 0x06; //nvme_admin_identify;
+        cmd.addr = (uint64_t) data;
+        cmd.nsid = nsid;
+        cmd.cdw10 = cdw10;
+        cmd.cdw11 = cdw11;
+        // cmd.data_len = NVME_IDENTIFY_DATA_SIZE;
+        cmd.data_len = sizeof(cmd);
+
+    	return nvme_submit_admin_passthru(fd, &cmd);
+    }
+    
+    int nvme_identify(int fd, __u32 nsid, __u32 cdw10, void *data)
+    {
+    	return nvme_identify13(fd, nsid, cdw10, 0, data);
+    }
+    
+    int nvme_identify_ctrl(int fd, void *data)
+    {
+    	return nvme_identify(fd, 0, 1, data);
+    }
+
+
+    bool is_kvssd(int fd) {
+        struct nvme_id_ctrl ctrl;
+        memset(&ctrl, 0, sizeof (struct nvme_id_ctrl));
+        int err = nvme_identify_ctrl(fd, &ctrl);
+        if (err) {
+            // fprintf(stderr, "ERROR : nvme_identify_ctrl() failed 0x%x\n", err);
+            return false;
+        }
+
+        // this may change based on firmware revision change
+        // check firmware version
+        // sample FW Revision ETA50K24, letter K at index 5 is the key
+        if (strlen((char *) ctrl.fr) >= 6 && *((char *)ctrl.fr + 5) == 'K') {
+            // fprintf(stderr, "found a kv device FW: %s\n", ctrl.fr);
+            return true;
+        }
+
+        // fprintf(stderr, "not a kv device\n");
+        return false;
+    }
 
     // ideally the number should be from real device queue
     uint32_t kv_linux_kernel::get_cmds_pending_count() {
@@ -104,9 +340,8 @@ namespace kvadi {
                 que->decrease_qdepth(1);
 
                 int dev_status_code = aioevents.events[i].status;
-                /*if(req->ioctx.opcode == KV_OPC_OPEN_ITERATOR || req->ioctx.opcode == KV_OPC_CLOSE_ITERATOR){
-                  printf("OPCODE (%d), %d, aioevents.events[i].result:0x%x\n",req->ioctx.opcode,i,aioevents.events[i].result);}*/
 
+                // handle a failed command
                 if (dev_status_code) {
                     //aioevents.events[i].status;
                     if (dev_status_code<0){
@@ -119,14 +354,11 @@ namespace kvadi {
                         else if(dev_status_code == 0x391){ // All iterators are taken - too many iterators open
                             req->ioctx.retcode = KV_ERR_TOO_MANY_ITERATORS_OPEN;
                         }
-                        else if(dev_status_code == 0x392){ // Iterator open
-                            req->ioctx.retcode = KV_ERR_ITERATOR_IN_PROGRESS;
-                        }
                         else if(dev_status_code == 0x304){
-                            req->ioctx.retcode = KV_ERR_VENDOR; // for invalid option
+                            req->ioctx.retcode = KV_ERR_OPTION_INVALID; // for invalid option
                         }
                         else if (dev_status_code == 0x394){
-                            req->ioctx.retcode = KV_ERR_VENDOR; // Failed Iterate Request
+                            req->ioctx.retcode = KV_ERR_ITERATE_REQUEST_FAIL; // Failed Iterate Request
                         }
                     }
                     else if (req->ioctx.opcode == KV_OPC_CLOSE_ITERATOR){
@@ -134,10 +366,10 @@ namespace kvadi {
                             req->ioctx.retcode = KV_ERR_ITERATOR_NOT_EXIST;
                         }
                         else if(dev_status_code == 0x304){
-                            req->ioctx.retcode = KV_ERR_VENDOR; // for invalid option
+                            req->ioctx.retcode = KV_ERR_OPTION_INVALID; // for invalid option
                         }
                         else if (dev_status_code == 0x394){
-                            req->ioctx.retcode = KV_ERR_VENDOR; // Failed Iterate Request
+                            req->ioctx.retcode = KV_ERR_ITERATE_REQUEST_FAIL; // Failed Iterate Request
                         }
                     }
 
@@ -152,12 +384,12 @@ namespace kvadi {
                             req->ioctx.retcode = KV_ERR_VALUE_LENGTH_MISALIGNED;
                         }
                         else if (dev_status_code == 0x394){
-                            req->ioctx.retcode = KV_ERR_VENDOR; // Failed Iterate Request
+                            req->ioctx.retcode = KV_ERR_ITERATE_REQUEST_FAIL; // Failed Iterate Request
                         }
                         else if((dev_status_code == 0x393)){
                             // Scan Finished
                             req->ioctx.command.iterator_next_info.iter_list->end = TRUE;
-                            req->ioctx.retcode = KV_ERR_ITERATOR_END;
+                            req->ioctx.retcode = KV_SUCCESS;
                         }
                         else {
                             req->ioctx.retcode = KV_ERR_SYS_IO;
@@ -211,6 +443,7 @@ namespace kvadi {
                             req->ioctx.retcode = KV_ERR_SYS_IO;
                         }
                     }
+
                     else if(req->ioctx.opcode == KV_OPC_DELETE){
                         if(dev_status_code == 0x310){
                             req->ioctx.retcode = KV_ERR_KEY_EXIST;
@@ -219,7 +452,29 @@ namespace kvadi {
                             req->ioctx.retcode = KV_ERR_SYS_IO;
                         }
                     }
+
+                    else if(req->ioctx.opcode == KV_OPC_CHECK_KEY_EXIST){
+                        if (dev_status_code == 0x301){
+                            req->ioctx.retcode = KV_ERR_VALUE_LENGTH_INVALID;
+                        }
+                        else if (dev_status_code == 0x303){
+                            req->ioctx.retcode = KV_ERR_KEY_LENGTH_INVALID;
+                        }
+                        else if (dev_status_code == 0x305){
+                            req->ioctx.retcode = KV_ERR_NS_INVALID;
+                        }
+                        else if (dev_status_code == 0x310){
+                            // need to indicate key doesn't exist
+                            // assume the buffer has been cleared
+                            req->ioctx.retcode = KV_SUCCESS;
+                        }
+                        else {
+                            req->ioctx.retcode = KV_ERR_SYS_IO;
+                        }
+                    }
+
                     else{
+                        // fprintf(stderr, "WARNING: unrecognized opcode 0x%X not handled\n", req->ioctx.opcode);
                         req->ioctx.retcode = KV_ERR_SYS_IO;
                     }
                 }
@@ -229,10 +484,15 @@ namespace kvadi {
 
                 // actual command execution status by device
                 // update value size of get
+                // handle successfully completed command
                 if (req->ioctx.retcode == 0 && req->ioctx.opcode == KV_OPC_GET) {
                     if (req->ioctx.value) {
-                        ///// temporary
-                        // req->ioctx.value->value_size = aioevents.events[i].result;
+                        req->ioctx.value->actual_value_size = aioevents.events[i].result;
+
+                        // device only return full value size, so if there is no error
+                        // the returned data len must be the minimum of original buffer len
+                        // and the full value size
+                        req->ioctx.value->length = std::min(aioevents.events[i].result, req->ioctx.value->length);
                     }
                 }
                 else if (req->ioctx.retcode == 0 && req->ioctx.opcode == KV_OPC_OPEN_ITERATOR) {
@@ -241,21 +501,121 @@ namespace kvadi {
                     }
 
                 }
-                else if (req->ioctx.opcode == KV_OPC_ITERATE_NEXT) {
-                    if (req->ioctx.retcode == 0) {
+                else if (req->ioctx.retcode == 0 && req->ioctx.opcode == KV_OPC_ITERATE_NEXT) {
 #ifndef ITER_EXT
                         req->ioctx.result.hiter->id = ((aioevents.events[i].result >> 16) && 0xff);
 #endif
+
+// for iteration behavior before and including EHA50K0K
+// use a buffer to hold iteration output
+#define KEY_LEN_BYTES 4
+#ifdef ITERATOR_BEFORE_EHA50K0K
                         // transfer size from device in bytes
                         unsigned int xfr_size =  aioevents.events[i].result & 0x0000FFFF;
                         req->ioctx.command.iterator_next_info.iter_list->num_entries = (xfr_size/KVCMD_INLINE_KEY_MAX);
-                        printf("NO. of ENTRIES FROM KERNEL:%d\n",req->ioctx.command.iterator_next_info.iter_list->num_entries);
+                        // printf("NO. of ENTRIES FROM KERNEL:%d\n",req->ioctx.command.iterator_next_info.iter_list->num_entries);
+
+
+// for iteration behavior after EEA50K22_20180921
+// use a buffer to hold iteration output
+#else
+                        char *data_buff = (char *) req->ioctx.command.iterator_next_info.iter_list->it_list;
+                        unsigned int buffer_size =  aioevents.events[i].result & 0x0000FFFF;
+
+			// according to firmware command output format, convert them to KVAPI expected format without any padding
+                        // all data alreay in user provided buffer, but need to remove padding bytes to conform KVAPI format
+                        char *current_ptr = data_buff;
+
+                        unsigned int key_size = 0;
+                        int keydata_len_with_padding = 0;
+                        unsigned int buffdata_len = buffer_size;
+                        // printf("buffer size %d\n", buffdata_len);
+                        if (buffdata_len < KEY_LEN_BYTES) {
+                            req->ioctx.retcode = KV_ERR_SYS_IO;
+                        }
+
+                        // first 4 bytes are for key counts
+                        unsigned int key_count = *((uint32_t *)data_buff);
+                        req->ioctx.command.iterator_next_info.iter_list->num_entries = key_count;
+
+                        buffdata_len -= KEY_LEN_BYTES;
+                        data_buff += KEY_LEN_BYTES;
+                        for (uint32_t i = 0; i < key_count && buffdata_len > 0; i++) {
+                            if (buffdata_len < KEY_LEN_BYTES) {
+                                req->ioctx.retcode = KV_ERR_SYS_IO;
+                                break;
+                            }
+
+                            // move 4 byte key len
+                            memmove(current_ptr, data_buff, KEY_LEN_BYTES);
+                            current_ptr += KEY_LEN_BYTES;
+
+                            // get key size
+                            key_size = *((uint32_t *)data_buff);
+                            buffdata_len -= KEY_LEN_BYTES;
+                            data_buff += KEY_LEN_BYTES;
+
+                            if (key_size > buffdata_len) {
+                                req->ioctx.retcode = KV_ERR_SYS_IO;
+                                break;
+                            }
+                            if (key_size >= 256) {
+                                req->ioctx.retcode = KV_ERR_SYS_IO;
+                                break;
+                            }
+
+                            // move key data
+                            memmove(current_ptr, data_buff, key_size);
+                            current_ptr += key_size;
+
+                            // calculate 4 byte aligned current key len including padding bytes
+                            keydata_len_with_padding = (((key_size + 3) >> 2) << 2);
+
+                            // skip to start position of next key
+                            buffdata_len -= keydata_len_with_padding;
+                            data_buff += keydata_len_with_padding;
+                        }
+
+#endif // end of ITERATOR_BEFORE_EHA50K0K
+                }
+
+                else if(req->ioctx.retcode == 0 && req->ioctx.opcode == KV_OPC_CHECK_KEY_EXIST){
+                    uint32_t keycount = req->ioctx.command.key_exist_info.keycount;
+
+                    uint8_t *buffers = req->ioctx.command.key_exist_info.result;
+                    uint32_t buffer_size = req->ioctx.command.key_exist_info.result_size;
+                    // original input keys, but we only support 1 currently
+                    // const kv_key keys = req->ioctx.key
+                    int bitpos = 0;
+                    const uint32_t bytes_to_write = ((keycount -1) / 8) + 1;
+                    
+                    if (bytes_to_write > buffer_size) {
+                        req->ioctx.retcode = KV_ERR_BUFFER_SMALL;
+                    } else {
+                    
+                        memset(buffers, 0, bytes_to_write);
+                    
+                        // XXX check how device should handle a vector of keys in the future
+                        // currently keycount = 1 only
+                        for (uint32_t i = 0 ; i < keycount ; i++, bitpos++) {
+                            const int setidx     = (bitpos / 8);
+                            const int bitoffset  =  bitpos - setidx * 8;
+                    
+                            // key is found if the status is set to 0
+                            // dev_status_code <== aioevents.events[i].status
+                            bool key_found = !dev_status_code;
+                 
+                            if (key_found) {
+                                buffers[setidx] |= (1 << bitoffset);
+                            }
+                        }
+                        buffer_size = bytes_to_write;
                     }
                 }
 
                 // call postprocessing for interrupt mode
                 if (!m_dev->is_polling()) {
-                    // call post process function.
+                    // call interrupt handler function.
                     if (m_interrupt_handler) {
                         m_interrupt_handler->handler(m_interrupt_handler->private_data, m_interrupt_handler->number);
                     }
@@ -306,7 +666,7 @@ namespace kvadi {
             // get event count
             read_s = read(m_efd, &eftd_ctx, sizeof(unsigned long long));
             if (read_s != sizeof(unsigned long long)) {
-                fprintf(stderr, "fail to read from eventfd ..\n");
+                // fprintf(stderr, "fail to read from eventfd ..\n");
                 return KV_ERR_SYS_IO;
             }
         }
@@ -316,10 +676,14 @@ namespace kvadi {
 
     kv_result kv_linux_kernel::set_interrupt_handler(const kv_interrupt_handler int_hdl) {
         if (int_hdl == NULL) {
-            return KV_ERR_PARAM_NULL;
+            return KV_ERR_PARAM_INVALID;
         }
         m_interrupt_handler = int_hdl;
         return KV_SUCCESS;
+    }
+
+    kv_interrupt_handler kv_linux_kernel::get_interrupt_handler() {
+        return m_interrupt_handler;
     }
 
     void kv_linux_kernel::kv_observer() {
@@ -337,8 +701,12 @@ namespace kvadi {
 
         while(!m_shutdown) {
             while(m_req == 0 && !m_shutdown) {
-                std::unique_lock<std::mutex> lock(m_mutex);
-                m_cond_reqempty.wait(lock);
+                // std::unique_lock<std::mutex> lock(m_mutex);
+                // m_cond_reqempty.wait(lock);
+                // if there is still no request, then give up CPU
+                if (m_req == 0) {
+                    sched_yield();
+                }
             }
             if (m_shutdown) {
                 return;
@@ -347,6 +715,7 @@ namespace kvadi {
             nr_changed_fds = select(m_efd + 1, &rfds, NULL, NULL, &timeout);
             if (nr_changed_fds == 1 || nr_changed_fds == 0) {
                 // get event count
+                // fprintf(stderr, "m_req %llu m_processed %llu\r\n", m_req.load(), m_processed.load());
                 read_s = read(m_efd, &eftd_ctx, sizeof(unsigned long long));
                 if (read_s != sizeof(unsigned long long)) {
                     fprintf(stderr, "Internal error: fail to read from eventfd\n");
@@ -373,6 +742,7 @@ namespace kvadi {
         m_iter_close = 0;
         m_iter_next = 0;
         m_req = 0;
+        m_init_status = KV_SUCCESS;
 
         // inherit this from top level device config
         m_is_polling = m_dev->is_polling();
@@ -381,27 +751,49 @@ namespace kvadi {
         std::string path = m_dev->get_devpath();
         memcpy(buff, path.data(), path.size());
         m_fd = open(buff, O_RDWR);
+
         if (m_fd < 0) {
+            m_ready = false;
+            if (errno == ENOENT) {
+                m_init_status = KV_ERR_DEV_NOT_EXIST;
+            } else if (errno == EACCES) {
+                m_init_status = KV_ERR_PERMISSION;
+            }
+            return;
+        }
+
+        if (!is_kvssd(m_fd)) {
+            m_init_status = KV_ERR_SYS_IO;
+            close(m_fd);
+            m_fd = -1;
             m_ready = false;
             return;
         }
+
         m_nsid = ioctl(m_fd, NVME_IOCTL_ID);
         if (m_nsid == (unsigned) -1) {
+            m_init_status = KV_ERR_DEV_INIT;
             close(m_fd);
+            m_fd = -1;
             m_ready = false;
             return;
         }
         m_efd = eventfd(0,0);
-        if (m_nsid < 0) {
+        if (m_efd < 0) {
+            m_init_status = KV_ERR_DEV_INIT;
             close(m_fd);
+            m_fd = -1;
             m_ready = false;
             return;
         }
         aioctx.eventfd = m_efd;
         aioctx.ctxid = 0;
         if (ioctl(m_fd, NVME_IOCTL_SET_AIOCTX, &aioctx) < 0) {
+            m_init_status = KV_ERR_DEV_INIT;
             close(m_efd);
+            m_efd = -1;
             close(m_fd);
+            m_fd = -1;
             m_ready = false;
             return;
         }
@@ -413,13 +805,14 @@ namespace kvadi {
             m_interrupt_thread = std::thread(&kv_linux_kernel::kv_observer, this);
         }
         m_init = true;
+        m_init_status = KV_SUCCESS;
     }
 
     kv_linux_kernel::~kv_linux_kernel() {
 
         m_shutdown = true;
         // notify observer thread to shutdown
-        m_cond_reqempty.notify_one();
+        // m_cond_reqempty.notify_one();
 
         if (m_init) {
             if (!m_is_polling && m_interrupt_thread.joinable()) {
@@ -445,7 +838,7 @@ namespace kvadi {
     kv_result kv_linux_kernel::kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) {
         struct nvme_passthru_kv_cmd cmd;
         uint8_t dev_option = 0;
-        if (!m_ready) return KV_ERR_SYS_IO;
+        if (!m_ready) return KV_ERR_DEV_INIT;
         switch(option) {
             case KV_STORE_OPT_COMPRESS:
                 dev_option = 1;
@@ -479,14 +872,14 @@ namespace kvadi {
         }
         m_write++;
         m_req++;
-        m_cond_reqempty.notify_one();
+        // m_cond_reqempty.notify_one();
         return KV_SUCCESS;
     }
 
     kv_result kv_linux_kernel::kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx) {
         struct nvme_passthru_kv_cmd cmd;
         uint8_t dev_option = 0;
-        if (!m_ready) return KV_ERR_SYS_IO;
+        if (!m_ready) return KV_ERR_DEV_INIT;
 
         switch(option) {
             case KV_RETRIEVE_OPT_DECOMPRESS:
@@ -502,7 +895,7 @@ namespace kvadi {
         cmd.cdw4 = dev_option;
         cmd.cdw5 = value->offset;
         cmd.data_addr =(__u64)value->value;
-        //Actual buffer size, was value->value_size is being  returned after the call.
+        //Actual buffer size, was value->actual_value_size is being  returned after the call.
         cmd.data_length = value->length;
         cmd.key_length = key->length;
         if (key->length > KVCMD_INLINE_KEY_MAX) {
@@ -519,22 +912,56 @@ namespace kvadi {
         }
         m_read++;
         m_req++;
-        m_cond_reqempty.notify_one();
+        // m_cond_reqempty.notify_one();
         return KV_SUCCESS;
     }
 
 
-    kv_result kv_linux_kernel::kv_exist(const kv_key *key, uint32_t &keycount, uint8_t *buffers, uint32_t &buffer_size, void *ioctx) {
-        return KV_ERR_SYS_IO;
+    kv_result kv_linux_kernel::kv_exist(const kv_key *key, uint32_t keycount, uint8_t *buffers, uint32_t &buffer_size, void *ioctx) {
+        if (!m_ready) return KV_ERR_DEV_INIT;
+
+        // currently only support checking one key
+        if (keycount != 1 || key == NULL || key->key == NULL) {
+            return KV_ERR_PARAM_INVALID;
+        }
+
+        // only deal with first key
+        uint32_t key_len = (key + 0)->length;
+
+        struct nvme_passthru_kv_cmd cmd;
+        memset(&cmd, 0, sizeof (struct nvme_passthru_kv_cmd));
+        cmd.opcode = nvme_cmd_kv_exist;
+        cmd.nsid = m_nsid;
+        cmd.cdw3 = 0;
+
+        cmd.key_length = key_len;
+        cmd.cdw11 = key->length - 1;
+        cmd.cdw10 = 0;
+        if (key_len > KVCMD_INLINE_KEY_MAX) {
+            cmd.key_addr = (__u64)key->key;
+        } else {
+            memcpy(cmd.key, key->key, key_len);
+        }
+        cmd.reqid = (__u64)ioctx;
+        cmd.ctxid = m_ctxid;
+    
+        if (ioctl(m_fd, NVME_IOCTL_AIO_CMD, &cmd) < 0) {
+            return KV_ERR_SYS_IO;
+        }
+
+        m_req++;
+        // m_cond_reqempty.notify_one();
+        return KV_SUCCESS;
     }
+    
 
     kv_result kv_linux_kernel::kv_purge(kv_purge_option option, void *ioctx) {
-        return KV_ERR_SYS_IO;
+        return KV_ERR_DD_UNSUPPORTED_CMD;
     }
 
     kv_result kv_linux_kernel::kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) {
         struct nvme_passthru_kv_cmd cmd;
-        if (!m_ready) return KV_ERR_SYS_IO;
+        if (!m_ready) return KV_ERR_DEV_INIT;
 
         memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
         cmd.opcode = nvme_cmd_kv_delete;
@@ -553,7 +980,7 @@ namespace kvadi {
         }
         m_delete++;
         m_req++;
-        m_cond_reqempty.notify_one();
+        // m_cond_reqempty.notify_one();
         return KV_SUCCESS;
     }
 
@@ -561,13 +988,13 @@ namespace kvadi {
     kv_result kv_linux_kernel::kv_open_iterator(const kv_iterator_option opt, const kv_group_condition *cond, bool_t keylen_fixed, kv_iterator_handle *iter_hdl, void *ioctx) {
 
         if (cond == NULL || iter_hdl == NULL || cond == NULL) {
-            return KV_ERR_PARAM_NULL;
+            return KV_ERR_PARAM_INVALID;
         }
 
         (*iter_hdl) = new _kv_iterator_handle();
 
         struct nvme_passthru_kv_cmd cmd;
-        if (!m_ready) return KV_ERR_SYS_IO;
+        if (!m_ready) return KV_ERR_DEV_INIT;
         memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
         uint8_t dev_option =  KV_ITERATOR_OPT_KEY; // 0x00 < [DEFAULT] iterator command gets only key entri
         switch(opt){
@@ -578,6 +1005,7 @@ namespace kvadi {
                 ///< [DEFAULT] iterator command gets only key entries without values
                 dev_option = KV_ITERATOR_OPT_KEY;
         }
+        (void) dev_option;
 
         cmd.opcode = nvme_cmd_kv_iter_req;
         cmd.nsid = m_nsid;
@@ -598,14 +1026,14 @@ namespace kvadi {
 
         m_iter_open++;
         m_req++;
-        m_cond_reqempty.notify_one();
+        // m_cond_reqempty.notify_one();
         return KV_SUCCESS;
     }
 
     kv_result kv_linux_kernel::kv_close_iterator(kv_iterator_handle iter_hdl, void *ioctx) {
 
         struct nvme_passthru_kv_cmd cmd;
-        if (!m_ready) return KV_ERR_SYS_IO;
+        if (!m_ready) return KV_ERR_DEV_INIT;
         memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
         cmd.opcode = nvme_cmd_kv_iter_req;
         cmd.nsid = m_nsid;
@@ -625,19 +1053,20 @@ namespace kvadi {
         } // rest of all are Vendor specific error (SCT x3)
         m_iter_close++;
         m_req++;
-        m_cond_reqempty.notify_one();
+        // m_cond_reqempty.notify_one();
         return KV_SUCCESS;
     }
 
-    // TODO XXX
     kv_result kv_linux_kernel::kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, void *ioctx) {
         struct nvme_passthru_kv_cmd cmd;
-        if (!m_ready) return KV_ERR_SYS_IO;
+        if (!m_ready) return KV_ERR_DEV_INIT;
         memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
 
         cmd.opcode = nvme_cmd_kv_iter_read;
         cmd.nsid = m_nsid;
-        cmd.cdw4 = 0; // fixed key length
+        // key space id set to namespace id for now
+        cmd.cdw3 = m_nsid;
+        cmd.cdw4 = 0;
         cmd.cdw5 = iter_hdl->id; // Iterator handle
         cmd.data_addr = (__u64)iter_list->it_list;
         cmd.data_length = iter_list->size;
@@ -651,14 +1080,13 @@ namespace kvadi {
         } // rest of all are Vendor specific error (SCT x03)
         m_iter_next++;
         m_req++;
-        m_cond_reqempty.notify_one();
+        // m_cond_reqempty.notify_one();
         return KV_SUCCESS;
     }
 
-    // TODO XXX
     kv_result kv_linux_kernel::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key, kv_value *value, void *ioctx) {
         struct nvme_passthru_kv_cmd cmd;
-        if (!m_ready) return KV_ERR_SYS_IO;
+        if (!m_ready) return KV_ERR_DEV_INIT;
         memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
 
         cmd.opcode = nvme_cmd_kv_iter_read;
@@ -677,21 +1105,103 @@ namespace kvadi {
         } // rest of all are Vendor specific error (SCT x03)
         m_iter_next++;
         m_req++;
-        m_cond_reqempty.notify_one();
+        // m_cond_reqempty.notify_one();
         return KV_SUCCESS;
     }
 
     kv_result kv_linux_kernel::kv_list_iterators(kv_iterator *iter_list, uint32_t *count, void *ioctx) {
-        return KV_ERR_SYS_IO;
+        // fprintf(stderr, "kv_list_iterators not supported yet\n");
+        return KV_ERR_DD_UNSUPPORTED_CMD;
     }
 
     kv_result kv_linux_kernel::kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) {
-        return KV_ERR_SYS_IO;
+        // fprintf(stderr, "kv_delete_group not supported yet\n");
+        return KV_ERR_DD_UNSUPPORTED_CMD;
     }
 
-    // needs update how to get physical space information from real device
-    uint64_t kv_linux_kernel::get_total_capacity() { return 1024*1024*1024;  }
-    uint64_t kv_linux_kernel::get_available() { return 1024*1024*1024; }
+    kv_result kv_linux_kernel::get_init_status() {
+        return m_init_status;
+    }
 
+    typedef struct ns_capacity_t {
+        uint64_t capacity;
+        uint64_t available;
+        float utilization;
+    } ns_capacity_t;
+
+
+    static bool identify_ns_nvme(int fd, int nsid, ns_capacity_t *cap)
+    {
+
+        struct nvme_admin_cmd cmd;
+        memset(&cmd, 0, sizeof(cmd));
+        struct nvme_id_ns idnsbuf;
+        memset(&idnsbuf, 0, sizeof(idnsbuf));
+        cmd.opcode = 0x06; //nvme_admin_identify;
+        cmd.addr = (uint64_t) &idnsbuf;
+        cmd.nsid = nsid;
+        cmd.cdw10 = 0;
+        cmd.data_len = sizeof(idnsbuf);
+
+        int ret = ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd);
+        if (ret != 0) {
+            return false;
+        }
+    
+        int sector_size = (int) pow(2, idnsbuf.lbaf[0].ds);
+        cap->capacity = idnsbuf.nsze * sector_size;
+        cap->utilization = idnsbuf.nuse;
+        cap->available = 1.0 * cap->capacity * (1.0 - 1.0 * idnsbuf.nuse/100.0/100.0);
+
+        // printf("sector size %dB\n", sector_size);
+        // printf("capacity %lluB\n", cap->capacity);
+        // printf("available %lluB\n", cap->available);
+        // printf("utilization %.2f\%\n", cap->utilization/100.0);
+        // can I also get the type of device info " KV or Block"??
+
+        return true;
+    }
+    
+    kv_result kv_linux_kernel::get_total_capacity(uint64_t *capacity) {
+        //Identify namespace
+        ns_capacity_t cap;
+        if (!identify_ns_nvme(m_fd, m_nsid, &cap)) {
+            return KV_ERR_SYS_IO;
+        }
+        *capacity = cap.capacity;
+        return KV_SUCCESS;
+    }
+
+    kv_result kv_linux_kernel::get_available(uint64_t *available) {
+        //Identify namespace
+        ns_capacity_t cap;
+        if (!identify_ns_nvme(m_fd, m_nsid, &cap)) {
+            return KV_ERR_SYS_IO;
+        }
+        *available = cap.available;
+
+        return KV_SUCCESS;
+    }
+
+    uint64_t kv_linux_kernel::get_total_capacity() {
+        uint64_t capacity = 0;
+        int i = 0;
+        kv_result ret = get_total_capacity(&capacity);
+        while (ret != KV_SUCCESS && i < 5) {
+            ret = get_total_capacity(&capacity);
+            i++;
+        }
+        return capacity;
+    }
+    uint64_t kv_linux_kernel::get_available() {
+        uint64_t available = 0;
+        int i = 0;
+        kv_result ret = get_available(&available);
+        while (ret != KV_SUCCESS && i < 5) {
+            ret = get_available(&available);
+            i++;
+        }
+        return available;
+    }
 
 } // end of namespace

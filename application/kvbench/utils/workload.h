@@ -13,7 +13,7 @@ struct latency_stat {
   uint32_t *samples;
   spin_t lock;
 };
-
+/*
 enum Operations  {
   OP_INSERT,
   OP_UPDATE,
@@ -23,14 +23,14 @@ enum Operations  {
   OP_ITER_CLOSE,
   OP_ITER_NEXT
 };
-
+*/
 typedef struct IoContext {
   int op;
   void *key;
-  int keylength;
+  uint8_t keylength;
   void *value;
-  int valuelength;
-  int freebuf;
+  uint32_t valuelength;
+  //int freebuf;
   int result;
   int status;
   void *private1;

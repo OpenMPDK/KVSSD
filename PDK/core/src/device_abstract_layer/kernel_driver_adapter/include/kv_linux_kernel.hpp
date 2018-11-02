@@ -54,7 +54,7 @@ public:
     // basic operations
     kv_result kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx);
     kv_result kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx);
-    kv_result kv_exist(const kv_key *key, uint32_t &keycount, uint8_t *value, uint32_t &valuesize, void *ioctx);
+    kv_result kv_exist(const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx);
     kv_result kv_purge(kv_purge_option option, void *ioctx);
     kv_result kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx);
 
@@ -66,8 +66,11 @@ public:
     kv_result kv_list_iterators(kv_iterator *iter_list, uint32_t *count, void *ioctx);
     kv_result kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx);
 
+    // synchronous admin call
     uint64_t get_total_capacity();
     uint64_t get_available();
+    kv_result get_total_capacity(uint64_t *capacity);
+    kv_result get_available(uint64_t *available);
 
     // get current # of commands pending
     // this is global commands pending, not per queue level
@@ -78,10 +81,15 @@ public:
 
     // for operating device in polling mode
     kv_result set_interrupt_handler(const kv_interrupt_handler int_hdl);
+    kv_interrupt_handler get_interrupt_handler();
+
     kv_result poll_completion(uint32_t timeout_usec, uint32_t *num_events);
 
     // for operating devices in interrupt mode
     kv_result start_service(uint32_t timeout_usec, uint32_t *num_events);
+
+    // get initialization status
+    kv_result get_init_status();
 
 private:
     kv_result check_ioevents(unsigned long long eftd_ctx, uint32_t *num_events);
@@ -133,6 +141,9 @@ private:
     // Current usage is to call this when devices are operated in
     // interrupt mode.
     kv_interrupt_handler m_interrupt_handler;
+
+    // init status 
+    kv_result m_init_status;
 };
 
 

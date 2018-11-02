@@ -53,14 +53,15 @@
 #include <pthread.h>
 
 //Constants
+/*
 #define KV_ALIGNMENT_UNIT 64
-//#define KV_MIN_VALUE_LEN 64
+#define KV_MIN_VALUE_LEN 64
 #define KV_MAX_STORE_VALUE_LEN (28*1024) //28KB
-//#define KV_MAX_VALUE_LEN (2024*1024) //2MB
+#define KV_MAX_VALUE_LEN (2024*1024) //2MB
 #define KV_MAX_TOTAL_VALUE_LEN (2ull*1024*1024*1024) //2GB
-//#define KV_MIN_KEY_LEN 16
+#define KV_MIN_KEY_LEN 16
 #define KV_MAX_KEY_LEN 255
-
+*/
 #define KV_SDK_MAX_ITERATE_READ_LEN (32*1024) //32KB
 #define KV_SDK_MIN_ITERATE_READ_LEN (32*1024) //32KB
 
@@ -114,7 +115,6 @@ enum kv_slab_mm_alloc_policy {
 /**
  * @brief options used for store operation
  */
-#if 0
 enum kv_store_option {		
 	KV_STORE_DEFAULT = 0x00,		/**< [DEFAULT] storing key value pair(or overwriting given value if key exists) */
 	KV_STORE_COMPRESSION = 0x01,		/**< compressing value before writing it to the storage */
@@ -138,7 +138,7 @@ enum kv_delete_option {
 	KV_DELETE_CHECK_IDEMPOTENT = 0x01,	/**<  check whether the key being deleted exists in KV SSD */
 	KV_DELETE_LARGE_VALUE = 0x02,		/**<  (for stellus large value delete)*/
 };		
-#endif		
+		
 /**
  * @brief options used for append operation
  */
@@ -149,11 +149,10 @@ enum kv_append_option {
 /**
  * @brief options used for exist operation
  */
-#if 0
 enum kv_exist_option {		
 	KV_EXIST_DEFAULT = 0x00,		/**<  [DEFAULT] default operaton for command */ 
 };		
-#endif		
+		
 /**
  * @brief options used for iterate_request operation
  */
@@ -180,7 +179,6 @@ enum kv_iterate_read_option {
 /**
  * @brief options used for store operation
  */
-#if 0
 enum kv_result {		
 	KV_SUCCESS = 0,						/**<  successful */
 
@@ -229,8 +227,7 @@ enum kv_result {
         KV_ERR_BUFFER = 0x301,                                  /**<  not enough buffer(for retrieve, exist, iterate) */
         KV_ERR_DECOMPRESSION = 0x302,                           /**<  retrieveing uncompressed value with KV_RETRIEVE_DECOMPRESSION option */
 	KV_ERR_IO = 0x303,					/**<  SDK operation error (remained type for compatibility) */
-};
-#endif
+};		
 #define KV_ERR_INVALID_VALUE (UINT64_MAX)			/**<  error in total size / waf / used size */
 #define KV_INVALID_ITERATE_HANDLE (0)			/**<  error in invalid iterate handle */
 
@@ -281,7 +278,6 @@ typedef struct {
 /**
  * @brief A key consists of a pointer and its length
  */
-#if 0
 typedef struct {
 	void *key;			/**< a pointer to a key */
 	uint16_t length;		/**< key length in byte unit */
@@ -293,10 +289,10 @@ typedef struct {
 typedef struct {
 	void *value;			/**< buffer address for value */
 	uint32_t length;		/**< value buffer size in byte unit */
-  //uint32_t value_size;
+  uint32_t actual_value_size;
 	uint32_t offset; 		/**< offset for value */
 } kv_value;
-#endif
+
 /**
  * @brief A structure which contains I/O option, and callback function(for async I/O)
  */

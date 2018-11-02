@@ -90,7 +90,7 @@ public:
     // basic operations
     kv_result kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) { return KV_SUCCESS; }
     kv_result kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx) { return KV_SUCCESS; }
-    kv_result kv_exist(const kv_key *key, uint32_t &keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) { return KV_SUCCESS; }
+    kv_result kv_exist(const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) { return KV_SUCCESS; }
     kv_result kv_purge(kv_purge_option option, void *ioctx) { return KV_SUCCESS; }
     kv_result kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) { return KV_SUCCESS; }
 
@@ -103,10 +103,11 @@ public:
     kv_result kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) { return KV_SUCCESS; }
 
     kv_result set_interrupt_handler(const kv_interrupt_handler int_hdl) { return KV_SUCCESS; }
+    kv_interrupt_handler get_interrupt_handler() { return NULL; }
     kv_result poll_completion(uint32_t timeout_usec, uint32_t *num_events) { return KV_SUCCESS; }
 
-    uint64_t get_total_capacity() { return 0; }
-    uint64_t get_available() { return 0; }
+    uint64_t get_total_capacity() { return -1; }
+    uint64_t get_available() { return -1; }
 };
 
 class kv_emulator : public kv_device_api{
@@ -117,7 +118,7 @@ public:
     // basic operations
     kv_result kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx);
     kv_result kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx);
-    kv_result kv_exist(const kv_key *key, uint32_t &keycount, uint8_t *value, uint32_t &valuesize, void *ioctx);
+    kv_result kv_exist(const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx);
     kv_result kv_purge(kv_purge_option option, void *ioctx);
     kv_result kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx);
 
@@ -135,6 +136,7 @@ public:
     // these do nothing, but to conform API, emulator have queue level operations for
     // device behavior simulation.
     kv_result set_interrupt_handler(const kv_interrupt_handler int_hdl);
+    kv_interrupt_handler get_interrupt_handler();
     kv_result poll_completion(uint32_t timeout_usec, uint32_t *num_events);
 
 private:
@@ -156,6 +158,8 @@ private:
 
     // use IOPS model or not
     bool_t m_use_iops_model;
+
+    kv_interrupt_handler m_interrupt_handler;
 };
 
 

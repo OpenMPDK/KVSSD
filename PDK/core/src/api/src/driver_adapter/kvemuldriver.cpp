@@ -46,7 +46,7 @@
 #define MAX_POOLSIZE 10240
 #define use_pool
 
-KvEmulator::KvEmulator(kv_device_priv *dev,_on_iocomplete user_io_complete_):
+KvEmulator::KvEmulator(kv_device_priv *dev, kvs_callback_function user_io_complete_):
   KvsDriver(dev, user_io_complete_), devH(0),nsH(0), sqH(0), cqH(0), int_handler(0)
 {
   queuedepth = 64 * 2;
@@ -63,62 +63,66 @@ void interrupt_func_emu(void *data, int number) {
 void on_io_complete(kv_io_context *context){
 
   if((context->retcode != KV_SUCCESS) && (context->retcode != KV_ERR_KEY_NOT_EXIST)
-     && context->retcode != KV_WRN_MORE && (context->retcode != KV_ERR_ITERATOR_END)) {
+     && context->retcode != KV_WRN_MORE/* && (context->retcode != KV_ERR_ITERATOR_END)*/) {
     const char *cmd = (context->opcode == KV_OPC_GET)? "GET": ((context->opcode == KV_OPC_STORE)? "PUT": (context->opcode == KV_OPC_DELETE)? "DEL":"OTHER");
     fprintf(stderr, "%s failed with error 0x%x\n", cmd, context->retcode);
+  } else {
+    //fprintf(stdout, "emul finish key %s\n", context->key->key);
   }
   
   //const char *cmd = (context->opcode == KV_OPC_GET)? "GET": ((context->opcode == KV_OPC_STORE)? "PUT": (context->opcode == KV_OPC_DELETE)? "DEL":"OTHER");
 
   KvEmulator::kv_emul_context *ctx = (KvEmulator::kv_emul_context*)context->private_data;
-  kv_iocb *iocb = &ctx->iocb;
+  kvs_callback_context *iocb = &ctx->iocb;
   const auto owner = ctx->owner;
   
-  iocb->result = context->retcode;
-
-  if(context->opcode == KV_OPC_OPEN_ITERATOR) {
-    kvs_iterator_handle iterh = (kvs_iterator_handle)iocb->private1;
-    iterh->iterh_adi = context->result.hiter;
-    if(owner->int_handler != 0) {
-      owner->done = 1;
-      owner->done_cond.notify_one();
-    }
-  }
+  iocb->result = (kvs_result)context->retcode;
+  if(context->opcode == KV_OPC_GET)
+    iocb->value->actual_value_size = context->value->actual_value_size;
   
-  if(context->opcode == KV_OPC_CLOSE_ITERATOR) {
-    if(owner->int_handler != 0) {
-      owner->done = 1;
-      owner->done_cond.notify_one();
+  if(ctx->syncio) {
+    if(context->opcode == KV_OPC_OPEN_ITERATOR) {
+      kvs_iterator_handle iterh = (kvs_iterator_handle)iocb->private1;
+      iterh->iterh_adi = context->result.hiter;
     }
-  }
-
-  //fprintf(stdout, "op %d, key %s\n", iocb->opcode, ctx->key->key);
-  if(context->opcode != KV_OPC_OPEN_ITERATOR && context->opcode != KV_OPC_CLOSE_ITERATOR) {
-    if(ctx->on_complete && iocb)
-      ctx->on_complete(iocb);
+    if(owner->int_handler != 0) {
+      std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
+      ctx->done_sync = 1;
+      ctx->done_cond_sync.notify_one();
+      lock_s.unlock();
+    }
+  } else {
+    if(context->opcode != KV_OPC_OPEN_ITERATOR && context->opcode != KV_OPC_CLOSE_ITERATOR) {
+      if(ctx->on_complete && iocb)
+	ctx->on_complete(iocb);
+    }
   }
   
 #if defined use_pool
   //const auto owner = ctx->owner;
-  
-  std::unique_lock<std::mutex> lock(owner->lock);
-  if(ctx->key)
-    owner->kv_key_pool.push(ctx->key);
-  if(ctx->value)
-    owner->kv_value_pool.push(ctx->value);
-
-  if(ctx->free_ctx) {
+  if(!ctx->syncio) {
+    std::unique_lock<std::mutex> lock(owner->lock);
+    if(ctx->key) {
+      owner->kv_key_pool.push(ctx->key);
+    }
+    if(ctx->value) {
+      owner->kv_value_pool.push(ctx->value);
+    }
+  //  if(!ctx->syncio) {
     memset(ctx, 0, sizeof(KvEmulator::kv_emul_context)); 
     owner->kv_ctx_pool.push(ctx);
+    //free(ctx);
+    //ctx = NULL;
+    //}
+    lock.unlock();
   }
-  lock.unlock();
 #else
-  if(ctx->free_ctx) {
+  if(!ctx->syncio) {
     free(ctx);
     ctx = NULL;
   }
-
 #endif
+  
 }
 
 int KvEmulator::create_queue(int qdepth, uint16_t qtype, kv_queue_handle *handle, int cqid, int is_polling){
@@ -181,9 +185,8 @@ int32_t KvEmulator::init(const char* devpath, const char* configfile, int queued
   return ret;
 }
 
-KvEmulator::kv_emul_context* KvEmulator::prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, uint8_t option, void *private1, void *private2, bool syncio){
+KvEmulator::kv_emul_context* KvEmulator::prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, uint8_t option, void *private1, void *private2, bool syncio, kvs_callback_function cbfn){
 
-  validate_request(key, value);
 #if defined use_pool
   std::unique_lock<std::mutex> lock(this->lock);
   kv_emul_context *ctx = this->kv_ctx_pool.front();
@@ -192,39 +195,39 @@ KvEmulator::kv_emul_context* KvEmulator::prep_io_context(int opcode, int contid,
 #else
   kv_emul_context *ctx = (kv_emul_context *)calloc(1, sizeof(kv_emul_context));
 #endif
-  ctx->on_complete = this->user_io_complete;
+  
+  //kv_emul_context *ctx = (kv_emul_context *)calloc(1, sizeof(kv_emul_context));
+  
+  ctx->on_complete = cbfn;
   ctx->iocb.opcode = opcode;
-  ctx->iocb.contid = contid;
+  //ctx->iocb.contid = contid;
   if(key) {
-    ctx->iocb.key = key->key;
-    ctx->iocb.keysize = key->length;
-  } else {
+    ctx->iocb.key = (kvs_key*)key;
+   } else {
     ctx->iocb.key = 0;
-    ctx->iocb.keysize = 0;
   }
-  ctx->iocb.option = option;
+  //ctx->iocb.option = option;
   if(value) {
-    ctx->iocb.value = value->value;
-    ctx->iocb.valuesize = value->length;
-    ctx->iocb.value_offset = value->offset;
+    ctx->iocb.value = (kvs_value*)value;
   } else {
     ctx->iocb.value = 0;
-    ctx->iocb.valuesize = 0;
-    ctx->iocb.value_offset = 0;
   }
 
   ctx->iocb.private1 = private1;
   ctx->iocb.private2 = private2;
   ctx->owner = this;
 
-  ctx->free_ctx = syncio ? 0: 1;
+  //ctx->free_ctx = syncio ? 0: 1;
+  ctx->syncio = syncio;
+  std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
+  ctx->done_sync = 0;
   return ctx;
 }
 
 /* MAIN ENTRY POINT */
-int32_t KvEmulator::store_tuple(int contid, const kvs_key *key, const kvs_value *value, uint8_t option, void *private1, void *private2, bool syncio) {
+int32_t KvEmulator::store_tuple(int contid, const kvs_key *key, const kvs_value *value, uint8_t option, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
 
-  auto ctx = prep_io_context(IOCB_ASYNC_PUT_CMD, contid, key, value, option, private1, private2, syncio);
+  auto ctx = prep_io_context(IOCB_ASYNC_PUT_CMD, contid, key, value, option, private1, private2, syncio, /*this->user_io_complete*/cbfn);
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
 #if defined use_pool
   std::unique_lock<std::mutex> lock(this->lock);
@@ -233,7 +236,7 @@ int32_t KvEmulator::store_tuple(int contid, const kvs_key *key, const kvs_value 
   kv_value *value_adi = this->kv_value_pool.front();
   this->kv_value_pool.pop();
   lock.unlock();
-  
+
   ctx->key = key_adi;
   ctx->value = value_adi;
   
@@ -252,19 +255,27 @@ int32_t KvEmulator::store_tuple(int contid, const kvs_key *key, const kvs_value 
 #endif
   
   if(syncio && ret == 0) {
-    uint32_t processed = 0;
-    do{
-      ret = kv_poll_completion(this->cqH, 0, &processed);
-    } while (processed == 0);
-    if (ret != KV_SUCCESS && ret != KV_WRN_MORE)
-      //fprintf(stdout, "sync io polling failed\n");
+    std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
+    while(ctx->done_sync == 0)
+      ctx->done_cond_sync.wait(lock_s);
+    lock_s.unlock();    
     if (syncio )ret = ctx->iocb.result;
 
 #if defined use_pool
+    /*
     std::unique_lock<std::mutex> lock(this->lock);
     memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
     this->kv_ctx_pool.push(ctx);
     lock.unlock();
+    */
+    std::unique_lock<std::mutex> lock(this->lock);    
+    this->kv_key_pool.push(key_adi);
+    this->kv_value_pool.push(value_adi);
+    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+    this->kv_ctx_pool.push(ctx);
+    
+    //free(ctx);
+    //ctx = NULL;
 #else
     free(ctx);
     ctx = NULL;
@@ -276,9 +287,9 @@ int32_t KvEmulator::store_tuple(int contid, const kvs_key *key, const kvs_value 
 }
 
 
-int32_t KvEmulator::retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, uint8_t option, void *private1, void *private2, bool syncio) {
+int32_t KvEmulator::retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, uint8_t option, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
 
-  auto ctx = prep_io_context(IOCB_ASYNC_GET_CMD, contid, key, value, option, private1, private2, syncio);
+  auto ctx = prep_io_context(IOCB_ASYNC_GET_CMD, contid, key, value, option, private1, private2, syncio, cbfn);
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
 
 #if defined use_pool
@@ -306,19 +317,31 @@ int32_t KvEmulator::retrieve_tuple(int contid, const kvs_key *key, kvs_value *va
 #endif
   
   if(syncio && ret == 0) {
-    uint32_t processed = 0;
-    do {
-      ret = kv_poll_completion(this->cqH, 0, &processed);
-    } while (processed == 0);
-    if (ret != KV_SUCCESS && ret != KV_WRN_MORE)
-      fprintf(stdout, "sync io polling failed\n");
-    if (syncio) ret = ctx->iocb.result;
+    std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
+    while(ctx->done_sync == 0)
+      ctx->done_cond_sync.wait(lock_s);
+    lock_s.unlock();
+    if (syncio) {
+      ret = ctx->iocb.result;
+      value->actual_value_size = ctx->iocb.value->actual_value_size;
+    }
     
 #if defined use_pool
+    /*
     std::unique_lock<std::mutex> lock(this->lock);
     memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
     this->kv_ctx_pool.push(ctx);
     lock.unlock();
+    */
+
+    std::unique_lock<std::mutex> lock(this->lock);
+    this->kv_key_pool.push(key_adi);
+    this->kv_value_pool.push(value_adi);
+    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+    this->kv_ctx_pool.push(ctx);
+    
+    //free(ctx);
+    //ctx = NULL;
 #else
     free(ctx);
     ctx = NULL;
@@ -327,10 +350,11 @@ int32_t KvEmulator::retrieve_tuple(int contid, const kvs_key *key, kvs_value *va
   return ret;
 }
 
-int32_t KvEmulator::delete_tuple(int contid, const kvs_key *key, uint8_t option, void *private1, void *private2, bool syncio) {
-  auto ctx = prep_io_context(IOCB_ASYNC_DEL_CMD, contid, key, NULL, option, private1, private2, syncio);
+int32_t KvEmulator::delete_tuple(int contid, const kvs_key *key, uint8_t option, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
+  auto ctx = prep_io_context(IOCB_ASYNC_DEL_CMD, contid, key, NULL, option, private1, private2, syncio, cbfn);
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
 #if defined use_pool
+  std::unique_lock<std::mutex> lock(this->lock);
   kv_key *key_adi = this->kv_key_pool.front();
   this->kv_key_pool.pop();
   lock.unlock();
@@ -348,19 +372,25 @@ int32_t KvEmulator::delete_tuple(int contid, const kvs_key *key, uint8_t option,
 #endif
   
   if(syncio && ret == 0) {
-    uint32_t processed = 0;
-    do{
-      ret = kv_poll_completion(this->cqH, 0, &processed);
-    }while (processed == 0);
-    if (ret != KV_SUCCESS && ret != KV_WRN_MORE)
-      fprintf(stdout, "sync io polling failed\n");
+    std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
+    while(ctx->done_sync == 0)
+      ctx->done_cond_sync.wait(lock_s);
+    lock_s.unlock();
     if (syncio )ret = ctx->iocb.result;
 
 #if defined use_pool
+    /*
     std::unique_lock<std::mutex> lock(this->lock);
     memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
     this->kv_ctx_pool.push(ctx);
     lock.unlock();
+    */
+    std::unique_lock<std::mutex> lock(this->lock);
+    this->kv_key_pool.push(key_adi);
+    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+    this->kv_ctx_pool.push(ctx);
+    //free(ctx);
+    //ctx = NULL;
 #else
     free(ctx);
     ctx = NULL;
@@ -370,17 +400,56 @@ int32_t KvEmulator::delete_tuple(int contid, const kvs_key *key, uint8_t option,
   return ret;
 }
 
-int32_t KvEmulator::open_iterator(int contid,  uint8_t option, uint32_t bitmask,
+int32_t KvEmulator::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
+
+  auto ctx = prep_io_context(IOCB_ASYNC_CHECK_KEY_EXIST_CMD, contid, keys, NULL, 0, private1, private2, syncio, cbfn);
+  ctx->iocb.key_cnt = key_cnt;
+  ctx->iocb.result_buffer = result_buffer;
+  kv_postprocess_function f = {on_io_complete, (void*)ctx};
+
+  // no need for key_adi pool
+  ctx->key = NULL;
+  ctx->value = NULL;
+
+  int ret = kv_exist(this->sqH, this->nsH, (kv_key*)keys, key_cnt, buffer_size, result_buffer, &f);
+
+  if(syncio && ret == 0) {
+    std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
+    while(ctx->done_sync == 0)
+      ctx->done_cond_sync.wait(lock_s);
+    lock_s.unlock();
+    if (syncio )ret = ctx->iocb.result;
+    
+#if defined use_pool
+    std::unique_lock<std::mutex> lock(this->lock);
+    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+    this->kv_ctx_pool.push(ctx);
+#else
+    free(ctx);
+    ctx = NULL;
+#endif
+  }
+    
+  return 0;
+}
+
+int32_t KvEmulator::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_option option, uint32_t bitmask,
 				  uint32_t bit_pattern, kvs_iterator_handle *iter_hd) {
   
   int ret = 0;
   kvs_iterator_handle iterh = (kvs_iterator_handle)malloc(sizeof(struct _kvs_iterator_handle));
-  auto ctx = prep_io_context(IOCB_ASYNC_ITER_OPEN_CMD, 0, 0, 0, option, iterh, 0/*private1, private2*/, 1);
+  auto ctx = prep_io_context(IOCB_ASYNC_ITER_OPEN_CMD, 0, 0, 0, 0, iterh, 0/*private1, private2*/, TRUE, 0);
   kv_group_condition grp_cond = {bitmask, bit_pattern};
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
 
-  this->done = 0;
-  ret = kv_open_iterator(this->sqH, this->nsH, (option == KVS_ITERATOR_OPT_KEY ? KV_ITERATOR_OPT_KEY : KV_ITERATOR_OPT_KV), &grp_cond, &f);
+  kv_iterator_option option_adi;
+  //if(option.kvs_iterator_key) {
+  if(option.iter_type == KVS_ITERATOR_KEY) {
+    option_adi = KV_ITERATOR_OPT_KEY;
+  } else {
+    option_adi = KV_ITERATOR_OPT_KV;
+  }
+  ret = kv_open_iterator(this->sqH, this->nsH, /*option.kvs_iterator_opt_key ? KV_ITERATOR_OPT_KEY : KV_ITERATOR_OPT_KV*/option_adi, &grp_cond, &f);
 
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_open_iterator failed with error:  0x%X\n", ret);
@@ -393,18 +462,23 @@ int32_t KvEmulator::open_iterator(int contid,  uint8_t option, uint32_t bitmask,
       ret = kv_poll_completion(this->cqH, 0, &processed);
     } while (processed == 0);
   } else { // interrupt
-    std::unique_lock<std::mutex> lock(this->lock);
-    while(this->done == 0)
-      this->done_cond.wait(lock);
+    std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
+    while(ctx->done_sync == 0)
+      ctx->done_cond_sync.wait(lock_s);
+    lock_s.unlock();
   }
 
   ret = ctx->iocb.result;
   *iter_hd = iterh;
 #if defined use_pool
+  
   std::unique_lock<std::mutex> lock(this->lock);
   memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
   this->kv_ctx_pool.push(ctx);
   lock.unlock();
+  
+  //free(ctx);
+  //ctx = NULL;
 #else
   free(ctx);
   ctx = NULL;
@@ -416,10 +490,10 @@ int32_t KvEmulator::open_iterator(int contid,  uint8_t option, uint32_t bitmask,
 int32_t KvEmulator::close_iterator(int contid, kvs_iterator_handle hiter) {
 
   int ret = 0;
-  auto ctx = prep_io_context(IOCB_ASYNC_ITER_CLOSE_CMD, 0, 0, 0, 0, 0,0/*private1, private2*/, 1);
+  auto ctx = prep_io_context(IOCB_ASYNC_ITER_CLOSE_CMD, 0, 0, 0, 0, 0,0/*private1, private2*/, TRUE, 0);
 
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
-  this->done = 0;
+  //this->done = 0;
   ret = kv_close_iterator(this->sqH, this->nsH, hiter->iterh_adi, &f);
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_open_iterator failed with error:  0x%X\n", ret);
@@ -432,18 +506,23 @@ int32_t KvEmulator::close_iterator(int contid, kvs_iterator_handle hiter) {
       ret = kv_poll_completion(this->cqH, 0, &processed);
     } while (processed == 0);
   } else { // interrupt
-    std::unique_lock<std::mutex> lock(this->lock);
-    while(this->done == 0)
-      this->done_cond.wait(lock);
+    std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
+    while(ctx->done_sync == 0)
+      ctx->done_cond_sync.wait(lock_s);
+    lock_s.unlock();
   }
 
   if(hiter) free(hiter);
   
 #if defined use_pool
+  
   std::unique_lock<std::mutex> lock(this->lock);
   memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
   this->kv_ctx_pool.push(ctx);
   lock.unlock();
+  
+  //free(ctx);
+  //ctx = NULL;
 #else
   free(ctx);
   ctx = NULL;
@@ -452,10 +531,10 @@ int32_t KvEmulator::close_iterator(int contid, kvs_iterator_handle hiter) {
   return 0;
 }
 
-int32_t KvEmulator::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1, void *private2, bool syncio) {
+int32_t KvEmulator::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
 
   int ret = 0;
-  auto ctx = prep_io_context(IOCB_ASYNC_ITER_NEXT_CMD, 0, 0, 0, 0, private1, private2, syncio);
+  auto ctx = prep_io_context(IOCB_ASYNC_ITER_NEXT_CMD, 0, 0, 0, 0, private1, private2, syncio, cbfn);
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
 
   ret = kv_iterator_next(this->sqH, this->nsH, hiter->iterh_adi, (kv_iterator_list *)iter_list, &f);
@@ -465,17 +544,21 @@ int32_t KvEmulator::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *
   }
 
   if(syncio) {
-    uint32_t processed = 0;
-    do{
-      ret = kv_poll_completion(this->cqH, 0, &processed);
-    } while (processed == 0);
+    std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
+    while(ctx->done_sync == 0)
+      ctx->done_cond_sync.wait(lock_s);
+    lock_s.unlock();
     ret = ctx->iocb.result;
 
 #if defined use_pool
-    std::unique_lock<std::mutex> lock(this->lock);
+    
+    std::unique_lock<std::mutex> lock(ctx->lock_sync);
     memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
     this->kv_ctx_pool.push(ctx);
     lock.unlock();
+    
+    //free(ctx);
+    //ctx = NULL;
 #else
     free(ctx);
     ctx = NULL;
@@ -490,14 +573,42 @@ float KvEmulator::get_waf(){
   return 0;
 }
 
-int32_t KvEmulator::get_used_size(){
-  WRITE_WARNING("Emulator: get used size is not supported in emualtor\n");
+int32_t KvEmulator::get_device_info(kvs_device *dev_info) {
   return 0;
 }
 
-int64_t KvEmulator::get_total_size(){
-  WRITE_WARNING("Emulator: get total size is not supported in emualtor\n");
-  return 0;
+int32_t KvEmulator::get_used_size(int32_t *dev_util){
+
+  int ret = 0;
+  kv_device_stat *stat = (kv_device_stat*)malloc(sizeof(kv_device_stat));
+  ret = kv_get_device_stat(devH, stat);
+  if (ret) {
+    fprintf(stdout, "The host failed to communicate with the deivce: 0x%x", ret);
+    if(stat) free(stat);
+    exit(1);
+  }
+
+  *dev_util = stat->utilization;
+  if(stat) free(stat);
+
+  return ret;
+}
+
+int32_t KvEmulator::get_total_size(int64_t *dev_capa){
+  int ret = 0;
+  kv_device *devinfo = (kv_device *)malloc(sizeof(kv_device));
+  ret = kv_get_device_info(devH, devinfo);
+
+  if (ret) {
+    fprintf(stdout, "The host failed to communicate with the deivce: 0x%x", ret);
+    if(devinfo) free(devinfo);
+    exit(1);
+  }
+
+  *dev_capa = devinfo->capacity;
+  if(devinfo) free(devinfo);
+
+  return ret;
 }
 
 int32_t KvEmulator::process_completions(int max)
@@ -526,13 +637,13 @@ KvEmulator::~KvEmulator() {
     this->kv_value_pool.pop();
     delete p;
   }
-
+  
   while(!this->kv_ctx_pool.empty()) {
     auto p = this->kv_ctx_pool.front();
     this->kv_ctx_pool.pop();
     delete p;
   }
-
+  
   // shutdown device
   if(this->int_handler) {
     free(int_handler);

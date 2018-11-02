@@ -71,6 +71,7 @@ public:
     kv_config*& get_config();
 
     uint64_t get_capacity();
+    uint64_t get_available();
 
     // get current device #
     uint32_t get_devid();
@@ -196,6 +197,10 @@ public:
 
     std::string& get_devpath();
 
+    // get initialization status for any error
+    kv_result get_init_status();
+    void set_init_status(kv_result result);
+
     ~kv_device_internal();
 
 private:
@@ -207,7 +212,6 @@ private:
     static std::unordered_map<uint32_t, kv_device_internal *> s_global_device_list;
     static uint32_t s_next_devid;
 
-
     // private constructor
     kv_device_internal();
     kv_device_internal(kv_device_init_t *options);
@@ -218,6 +222,8 @@ private:
 
     // check if the device has been initialized
     bool_t m_initialized;
+
+    kv_result m_init_status;
 
     /// control if the namespace data should be saved across library use
     bool_t m_need_persisency;

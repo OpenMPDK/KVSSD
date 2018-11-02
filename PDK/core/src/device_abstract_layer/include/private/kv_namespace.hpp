@@ -65,7 +65,7 @@ public:
     // all these are sync IO, directly working with kvstore
     kv_result kv_purge(kv_purge_option option, void *ioctx);
     kv_result kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx);
-    kv_result kv_exist(const kv_key *key, uint32_t &keycount, uint8_t *value, uint32_t &valuesize, void *ioctx);
+    kv_result kv_exist(const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx);
     kv_result kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx);
     kv_result kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx);
 
@@ -76,6 +76,9 @@ public:
     kv_result kv_list_iterators(kv_iterator *kv_iters, uint32_t *iter_cnt, void *ioctx);
     kv_result kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx);
 
+    kv_result set_interrupt_handler(const kv_interrupt_handler int_hdl);
+    kv_interrupt_handler get_interrupt_handler();
+
     // get consumed bytes
     uint64_t get_consumed_space();
 
@@ -85,7 +88,16 @@ public:
     kv_device_api *get_kvstore();
 
     void swap_device(bool usedummy);
+
+    uint64_t get_total_capacity();
+    uint64_t get_available();
+
+    // get initialization status for any errors
+    kv_result get_init_status();
+
 private:
+    kv_result m_init_status;
+
     kv_namespace_internal();
 
     std::mutex m_mutex;

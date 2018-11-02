@@ -459,8 +459,7 @@ couchstore_error_t couchstore_save_documents(Db *db, Doc* const docs[], DocInfo 
       ctx->keylength = docs[i]->id.size;
       ctx->value = docs[i]->data.buf;
       ctx->valuelength = docs[i]->data.size;
-      ctx->op = OP_INSERT;
-      ctx->freebuf = 0;
+      //ctx->op = OP_INSERT;
       ctx->private1 = db;
       ctx->l_stat = db->l_write;
 
@@ -541,8 +540,7 @@ couchstore_error_t couchstore_open_document(Db *db,
     ctx->keylength = idlen;
     ctx->value = 0;
     ctx->valuelength = 0;
-    ctx->op = OP_GET;
-    ctx->freebuf = 0;
+    //ctx->op = OP_GET;
     ctx->private1 = db;
     ctx->l_stat = db->l_read;
 
@@ -594,8 +592,7 @@ couchstore_error_t couchstore_delete_document_kv(Db *db,sized_buf *key,
     ctx->keylength = key->size;
     ctx->value = 0;
     ctx->valuelength = 0;
-    ctx->op = OP_DEL;
-    ctx->freebuf = 0;
+    //ctx->op = OP_DEL;
     ctx->private1 = db;
     ctx->l_stat = db->l_delete;
 

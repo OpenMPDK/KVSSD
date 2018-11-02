@@ -1,6 +1,18 @@
 
 Release History
 
+---   v0.6.0
+   Revised KV API based on SNIA standard
+   KV API support for mutli-thread SYNC & ASYNC IOs
+   KV API to support latest KV SSD firmware
+   New KV API interface (device stat, exist, etc)
+   Bug fix
+   
+ * API for latest user space driver (UDD) is not supported in current release
+ * Only 'default' option is supported across all APIs due to KV SSD limitation
+ * Memory allocation for 'retrieve' operation should be aligned in 4B unit for latest Samsung KV SSD
+
+
 ---   v0.5.1
    KV API changes to align with SNIA standard
    KV API support for SYNC & ASYNC IOs

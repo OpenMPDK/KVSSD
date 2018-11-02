@@ -657,16 +657,18 @@ struct nvme_kv_store_command {
 	__u32			rsvd2;
 	union nvme_data_ptr	dptr; /* value dptr prp1,2 */
 	__le32			value_len; /* size in word */
-    __u8           key_len; /* 0 ~ 255 (key len -1) */
-    __u8           option;
-    __u16          rsvd3;
+    __u8            key_len; /* 0 ~ 255 (key len -1) */
+    __u8            option;
+    __u8            invalid_byte:2;
+    __u8            rsvd3:6;
+    __u8            rsvd4;
 	union {
 		struct {
 			char	key[16];
 		};
 		struct {
 			__le64	key_prp;
-			__u64	rsvd4;
+			__le64	key_prp2;
 		};
 	};
 };
@@ -681,16 +683,18 @@ struct nvme_kv_append_command {
 	__u32			rsvd2;
 	union nvme_data_ptr	dptr; /* value dptr prp1,2 */
 	__le32			value_len; /* size in word */
-    __u8           key_len; /* 0 ~ 255 (key len -1) */
-    __u8           option;
-    __u16          rsvd3;
+    __u8            key_len; /* 0 ~ 255 (key len -1) */
+    __u8            option;
+    __u8            invalid_byte:2;
+    __u8            rsvd3:6;
+    __u8            rsvd4;
 	union {
 		struct {
 			char	key[16];
 		};
 		struct {
 			__le64	key_prp;
-			__u64	rsvd4;
+			__le64	key_prp2;
 		};
 	};
 };
@@ -705,16 +709,16 @@ struct nvme_kv_retrieve_command {
 	__u32			rsvd2;
 	union nvme_data_ptr	dptr; /* value dptr prp1,2 */
 	__le32			value_len; /* size in word */
-    __u8           key_len; /* 0 ~ 255 (key len -1) */
-    __u8           option;
-    __u16          rsvd3;
+    __u8            key_len; /* 0 ~ 255 (key len -1) */
+    __u8            option;
+    __u16           rsvd3;
 	union {
 		struct {
 			char	key[16];
 		};
 		struct {
 			__le64	key_prp;
-			__u64	rsvd4;
+			__le64	key_prp2;
 		};
 	};
 };
@@ -738,7 +742,7 @@ struct nvme_kv_delete_command {
 		};
 		struct {
 			__le64	key_prp;
-			__u64	rsvd5;
+			__le64	key_prp2;
 		};
 	};
 };
@@ -791,7 +795,7 @@ struct nvme_kv_exist_command {
 		};
 		struct {
 			__le64	key_prp;
-			__u64	rsvd5;
+			__le64	key_prp2;
 		};
 	};
 };

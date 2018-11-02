@@ -21,6 +21,7 @@
 #include <linux/module.h>
 #include <linux/list_sort.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 #include <linux/types.h>
 #include <linux/pr.h>
 #include <linux/ptrace.h>
@@ -953,49 +954,62 @@ static bool check_add_for_single_cont_phyaddress(void __user *address, unsigned 
 	return true;
 }
 
-static int user_addr_npages(unsigned size)
+static int user_addr_npages(int offset, int size)
 {
-	unsigned count = DIV_ROUND_UP(size + PAGE_SIZE, PAGE_SIZE);
+	unsigned count = DIV_ROUND_UP(offset + size, PAGE_SIZE);
 	return count;
 }
 
-static struct aio_user_ctx *get_aio_user_ctx(void __user *addr, unsigned len)
+static struct aio_user_ctx *get_aio_user_ctx(void __user *addr, unsigned len, bool b_kernel)
 {
 	int offset = offset_in_page(addr);
 	int datalen = len;
-	int num_page = user_addr_npages(len);
+	int num_page = user_addr_npages(offset,len);
 	int size = 0;
 	struct aio_user_ctx  *user_ctx = NULL;
 	int mapped_pages = 0;
 	int i = 0;
+
 	size = sizeof (struct aio_user_ctx) + sizeof(__le64 *) * num_page
 			+ sizeof(struct scatterlist) * num_page -1;
 	/* need to keep user address to map to copy when complete request */
 	user_ctx = (struct aio_user_ctx *)kmalloc(size, GFP_KERNEL);
 	if (!user_ctx) {
-		return NULL;;
+		return NULL;
     }
 
+    user_ctx->nents = 0;
 	user_ctx->pages =(struct page **)user_ctx->data;
 	user_ctx->sg = (struct scatterlist *)(user_ctx->data + sizeof(__le64 *) * num_page);
+    if (b_kernel) {
+        struct page *page = NULL;
+        char *src_data = addr;
+        for(i = 0; i < num_page; i++) {
+            page = virt_to_page(src_data);
+            get_page(page);
+            user_ctx->pages[i] = page;
+            src_data += PAGE_SIZE;
+        }
 
-	mapped_pages = get_user_pages_fast((unsigned long)addr, num_page,
-										0, user_ctx->pages);
-	if (mapped_pages != num_page) {
-		user_ctx->nents = mapped_pages;
-		goto exit;
-	}
-	user_ctx->nents = num_page;
-	user_ctx->len = datalen;
-	sg_init_table(user_ctx->sg, num_page);
-	for(i = 0; i < num_page; i++) {
-		sg_set_page(&user_ctx->sg[i], user_ctx->pages[i],
-				min_t(unsigned, datalen, PAGE_SIZE - offset),
-				offset);
-		datalen -= (PAGE_SIZE - offset);
-		offset = 0;
-	}
-	sg_mark_end(&user_ctx->sg[i -1]);
+    } else {
+        mapped_pages = get_user_pages_fast((unsigned long)addr, num_page,
+                0, user_ctx->pages);
+        if (mapped_pages != num_page) {
+            user_ctx->nents = mapped_pages;
+            goto exit;
+        }
+    }
+    user_ctx->nents = num_page;
+    user_ctx->len = datalen;
+    sg_init_table(user_ctx->sg, num_page);
+    for(i = 0; i < num_page; i++) {
+        sg_set_page(&user_ctx->sg[i], user_ctx->pages[i],
+                min_t(unsigned, datalen, PAGE_SIZE - offset),
+                offset);
+        datalen -= (PAGE_SIZE - offset);
+        offset = 0;
+    }
+    sg_mark_end(&user_ctx->sg[i -1]);
 	return user_ctx;
 exit:
 	if (user_ctx) {
@@ -1043,8 +1057,10 @@ int __nvme_submit_kv_user_cmd(struct request_queue *q, struct nvme_command *cmd,
         cmd = &aiocb->cmd;
     }
 	req = nvme_alloc_request(q, cmd, 0, NVME_QID_ANY);
-	if (IS_ERR(req))
+	if (IS_ERR(req)) {
+        if (aiocb) mempool_free(aiocb, kaiocb_mempool);
 		return PTR_ERR(req);
+    }
 
 	req->timeout = timeout ? timeout : ADMIN_TIMEOUT;
 	if (!aio)
@@ -1061,19 +1077,32 @@ int __nvme_submit_kv_user_cmd(struct request_queue *q, struct nvme_command *cmd,
             need_to_copy = true; 
             len = DIV_ROUND_UP(bufflen, PAGE_SIZE)*PAGE_SIZE;
             kv_data = kmalloc(len, GFP_KERNEL);
-            if (is_kv_store_cmd(cmd->common.opcode) || is_kv_append_cmd(cmd->common.opcode)) {
-                if(copy_from_user(kv_data, ubuffer, len)) {
-                    kfree(kv_data);
-                    return PTR_ERR(req);
-                }
+            if (kv_data == NULL) {
+			    ret = -ENOMEM;
+                goto out_req_end;
             }
         }
+        user_ctx = get_aio_user_ctx(ubuffer, bufflen, false);
+        if (need_to_copy) {
+            kernel_ctx = get_aio_user_ctx(kv_data, bufflen, true);
+            if (kernel_ctx) {
+                if (is_kv_store_cmd(cmd->common.opcode) || is_kv_append_cmd(cmd->common.opcode)) {
+			        (void)sg_copy_to_buffer(user_ctx->sg, user_ctx->nents,
+					    kv_data, user_ctx->len);
+#if 0
+                    pr_err("copied data %c:%c:%c:%c: %c:%c:%c:%c.\n",
+                            kv_data[0], kv_data[1], kv_data[2], kv_data[3],
+                            kv_data[4], kv_data[5], kv_data[6], kv_data[7]);
+#endif
+                }
+            }
 
-        user_ctx = get_aio_user_ctx(ubuffer, bufflen);
-        if (need_to_copy) { 
-            kernel_ctx = get_aio_user_ctx(kv_data, bufflen);
         } else {
             kernel_ctx = user_ctx;
+        }
+        if (user_ctx == NULL || kernel_ctx == NULL) {
+            ret = -ENOMEM;
+            goto out_unmap;
         }
         param->kv_data_sg_ptr = kernel_ctx->sg;
         param->kv_data_nents = kernel_ctx->nents;
@@ -1153,7 +1182,9 @@ int __nvme_submit_kv_user_cmd(struct request_queue *q, struct nvme_command *cmd,
 		if (is_kv_retrieve_cmd(cmd->common.opcode) || is_kv_iter_read_cmd(cmd->common.opcode)) {
 #if 0
             char *data = kv_data;
-            pr_err("kv_async_completion: data %c%c%c%c.\n", data[0], data[1], data[2], data[3]);
+            pr_err("recevied data %c:%c:%c:%c: %c:%c:%c:%c.\n",
+                    data[0], data[1], data[2], data[3],
+                    data[4], data[5], data[6], data[7]);
 #endif
 			(void)sg_copy_from_buffer(user_ctx->sg, user_ctx->nents,
 					kv_data, user_ctx->len);
@@ -1171,12 +1202,15 @@ int __nvme_submit_kv_user_cmd(struct request_queue *q, struct nvme_command *cmd,
         kfree(user_ctx);
     }
     if (need_to_copy) {
-        for (i = 0; i < kernel_ctx->nents; i++) {
-            put_page(sg_page(&kernel_ctx->sg[i]));
+        if (kernel_ctx) {
+            for (i = 0; i < kernel_ctx->nents; i++) {
+                put_page(sg_page(&kernel_ctx->sg[i]));
+            }
+            kfree(kernel_ctx);
         }
-        kfree(kernel_ctx);
-        kfree(kv_data);
+        if (kv_data) kfree(kv_data);
     }
+out_req_end:
     if (aio && aiocb) mempool_free(aiocb, kaiocb_mempool);
 	blk_mq_free_request(req);
 
@@ -1592,11 +1626,6 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
             option = cpu_to_le32(cmd.cdw4);
 			c.kv_store.offset = cpu_to_le32(cmd.cdw5);
 			/* validate key length */
-			if (cmd.cdw11 && (cmd.key_length != cmd.cdw11 + 1)) {
-				cmd.result = KVS_ERR_KEY;
-				status = -EINVAL;
-				goto exit;
-			}
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
                     cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
@@ -1605,14 +1634,13 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
             }
 			c.kv_store.key_len = cpu_to_le32(cmd.key_length -1); /* key len -1 */
             c.kv_store.option = (option & 0xff);
-			/* validate data length */
-			if (cmd.cdw10 && (cmd.data_length != (cmd.cdw10 << 2))) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
-			}
-			c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2));
-
+            /* set value size */
+            if (cmd.data_length % 4) {
+			    c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2) + 1);
+                c.kv_store.invalid_byte = 4 - (cmd.data_length % 4);
+            } else {
+			    c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2));
+            }
 			if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
 				metadata = (void __user*)cmd.key_addr;
 				meta_len = cmd.key_length;
@@ -1624,11 +1652,6 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
             option = cpu_to_le32(cmd.cdw4);
 			c.kv_retrieve.offset = cpu_to_le32(cmd.cdw5);
 			/* validate key length */
-			if (cmd.cdw11 && (cmd.key_length != cmd.cdw11 + 1)) {
-				cmd.result = KVS_ERR_KEY;
-				status = -EINVAL;
-				goto exit;
-			} 
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
                     cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
@@ -1637,12 +1660,6 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
             }
 			c.kv_retrieve.key_len = cpu_to_le32(cmd.key_length -1); /* key len - 1 */
             c.kv_retrieve.option = (option & 0xff);
-			/* validate data length */
-			if (cmd.cdw10 && (cmd.data_length != (cmd.cdw10 << 2))) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
-			}
 			c.kv_retrieve.value_len = cpu_to_le32((cmd.data_length >> 2));
 
 			if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
@@ -1661,11 +1678,6 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
 		break;
 		case nvme_cmd_kv_delete:
             option = cpu_to_le32(cmd.cdw4);
-			if (cmd.cdw11 && (cmd.key_length != cmd.cdw11 + 1)) {
-				cmd.result = KVS_ERR_KEY;
-				status = -EINVAL;
-				goto exit;
-			} 
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
                     cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
@@ -1681,14 +1693,8 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
 				memcpy(c.kv_delete.key, cmd.key, cmd.key_length);
 			}
 			break;
-#if 1
 		case nvme_cmd_kv_exist:
             option = cpu_to_le32(cmd.cdw4);
-			if (cmd.cdw11 && (cmd.key_length != cmd.cdw11 + 1)) {
-				cmd.result = KVS_ERR_KEY;
-				status = -EINVAL;
-				goto exit;
-			} 
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
                     cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
@@ -1718,15 +1724,8 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
             iter_handle = cpu_to_le32(cmd.cdw5);
             c.kv_iter_read.iter_handle = iter_handle & 0xff;
             c.kv_iter_read.option = option & 0xff;
-			/* validate data length */
-			if (cmd.cdw10 && (cmd.data_length != (cmd.cdw10 << 2))) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
-			}
 			c.kv_iter_read.value_len = cpu_to_le32((cmd.data_length >> 2));
 		break;
-#endif
 		default:
 				cmd.result = KVS_ERR_IO;
 				status = -EINVAL;

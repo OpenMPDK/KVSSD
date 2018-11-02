@@ -1106,7 +1106,7 @@ static blk_status_t nvme_queue_rq(struct blk_mq_hw_ctx *hctx,
 		if (is_kv_retrieve_cmd(cmnd.common.opcode)) {
             nvme_req(req)->result.u32 = cmnd.common.cdw10[5];
         } 
-		blk_mq_complete_request(req, 0);
+		blk_mq_complete_request(req);
 	    return BLK_STS_OK;
 	}
 #endif

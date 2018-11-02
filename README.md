@@ -51,7 +51,6 @@ KVSSD
    |             |- kernel driver : Kernel device driver
    |             |- user driver   : user space device driver
    |- spec
-        |- SNIA API : SNIA API library spec
-        |- NVMe : NVMe KV command spec
+        |- Samsung API library spec
 </pre>
 

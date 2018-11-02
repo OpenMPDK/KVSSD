@@ -34,6 +34,7 @@
 #define SAMSUNG_KVS_ADI_H
 
 #include "stdint.h"
+#include "kvs_result.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,9 +43,9 @@ extern "C" {
 // current implementation version
 #define SAMSUNG_ADI_VERSION "0.5.0.0"
 
-#define SAMSUNG_KV_MIN_KEY_LEN 16
+#define SAMSUNG_KV_MIN_KEY_LEN 4
 #define SAMSUNG_KV_MAX_KEY_LEN 255
-#define SAMSUNG_KV_MIN_VALUE_LEN 1
+#define SAMSUNG_KV_MIN_VALUE_LEN 0
 #define SAMSUNG_KV_MAX_VALUE_LEN (2*1024*1024)
 
 #define SAMSUNG_MAX_ITERATORS 8
@@ -52,81 +53,79 @@ extern "C" {
 /**
  * return value from all interfaces
  */
-typedef enum kv_result {                
+typedef int32_t kv_result;
+
     // Generic command status                
-    KV_SUCCESS                         =    0x0,        ///< success
-                    
-    // warnings                
-    KV_WRN_COMPRESS                    =  0x0B0,        ///< compression is not support and ignored
-    KV_WRN_MORE                        =  0x300,        ///< more data is available, but buffer is not enough
-                
-    // errors                  
-    KV_ERR_DEV_CAPACITY                =  0x012,        ///< device does not have enough space
-    KV_ERR_DEV_INIT                    =  0x070,        ///< device initialization failed
-    KV_ERR_DEV_INITIALIZED             =  0x071,        ///< device was initialized already
-    KV_ERR_DEV_NOT_EXIST               =  0x072,        ///< no device exists 
-    KV_ERR_DEV_SANITIZE_FAILED         =  0x01C,        ///< the previous sanitize operation failed
-    KV_ERR_DEV_SANITIZE_IN_PROGRESS    =  0x01D,        ///< the sanitization operation is in progress
-    KV_ERR_ITERATOR_IN_PROGRESS        =  0x090,        ///< iterator is in progress and operation fails because it is not allowed during iterator is in progress.
-                                                       
-    KV_ERR_ITERATOR_NOT_EXIST          =  0x394,        ///< no iterator exists
-    KV_ERR_KEY_INVALID                 =  0x395,        ///< key invalid (value of key is NULL)
-    KV_ERR_KEY_LENGTH_INVALID          =  0x003,        ///< key length is out of range (unsupported key length)
-    KV_ERR_KEY_NOT_EXIST               =  0x010,        ///< given key doesn't exist
-    KV_ERR_NS_DEFAULT                  =  0x095,        ///< default namespace cannot be modified, deleted, attached, or detached
-    KV_ERR_NS_INVALID                  =  0x00B,        ///< namespace does not exist
-    KV_ERR_OPTION_INVALID              =  0x004,        ///< device does not support the specified options
-    KV_ERR_PARAM_NULL                  =  0x101,        ///< no input pointer can be NULL
-    KV_ERR_PURGE_IN_PRGRESS            =  0x084,        ///< purge operation is in progress
-    KV_ERR_SYS_IO                      =  0x303,        ///< host failed to communicate with the device
-    KV_ERR_SYS_PERMISSION              =  0x415,        ///< caller does not have a permission to call this interface
-    KV_ERR_VALUE_LENGTH_INVALID        =  0x001,        ///< value length is out of range
-    KV_ERR_VALUE_LENGTH_MISALIGNED     =  0x008,        ///< value length is misaligned. Value length shall be multiples of 4 bytes.
-    KV_ERR_VALUE_OFFSET_INVALID        =  0x002,        ///< value offset is invalid meaning that offset is out of bound.
-    KV_ERR_VENDOR                      =  0x0F0,        ///< vendor-specific error is returned, check the system log for more details
-                
-    // command specific status(errors)                
-    KV_ERR_BUFFER_SMALL                =  0x301,        ///< provided buffer size too small for iterator_next operation
-    KV_ERR_DEV_MAX_NS                  =  0x191,        ///< maximum number of namespaces was created
-    KV_ERR_ITERATOR_COND_INVALID       =  0x192,        ///< iterator condition is not valid
-    KV_ERR_KEY_EXIST                   =  0x082,        ///< given key already exists (with KV_STORE_IDEMPOTENT option)
-    KV_ERR_NS_ATTAHED                  =  0x118,        ///< namespace was alredy attached
-    KV_ERR_NS_CAPACITY                 =  0x181,        ///< namespace capacity limit exceeds
-    KV_ERR_NS_NOT_ATTACHED             =  0x11A,        ///< device cannot detach a namespace since it has not been attached yet
-    KV_ERR_QUEUE_CQID_INVALID          =  0x401,        ///< completion queue identifier is invalid
-    KV_ERR_QUEUE_SQID_INVALID          =  0x402,        ///< submission queue identifier is invalid
-    KV_ERR_QUEUE_DELETION_INVALID      =  0x403,        ///< cannot delete completion queue since submission queue has not been fully deleted
+#define    KV_SUCCESS                            0x0        ///< success
 
-    KV_ERR_QUEUE_MAX_QUEUE             =  0x104,        ///< maximum number of queues are already created
-    KV_ERR_QUEUE_QID_INVALID           =  0x405,        ///< queue identifier is invalid
-    KV_ERR_QUEUE_QSIZE_INVALID         =  0x406,        ///< queue size is invalid 
+// warnings
+#define    KV_WRN_MORE                          0xF000        ///< more data is available, but buffer is not enough
 
-    KV_ERR_TIMEOUT                     =  0x195,        ///< timer expired and no operation is completed yet. 
+// errors                  
+#define    KV_ERR_DEV_CAPACITY                  KVS_ERR_DEV_CAPACITY            ///< device does not have enough space
+#define    KV_ERR_DEV_INIT                      KVS_ERR_DEV_INIT                ///< device initialization failed
+#define    KV_ERR_DEV_INITIALIZED               KVS_ERR_DEV_INITIALIZED         ///< device was initialized already
+#define    KV_ERR_DEV_NOT_EXIST                 KVS_ERR_DEV_NOT_EXIST           ///< no device exists 
+#define    KV_ERR_DEV_SANITIZE_FAILED           KVS_ERR_DEV_SANITIZE_FAILED     ///< the previous sanitize operation failed
 
-    // media and data integratiy status (error)                
-    KV_ERR_UNCORRECTIBLE               =  0x781,        ///< uncorrectable error occurs
+#define    KV_ERR_ITERATOR_NOT_EXIST            KVS_ERR_ITERATOR_NOT_EXIST      ///< no iterator exists
+#define    KV_ERR_KEY_INVALID                   KVS_ERR_KEY_INVALID             ///< key invalid (value of key is NULL)
+#define    KV_ERR_KEY_LENGTH_INVALID            KVS_ERR_KEY_LENGTH_INVALID      ///< key length is out of range (unsupported key length)
+#define    KV_ERR_KEY_NOT_EXIST                 KVS_ERR_KEY_NOT_EXIST           ///< given key doesn't exist
+#define    KV_ERR_NS_DEFAULT                    KVS_ERR_NS_DEFAULT              ///< default namespace cannot be modified, deleted, attached, or detached
+#define    KV_ERR_NS_INVALID                    KVS_ERR_NS_INVALID              ///< namespace does not exist
+#define    KV_ERR_OPTION_INVALID                KVS_ERR_OPTION_INVALID          ///< device does not support the specified options
+#define    KV_ERR_PARAM_INVALID                 KVS_ERR_PARAM_INVALID           ///< no input pointer can be NULL
+#define    KV_ERR_PURGE_IN_PRGRESS              KVS_ERR_PURGE_IN_PROGRESS       ///< purge operation is in progress
+#define    KV_ERR_SYS_IO                        KVS_ERR_SYS_IO                  ///< host failed to communicate with the device
+#define    KV_ERR_VALUE_LENGTH_INVALID          KVS_ERR_VALUE_LENGTH_INVALID    ///< value length is out of range
+#define    KV_ERR_VALUE_LENGTH_MISALIGNED       KVS_ERR_VALUE_LENGTH_MISALIGNED ///< value length is misaligned. Value length shall be multiples of 4 bytes.
+#define    KV_ERR_VALUE_OFFSET_INVALID          KVS_ERR_VALUE_OFFSET_INVALID    ///< value offset is invalid meaning that offset is out of bound.
+#define    KV_ERR_VENDOR                        KVS_ERR_VENDOR                  ///< vendor-specific error is returned, check the system log for more details
+#define    KV_ERR_PERMISSION                    KVS_ERR_PERMISSION              ///< unable to open device due to permission error
 
-    // quue in shutdown
-    KV_ERR_QUEUE_IN_SHUTDOWN               =  0x900,        ///< queue in shutdown mode
+// command specific status(errors)               
+#define    KV_ERR_BUFFER_SMALL                  KVS_ERR_BUFFER_SMALL            ///< provided buffer size too small for iterator_next operation
+#define    KV_ERR_DEV_MAX_NS                    KVS_ERR_NS_MAX                  ///< maximum number of namespaces was created
+#define    KV_ERR_ITERATOR_COND_INVALID         KVS_ERR_ITERATOR_COND_INVALID   ///< iterator condition is not valid
+#define    KV_ERR_KEY_EXIST                     KVS_ERR_KEY_EXIST               ///< given key already exists (with KV_STORE_IDEMPOTENT option)
+#define    KV_ERR_NS_ATTAHED                    KVS_ERR_NS_ATTACHED             ///< namespace was alredy attached
+#define    KV_ERR_NS_CAPACITY                   KVS_ERR_NS_CAPACITY             ///< namespace capacity limit exceeds
+#define    KV_ERR_NS_NOT_ATTACHED               KVS_ERR_NS_NOT_ATTACHED         ///< device cannot detach a namespace since it has not been attached yet
+#define    KV_ERR_QUEUE_CQID_INVALID            KVS_ERR_QUEUE_CQID_INVALID      ///< completion queue identifier is invalid
+#define    KV_ERR_QUEUE_SQID_INVALID            KVS_ERR_QUEUE_SQID_INVALID      ///< submission queue identifier is invalid
+#define    KV_ERR_QUEUE_DELETION_INVALID        KVS_ERR_QUEUE_DELETION_INVALID  ///< cannot delete completion queue since submission queue has not been fully deleted
 
-    // queue is full, unable to accept more IO
-    KV_ERR_QUEUE_IS_FULL                   =  0x901,        ///< queue is full
+#define    KV_ERR_QUEUE_MAX_QUEUE               KVS_ERR_QUEUE_MAX_QUEUE         ///< maximum number of queues are already created
+#define    KV_ERR_QUEUE_QID_INVALID             KVS_ERR_QUEUE_QID_INVALID       ///< queue identifier is invalid
+#define    KV_ERR_QUEUE_QSIZE_INVALID           KVS_ERR_QUEUE_QSIZE_INVALID     ///< queue size is invalid 
 
-    // the beginning state after being accepted into a submission queue
-    KV_ERR_COMMAND_SUBMITTED               =  0x902,        ///< accepted state when a command is submitted   
+#define    KV_ERR_TIMEOUT                       KVS_ERR_TIMEOUT                 ///< timer expired and no operation is completed yet. 
 
-    // too many iterators open that exceeded supported max number of iterators
-    KV_ERR_TOO_MANY_ITERATORS_OPEN     =  0x091,        ///< Exceeded max number of opened iterators
+// media and data integratiy status(error)                
+#define    KV_ERR_UNCORRECTIBLE                 KVS_ERR_UNCORRECTIBLE           ///< uncorrectable error occurs
 
-    KV_ERR_ITERATOR_END                =  0x093,        ///< Indicate end of iterator operation
+// quue in shutdown
+#define    KV_ERR_QUEUE_IN_SHUTDOWN             KVS_ERR_QUEUE_IN_SUTDOWN        ///< queue in shutdown mode
 
-    // Added for iterator next call that can return empty results
-    KV_ERR_SYS_BUSY                    =  0x905,        ///< Retry is recommended
+// queue is full, unable to accept more IO
+#define    KV_ERR_QUEUE_IS_FULL                 KVS_ERR_QUEUE_IS_FULL           ///< queue is full
 
-    // initialized by caller before submission
-    KV_ERR_COMMAND_INITIALIZED             =  0x999,        ///< start state when a command is initialized 
-} kv_result;
+// the beginning state after being accepted into a submission queue
+#define    KV_ERR_COMMAND_SUBMITTED             KVS_ERR_COMMAND_SUBMITTED       ///< accepted state when a command is submitted   
 
+// too many iterators open that exceeded supported max number of iterators
+#define    KV_ERR_TOO_MANY_ITERATORS_OPEN       KVS_ERR_ITERATOR_MAX            ///< Exceeded max number of opened iterators
+
+// Added for iterator next call that can return empty results
+#define    KV_ERR_SYS_BUSY                      KVS_ERR_SYS_BUSY                ///< Retry is recommended
+
+// initialized by caller before submission
+#define    KV_ERR_COMMAND_INITIALIZED           KVS_ERR_COMMAND_INITIALIZED     ///< start state when a command is initialized 
+
+#define    KV_ERR_DD_UNSUPPORTED_CMD            KVS_ERR_DD_UNSUPPORTED_CMD      ///< invalid command or not yet supported
+
+#define    KV_ERR_ITERATE_REQUEST_FAIL          KVS_ERR_ITERATE_REQUEST_FAIL    ///< fail to process the iterate request
 
 /** 
  * \mainpage A libary for Samsung Key-Value Storage ADI
@@ -195,18 +194,18 @@ typedef struct _kv_interrupt_handler* kv_interrupt_handler;
   KV_MIN_KEY_LEN defines the minimum length of key in bytes that a key-value storage device shall support. The actual minimum key size for a device is vendor-specific and can be equal or larger than this value. The default value is 1 byte. The actual minimum key size of a device can be retrieved via kv_device.min_key_len returned by kv_get_device_info().  
 
  [SAMSUNG] 
- The minimum key size (kv_device.min_key_len) of Samsung PM983 is 16 bytes.
+ The minimum key size (kv_device.min_key_len) of Samsung PM983 is 4 bytes.
  */
-#define KV_MIN_KEY_LEN 1 // minimum key size 
+#define KV_MIN_KEY_LEN SAMSUNG_KV_MIN_KEY_LEN // minimum key size 
 
 
 /**
   The minimum length of value in bytes that a key-value storage device shall support. A key value device may support as small as this minimum value size. The actual minimum value size of device is vendor-specific and may be equal or larger than this value. The default value is 1 byte. The actual minimum value size of a device may be retrieved via kv_device.min_value_len returned by kv_get_device_info(). 
 
   [SAMSUNG]
-  The minimum value size (kv_device.min_value_len) for Samsung PM983 is 64 bytes.
+  The minimum value size (kv_device.min_value_len) for Samsung PM983 is 0 bytes.
  */
-#define KV_MIN_VALUE_LEN 1 // minimum value size 
+#define KV_MIN_VALUE_LEN SAMSUNG_KV_MIN_VALUE_LEN // minimum value size 
 
 /**
   KV_MAX_KEY_LEN defines the maximum length of key in bytes that a key-value storage device shall support. The actual maximum key size for a device is vendor-specific and can be equal or smaller than this value. The default value is 255 bytes. The actual value of a device can be retrieved via kv_device.max_key_len returned by kv_get_device_info().
@@ -214,7 +213,7 @@ typedef struct _kv_interrupt_handler* kv_interrupt_handler;
   [SAMSUNG] 
   The maximum key size (kv_device.max_key_len) of Samsung PM983 is 255 bytes.
  */
-#define KV_MAX_KEY_LEN 255 // maximum key size 
+#define KV_MAX_KEY_LEN SAMSUNG_KV_MAX_KEY_LEN // maximum key size 
 
 /**
   The maximum length of value in bytes that a key-value storage device shall support. A device shall be able to handle the maximum size without any errors like timeout. The actual maximum value size for a device is vendor-specific and may be equal or smaller than this value. The default value is 2MB. The actual maximum value of a device may be retrieved via kv_device.max_value_len returned by kv_get_device_info().
@@ -222,7 +221,7 @@ typedef struct _kv_interrupt_handler* kv_interrupt_handler;
   [SAMSUNG] 
   The maximum value size (kv_device.max_value_len) of Samsung PM983 is 2MB.
  */
-#define KV_MAX_VALUE_LEN (2*1024*1024) // maximum value size (2MB) 
+#define KV_MAX_VALUE_LEN SAMSUNG_KV_MAX_VALUE_LEN // maximum value size (2MB) 
 
 /**
  * This is used to apply an operation to all namespaces created in the device.
@@ -264,7 +263,8 @@ typedef enum {
  *  kv_delete_option
  */
 typedef enum {
-  KV_DELETE_OPT_DEFAULT = 0x00, ///< [DEFAULT] default operation for delete command  
+  KV_DELETE_OPT_DEFAULT = 0x00, ///< [DEFAULT] default operation for delete command(always return success)
+  KV_DELETE_OPT_ERROR = 0x01, ///< [DEFAULT] return error when key does not exist
 } kv_delete_option; 
 
 /**
@@ -301,6 +301,8 @@ typedef enum {
 typedef enum {
   KV_RETRIEVE_OPT_DEFAULT    = 0x00, ///< [DEFAULT] retrieving value as it is written (even compressed value is also retrieved in its compressed form)
   KV_RETRIEVE_OPT_DECOMPRESS = 0x01, 
+  KV_RETRIEVE_OPT_DELETE = 0x02, 
+  KV_RETRIEVE_OPT_DECOMPRESS_DELETE = 0x03, 
 } kv_retrieve_option; 
 
 // kv_sanitize_option
@@ -352,7 +354,7 @@ typedef struct {
 typedef struct {
   uint16_t namespace_count; ///< # of namespaces that the device currently maintains
   uint16_t queue_count;     ///< # of queues that the device currently maintains
-  uint16_t utilization;     ///< device space utilization in an integer form of 0(0.00%) to 10,000(100.00%).
+  uint16_t utilization;     ///< device space utilization in an integer form of 0(0.00%) to 10000(100.00%).
   uint16_t waf;             ///< write amplification factor in an integer form of (xxx.xx)
   void *extended_info;      ///< vendor specific extended device information.  
 } kv_device_stat; 
@@ -416,12 +418,13 @@ typedef struct {
   */
 typedef struct {
   void *value;        ///< buffer address for value
-  kv_value_t length;  ///< actual value size in byte unit for store or retrieval
-  kv_value_t offset;  ///< offset for value,  Valid only for kv_retrieve() operation. Ignored in any other operation.
 
-  ///// temporary 
-  // kv_value_t value_size; ///< whole value size in byte unit when it was stored. Valid only for kv_retrieve()
+  kv_value_t length;           ///< value buffer size in byte unit for input and the retuned value length for output
+  kv_value_t actual_value_size;        ///< actual value size that is stored in SSD
+  kv_value_t offset;           ///< offset for value
+
 } kv_value;
+
 /**
   kv_namespace
   kv_namespace represents namespace information. 
@@ -503,7 +506,7 @@ typedef struct {
   KV_ERR_DEV_INIT			the device initialization failed, please check the dev_init parameter
   KV_ERR_DEV_INITIALIZED		this device has been initialized already
   KV_ERR_DEV_NOT_EXIST 		no device exists for the device handle
-  KV_ERR_PARAM_NULL 		dev_hdl cannot be NULL, a variable of kv_device_handle shall have been already allocated
+  KV_ERR_PARAM_INVALID 		dev_hdl cannot be NULL, a variable of kv_device_handle shall have been already allocated
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
@@ -547,7 +550,7 @@ kv_result kv_cleanup_device(kv_device_handle dev_hdl);
   
   ERROR CODE
   KV_ERR_DEV_NOT_EXIST 		no device exists for the device handle
-  KV_ERR_PARAM_NULL 		dev cannot be NULL, a variable of kv_device shall have been already allocated
+  KV_ERR_PARAM_INVALID 		dev cannot be NULL, a variable of kv_device shall have been already allocated
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
@@ -569,7 +572,7 @@ kv_result kv_get_device_info(const kv_device_handle dev_hdl, kv_device *devinfo)
   
   ERROR CODE
   KV_ERR_DEV_NOT_EXIST 		no device exists for the device handle
-  KV_ERR_PARAM_NULL 		dev_st cannot be NULL, a variable of kv_device_stat shall have been already allocated
+  KV_ERR_PARAM_INVALID 		dev_st cannot be NULL, a variable of kv_device_stat shall have been already allocated
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
@@ -776,7 +779,7 @@ kv_result kv_sanitize (kv_queue_handle que_hdl, kv_device_handle dev_hdl, kv_san
   KV_ERR_QUEUE_CQID_INVALID	completion queue identifier is invalid
   KV_ERR_DEV_NOT_EXIST 		no device exists for the device handle
   KV_ERR_QUEUE_CREATE		the device cannot create a queue
-  KV_ERR_PARAM_NULL 		que and que_hdl cannot be NULL, both shall have been already allocated
+  KV_ERR_PARAM_INVALID 		que and que_hdl cannot be NULL, both shall have been already allocated
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
@@ -821,7 +824,7 @@ kv_result kv_delete_queue(kv_device_handle dev_hdl, kv_queue_handle que_hdl);
   
   ERROR CODE
   KV_ERR_DEV_NOT_EXIST 		no device exists for the device handle
-  KV_ERR_PARAM_NULL 		que_hdls and que_cnt cannot be NULL, both shall have been already allocated
+  KV_ERR_PARAM_INVALID 		que_hdls and que_cnt cannot be NULL, both shall have been already allocated
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
@@ -844,7 +847,7 @@ kv_result kv_get_queue_handles(const kv_device_handle dev_hdl, kv_queue_handle *
   
   ERROR CODE
   KV_ERR_DEV_NOT_EXIST 		no device exists for the device handle
-  KV_ERR_PARAM_NULL 		que cannot be NULL, a variable of kv_queue shall have been already allocated
+  KV_ERR_PARAM_INVALID 		que cannot be NULL, a variable of kv_queue shall have been already allocated
   KV_ERR_QUEUE_QID_INVALID	submission queue identifier is invalid
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
@@ -868,7 +871,7 @@ kv_result kv_get_queue_info(const kv_device_handle dev_hdl, const kv_queue_handl
   
   ERROR CODE
   KV_ERR_DEV_NOT_EXIST 		no device exists for the device handle
-  KV_ERR_PARAM_NULL 		que cannot be NULL, a variable of kv_queue shall have been already allocated
+  KV_ERR_PARAM_INVALID 		que cannot be NULL, a variable of kv_queue shall have been already allocated
   KV_ERR_QUEUE_QID_INVALID	submission queue identifier is invalid
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
@@ -898,7 +901,7 @@ kv_result kv_get_queue_stat(const kv_device_handle dev_hdl, const kv_queue_handl
   KV_ERR_DEV_MAX_NS		it reaches the maximum number of namespaces that a device can create
   KV_ERR_DEV_NOT_EXIST 		no device exists for the device handle
   KV_ERR_NS_CAPACITY		a namespace capacity limit exceeds
-  KV_ERR_PARAM_NULL 		ns and ns_hdl cannot be NULL, both shall have been already allocated
+  KV_ERR_PARAM_INVALID 		ns and ns_hdl cannot be NULL, both shall have been already allocated
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
@@ -1002,7 +1005,7 @@ kv_result kv_detach_namespace(kv_device_handle dev_hdl, kv_namespace_handle ns_h
   
   ERROR CODE
   KV_ERR_DEV_NOT_EXIST 		no device exists for the device handle
-  KV_ERR_PARAM_NULL 		ns_hdls and ns_cnt cannot be NULL, both shall have been already allocated
+  KV_ERR_PARAM_INVALID 		ns_hdls and ns_cnt cannot be NULL, both shall have been already allocated
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
@@ -1025,7 +1028,7 @@ kv_result kv_list_namespaces(const kv_device_handle dev_hdl, kv_namespace_handle
   ERROR CODE
   KV_ERR_DEV_NOT_EXIST 		no device exists for the device handle
   KV_ERR_NS_NOT_EXIST		the namespace does not exist
-  KV_ERR_PARAM_NULL 		ns cannot be NULL, it shall have been already allocated
+  KV_ERR_PARAM_INVALID 		ns cannot be NULL, it shall have been already allocated
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
@@ -1048,7 +1051,7 @@ kv_result kv_get_namespace_info(const kv_device_handle dev_hdl, const kv_namespa
   ERROR CODE
   KV_ERR_DEV_NOT_EXIST 		no device exists for the device handle
   KV_ERR_NS_NOT_EXIST		the namespace does not exist
-  KV_ERR_PARAM_NULL 		ns_st cannot be NULL, it shall have been already allocated
+  KV_ERR_PARAM_INVALID 		ns_st cannot be NULL, it shall have been already allocated
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
@@ -1159,7 +1162,7 @@ kv_result kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, 
   
   KV_ERR_ITER_NOT_EXIST		the iterator group does not exist
   KV_ERR_NS_NOT_EXIST		the namespace does not exist/
-  KV_ERR_PARAM_NULL 		opt cannot be NULL
+  KV_ERR_PARAM_INVALID 		opt cannot be NULL
   KV_ERR_SYS_IO 		the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 	this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
@@ -1232,7 +1235,7 @@ kv_result kv_iterator_next(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, 
   ERROR CODE for command submission
   KV_ERR_NS_NOT_EXIST     the namespace does not exist
   KV_ERR_QUEUE_QID_INVALID    submission queue identifier is invalid
-  KV_ERR_PARAM_NULL       iter_hdls and iter_cnt cannot be NULL, both shall have been already allocated
+  KV_ERR_PARAM_INVALID       iter_hdls and iter_cnt cannot be NULL, both shall have been already allocated
   KV_ERR_SYS_IO           the host failed to communicate with the device
   
   ERROR CODE for operation completion
@@ -1313,7 +1316,7 @@ kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const k
   KV_ERR_SYS_PERMISSION       this caller does not have a permission to call this interface
   
   ERROR CODE for operation completion
-  KV_ERR_PARAM_NULL       grp_cond or op_hdl cannot be NULL, both shall have been already allocated
+  KV_ERR_PARAM_INVALID       grp_cond or op_hdl cannot be NULL, both shall have been already allocated
   KV_ERR_VENDOR           vendor-specific error is returned, check the system log for more details
  */
 kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_group_condition *grp_cond, kv_postprocess_function *post_fn);
@@ -1351,7 +1354,7 @@ kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, k
   KV_ERR_KEY_NOT_EXIST		given key doesn't exist (unmapped-read error)
   KV_ERR_NS_NOT_EXIST		the namespace does not exist
   KV_ERR_OPTION_INVALID		the device does not support the specified options
-  KV_ERR_PARAM_NULL 		key or result cannot be NULL, both shall have been already allocated
+  KV_ERR_PARAM_INVALID 		key or result cannot be NULL, both shall have been already allocated
   KV_ERR_QUEUE_QID_INVALID	submission queue identifier is invalid
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
@@ -1392,8 +1395,6 @@ kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv
   RETURNS 
   KV_SUCCESS 
   
-  KV_WRN_COMPRESS		a device may not support compression and ignore the KV_STORE_OPT_DECOMPRESS option
-  
   ERROR CODE
   KV_ERR_KEY_INVALID		key format is invalid, or kv_key->key buffer is null
   KV_ERR_KEY_LENGTH_INVALID	the key length is out of range of kv_device.min_key_len and kv_device.max_key_len
@@ -1401,7 +1402,7 @@ kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv
   KV_ERR_NS_NOT_EXIST		the namespace does not exist
   KV_ERR_OFFSET_INVALID		the offset is out of the value range 
   KV_ERR_OPTION_INVALID		the device does not support the specified options
-  KV_ERR_PARAM_NULL 		key or value cannot be NULL, both shall have been already allocated
+  KV_ERR_PARAM_INVALID 		key or value cannot be NULL, both shall have been already allocated
   KV_ERR_QUEUE_QID_INVALID	submission queue identifier is invalid
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
@@ -1442,7 +1443,6 @@ kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const
   RETURNS
   KV_SUCCESS 
   
-  KV_WRN_COMPRESS		a device may not support compression and ignore the KV_STORE_OPT_COMPRESS option
   KV_WRN_OVERWRITTEN		this store operation overwrote a mutable object created by kv_append()
   
   ERROR CODE
@@ -1454,7 +1454,7 @@ kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const
   KV_ERR_NS_CAPACITY		a namespace capacity limit exceeds
   KV_ERR_NS_NOT_EXIST		the namespace does not exist
   KV_ERR_OPTION_INVALID		the device does not support the specified options
-  KV_ERR_PARAM_NULL 		key or value cannot be NULL, both shall have been already allocated
+  KV_ERR_PARAM_INVALID 		key or value cannot be NULL, both shall have been already allocated
   KV_ERR_QUEUE_QID_INVALID	submission queue identifier is invalid
   KV_ERR_SYS_IO 			the host failed to communicate with the device
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
@@ -1481,7 +1481,6 @@ kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv
   RETURNS
   KV_SUCCESS
   
-  KV_WRN_COMPRESS		a device may not support compression and ignore the KV_STORE_OPT_COMPRESS option
   KV_WRN_MORE		there are more completed operations
   KV_WRN_OVERWRITTEN		this store operation overwrote a mutable object created by kv_append()
   

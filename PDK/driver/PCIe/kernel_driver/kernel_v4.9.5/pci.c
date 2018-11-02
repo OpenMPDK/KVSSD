@@ -762,7 +762,7 @@ static int nvme_queue_rq(struct blk_mq_hw_ctx *hctx,
 		return BLK_MQ_RQ_QUEUE_OK;
 	}
 #endif
-#if 0
+#ifdef KV_NVME_OP_REPORT
 	if (is_kv_cmd(cmnd.common.opcode)) {
 		__u32 *data = (__u32*) cmnd.common.cdw2;
 		pr_err("[dump nvme kv comand]\n");

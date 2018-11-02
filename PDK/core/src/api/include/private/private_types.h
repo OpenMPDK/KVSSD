@@ -43,7 +43,10 @@
 #include <list>
 #include <condition_variable>
 #include "kvs_api.h"
+
+#ifndef WITH_SPDK
 #include "kvs_adi.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -133,12 +136,12 @@ protected:
 class KvsDriver {
 public:
   kv_device_priv *dev;
-  _on_iocomplete user_io_complete;
+  kvs_callback_function user_io_complete;
   std::list<kvs_container*> list_containers;
   std::list<kvs_container_handle> open_containers;
 
  public:
-  KvsDriver(kv_device_priv *dev_,_on_iocomplete user_io_complete_):
+ KvsDriver(kv_device_priv *dev_, kvs_callback_function user_io_complete_):
 	  dev(dev_), user_io_complete(user_io_complete_) {}
 
   virtual ~KvsDriver() {}
@@ -165,15 +168,17 @@ public:
   virtual int32_t init(const char* devpath, bool syncio, uint64_t sq_core, uint64_t cq_core, uint32_t mem_size_mb) {return 0;}
   virtual int32_t init(const char* devpath, bool syncio) {return 0;}
   virtual int32_t process_completions(int max) =0;
-  virtual int32_t store_tuple(int contid, const kvs_key *key, const kvs_value *value, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false) = 0;
-  virtual int32_t retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false) = 0;
-  virtual int32_t delete_tuple(int contid, const kvs_key *key, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false) = 0;
-  virtual int32_t open_iterator(int contid,  uint8_t option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) = 0;
+  virtual int32_t store_tuple(int contid, const kvs_key *key, const kvs_value *value, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
+  virtual int32_t retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
+  virtual int32_t delete_tuple(int contid, const kvs_key *key, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
+  virtual int32_t exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
+  virtual int32_t open_iterator(int contid, kvs_iterator_option option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) = 0;
   virtual int32_t close_iterator(int contid, kvs_iterator_handle hiter) = 0;
-  virtual int32_t iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false) = 0;
+  virtual int32_t iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
   virtual float get_waf() {return 0.0;}
-  virtual int32_t get_used_size() {return 0.0;}
-  virtual int64_t get_total_size(){return 0;};
+  virtual int32_t get_used_size(int32_t *dev_util) {return 0;}
+  virtual int32_t get_total_size(int64_t *dev_capa) {return 0;}
+  virtual int32_t get_device_info(kvs_device *dev_info) {return 0;}
   std::string path;
 };
 
@@ -188,7 +193,9 @@ struct _kvs_container_handle {
 };
 
 struct _kvs_iterator_handle{
+#ifndef WITH_SPDK  
   kv_iterator_handle iterh_adi;
+#endif
   uint32_t iterator;
 };
 

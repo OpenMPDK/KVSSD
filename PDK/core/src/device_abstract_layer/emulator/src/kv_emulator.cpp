@@ -155,8 +155,7 @@ kv_result kv_emulator::kv_retrieve(const kv_key *key, uint8_t option, kv_value *
             memcpy(value->value, it->second.data() + value->offset, copylen);
 
             value->length = copylen;
-            ///// temporary
-            // value->value_size = dlen;
+            value->actual_value_size = dlen;
 
             if (m_use_iops_model) {
                 stat.collect(STAT_READ, copylen);
@@ -174,7 +173,7 @@ kv_result kv_emulator::kv_retrieve(const kv_key *key, uint8_t option, kv_value *
 }
 
 
-kv_result kv_emulator::kv_exist(const kv_key *key, uint32_t &keycount, uint8_t *buffers, uint32_t &buffer_size, void *ioctx) {
+kv_result kv_emulator::kv_exist(const kv_key *key, uint32_t keycount, uint8_t *buffers, uint32_t &buffer_size, void *ioctx) {
     (void) ioctx;
 
     int bitpos = 0;
@@ -259,7 +258,7 @@ kv_result kv_emulator::kv_open_iterator(const kv_iterator_option opt, const kv_g
     (void) ioctx;
 
     if (cond == NULL || iter_hdl == NULL || cond == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     if (m_it_map.size() >= SAMSUNG_MAX_ITERATORS) {
@@ -291,7 +290,7 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iter
     (void) ioctx;
 
     if (iter_hdl == NULL || iter_list == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     const bool include_value = iter_hdl->it_op == KV_ITERATOR_OPT_KV || iter_hdl->it_op == KV_ITERATOR_OPT_KV_WITH_DELETE;
@@ -341,9 +340,9 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iter
         // found a key
         size_t datasize = klength;
         if (!iter_hdl->has_fixed_keylen) {
-            datasize += sizeof(kv_key::key);
+            datasize += sizeof(uint32_t);
         }
-        datasize += (include_value)? (vlength  + sizeof(kv_value::value)):0;
+        datasize += (include_value)? (vlength  + sizeof(uint32_t)):0;
 
         if ((buffer_pos + datasize) > buffer_size) {
             // save the current key for next iteration
@@ -359,8 +358,8 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iter
         //std::cerr << "found key  " << set0 << std::endl;
         // only output key len when key size is not fixed
         if (!iter_hdl->has_fixed_keylen) {
-            memcpy(buffer + buffer_pos, &klength,        sizeof(kv_key_t));
-            buffer_pos += sizeof(kv_key_t);
+            memcpy(buffer + buffer_pos, &klength,        sizeof(uint32_t));
+            buffer_pos += sizeof(uint32_t);
         }
         memcpy(buffer + buffer_pos, it->first->key, klength);
         buffer_pos += klength;
@@ -396,7 +395,7 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key
     (void) ioctx;
 
     if (key == NULL || key->key == NULL || value == NULL || value->value == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     const bool include_value = iter_hdl->it_op == KV_ITERATOR_OPT_KV || iter_hdl->it_op == KV_ITERATOR_OPT_KV_WITH_DELETE;
@@ -408,7 +407,8 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key
 
     // check if the end is set from last iteration
     if (iter_hdl->end) {
-        return KV_ERR_ITERATOR_END;
+        iter_hdl->end = TRUE;
+        return KV_SUCCESS;
     }
 
     // 4 leading bytes to match
@@ -421,7 +421,8 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key
 
     // the end
     if (it == m_map.end()) {
-        return KV_ERR_ITERATOR_END;
+        iter_hdl->end = TRUE;
+        return KV_SUCCESS;
     }
 
     const uint32_t klength = it->first->length;
@@ -432,7 +433,8 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key
 
     // if no more match, which means we reached the end of matching list
     if (((prefix & iter_hdl->it_cond.bitmask) & iter_hdl->it_cond.bit_pattern) != to_match) {
-        return KV_ERR_ITERATOR_END;
+        iter_hdl->end = TRUE;
+        return KV_SUCCESS;
     }
 
     // printf("matched 0x%X, current key prefix 0x%X, -- %d\n", to_match, prefix, i);
@@ -447,8 +449,7 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key
     }
 
     if (iter_hdl->it_op == KV_ITERATOR_OPT_KV || iter_hdl->it_op == KV_ITERATOR_OPT_KV_WITH_DELETE) {
-        ///// temporary
-        // value->value_size = vlength;
+        value->actual_value_size = vlength;
         if (vlength > value->length) {
             value->length= 0;
             value->offset = 0;
@@ -464,8 +465,7 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key
     if (include_value) {
         memcpy(value->value, it->second.data(), vlength);
         value->length= vlength;
-        ///// temporary
-        // value->value_size = vlength;
+        value->actual_value_size = vlength;
         value->offset = 0;
     }
 
@@ -490,7 +490,7 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key
 kv_result kv_emulator::kv_close_iterator(kv_iterator_handle iter_hdl, void *ioctx) {
     (void) ioctx;
 
-    if (iter_hdl == NULL) return KV_ERR_PARAM_NULL;
+    if (iter_hdl == NULL) return KV_ERR_PARAM_INVALID;
     {
         std::unique_lock<std::mutex> lock(m_it_map_mutex);
         auto it = m_it_map.find(iter_hdl);
@@ -507,7 +507,7 @@ kv_result kv_emulator::kv_list_iterators(kv_iterator *iter_list, uint32_t *count
     (void) ioctx;
 
     if (iter_list == NULL || count == NULL) {
-        return KV_ERR_PARAM_NULL;
+        return KV_ERR_PARAM_INVALID;
     }
 
     {
@@ -568,11 +568,16 @@ kv_result kv_emulator::kv_delete_group(kv_group_condition *grp_cond, uint64_t *r
     return KV_SUCCESS;
 }
 
-// emulator will set this up at queue level
-// shouldn't be called, so just return error.
 kv_result kv_emulator::set_interrupt_handler(const kv_interrupt_handler int_hdl) {
-    (void) int_hdl;
-    return KV_ERR_DEV_INIT;
+    if (int_hdl == NULL) {
+        return KV_ERR_PARAM_INVALID;
+    }
+    m_interrupt_handler = int_hdl;
+    return KV_SUCCESS;
+}
+
+kv_interrupt_handler kv_emulator::get_interrupt_handler() {
+    return m_interrupt_handler;
 }
 
 // shouldn't be called, so just return error.

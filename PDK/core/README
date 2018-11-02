@@ -1,11 +1,12 @@
-Release version 0.5
+Release version 0.6.0
 
 This package provides a generic interface for user to communicate with Samsung's Key Value SSD through different types of device drivers (user space, and kernel space), and a Samsung Key Value SSD emulator. 
 
 ---
 How to build:
     0. Install dependencies
-       ./tools/install_deps.sh
+       - ./tools/install_deps.sh
+       - gcc version should be newer than v5.0
     1. mkdir build
     2. cd build
     3. Three types of driver is available : kernel driver (KDD); emulator (EMU); user space driver (SPDK)
@@ -19,12 +20,12 @@ How to build:
        =======
        cmake -DWITH_EMU=ON ../
 
-       User Space Driver
+       User Space Driver  * Not supported in the current v0.6 release
        =======
        cmake -DWITH_SPDK=ON ../ 
        * Replace <main_source_dir>/lib/libkvnvmedd.a if there is newer version of spdk driver available
        * The pre-build library is on gcc version 5.4.0
-       * https://github.com/OpenMPDK/uNVMe
+       * https://github.com/OpenMPDK/uNVMe v18.05
 
     4. make -j<# of jobs>
        * # of jobs: execute multiple recipes simultaneously
@@ -37,12 +38,14 @@ How to test
 
 
     0. ./sample_code_async -h
+       ./sample_code_sync -h
     
     1. Test with Kernel Driver
     - nvme kernel module needs to be compiled and installed
 
-    sudo ./sample_code_async -d device_path [-n num_ios] [-q queue_depth] [-o op_type] [-k klen] [-v vlen] [-p is_polling]
-    
+    sudo ./sample_code_async -d device_path [-n num_ios] [-q queue_depth] [-o op_type] [-k klen] [-v vlen]
+    sudo ./sample_code_sync -d device_path [-n num_ios] [-o op_type] [-k klen] [-v vlen] [-t threads]
+
     e.g. ./sample_code_async -d /dev/nvme0n1 -n 100 -q 64 -o 1 -k 16 -v 4096
 
     2. Test with SPDK Driver

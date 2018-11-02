@@ -7,6 +7,9 @@ We use [CMake](http://www.cmake.org/cmake/) to provide the build support for a w
 
     `sudo apt-get install cmake`
 
+* **CentoOS**
+    `sudo yum install cmake`
+
 Once CMake is installed, please follow the instructions below to compile and build the benchmark program on Ubuntu:
 
 `cd ForestDB-Benchmark`
