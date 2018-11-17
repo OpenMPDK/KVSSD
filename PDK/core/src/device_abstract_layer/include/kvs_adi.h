@@ -320,8 +320,15 @@ typedef enum {
 // kv_store_option
 typedef enum {
   KV_STORE_OPT_DEFAULT    = 0x00, ///< [DEFAULT] storing key value pair(or overwriting given value if key exists)
-  KV_STORE_OPT_IDEMPOTENT = 0x01, ///< [MANDATORY] storing KV pair only if the key in the pair does not exist already
-  KV_STORE_OPT_COMPRESS   = 0x02, ///< [OPTIONAL] compressing value before writing it to the storage if a device has the capability. This is a hint to a device, idempotent and compression can be simultaneously set if the device support compression.
+  KV_STORE_OPT_COMPRESS   = 0x01, ///< [OPTIONAL] compressing value before writing it to the storage if a device has the capability. This is a hint to a device, idempotent and compression can be simultaneously set if the device support compression.
+  KV_STORE_OPT_IDEMPOTENT = 0x02, ///< [MANDATORY] storing KV pair only if the key in the pair does not exist already
+
+  KV_STORE_OPT_UPDATE_ONLY = 0x03,
+  KV_STORE_OPT_APPEND = 0x04,
+  KV_STORE_OPT_POST_WITH_COMPRESS = 0x05,
+  KV_STORE_OPT_UPDATE_ONLY_COMPRESS = 0x06,
+  KV_STORE_OPT_NOOVERWRITE_COMPRESS = 0x07,
+  KV_STORE_OPT_APPEND_COMPRESS = 0x08,
 } kv_store_option;
 
 /**

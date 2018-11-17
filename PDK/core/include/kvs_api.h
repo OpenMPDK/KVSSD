@@ -216,6 +216,7 @@ kvs_result kvs_exist_tuples_async(kvs_container_handle cont_hd, uint32_t key_cnt
  * \ingroup KV_API
  */
 kvs_result kvs_open_iterator(kvs_container_handle cont_hd, const kvs_iterator_context *ctx, kvs_iterator_handle *iter_hd);
+  
 /*! close an iterator
  * 
  * \param cont_hd container handle
@@ -225,6 +226,14 @@ kvs_result kvs_open_iterator(kvs_container_handle cont_hd, const kvs_iterator_co
  */
 kvs_result kvs_close_iterator(kvs_container_handle cont_hd, kvs_iterator_handle hiter, const kvs_iterator_context *ctx);
 
+/*! close all opened iterators
+ *
+ * \param cont_hd container handle
+ * \ingroup KV_API
+ */
+kvs_result kvs_close_iterator_all(kvs_container_handle cont_hd);
+
+  
 /*! iterator next
  *
  * retrieve a next group of keys or key-value pairs in the iterator group 

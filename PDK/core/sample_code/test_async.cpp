@@ -62,8 +62,8 @@ void usage(char *program)
   printf("-n      num_ios      :  total number of ios\n");
   printf("-q      queue_depth  :  queue depth\n");
   printf("-o      op_type      :  1: write; 2: read; 3: delete; 4: iterator; 5: check key exist\n");
-  printf("-k      klen         :  key length\n");
-  printf("-v      vlen         :  value length\n");
+  printf("-k      klen         :  key length (ignore this for iterator)\n");
+  printf("-v      vlen         :  value length (ignore this for iterator)\n");
   printf("==============\n");
 }
 
@@ -72,7 +72,6 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_iterator_option  g
   uint8_t *it_buffer = (uint8_t *) iter_list->it_list;
   uint32_t i;
 
-  //if(g_iter_mode.kvs_iterator_kv) {
   if(g_iter_mode.iter_type) {
     // key and value iterator (KVS_ITERATOR_KEY_VALUE)
     uint32_t vlen = sizeof(kvs_value_t);
@@ -107,6 +106,7 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_iterator_option  g
     uint32_t key_size = 0;
     char key[256];
 
+    
     for(i = 0;i < iter_list->num_entries; i++) {
       // get key size
       key_size = *((unsigned int*)it_buffer);
@@ -115,7 +115,8 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_iterator_option  g
       // print key
       memcpy(key, it_buffer, key_size);
       key[key_size] = 0;
-      fprintf(stdout, "%dth key --> %s\n", i, key);
+      fprintf(stdout, "%dth key --> %s, size = %d\n", i, key, key_size);
+
       it_buffer += key_size;
     }
 
@@ -124,7 +125,7 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_iterator_option  g
 
 
 void complete(kvs_callback_context* ioctx) {
-  if (ioctx->result != 0 /*&& ioctx->result != KVS_WRN_MORE && ioctx->result != KVS_ERR_ITERATOR_END*/ && ioctx->result != KVS_ERR_KEY_NOT_EXIST) {
+  if (ioctx->result != 0 && ioctx->result != KVS_ERR_KEY_NOT_EXIST) {
     fprintf(stderr, "io error: op = %d, key = %s, result = 0x%x, err = %s\n", ioctx->opcode, ioctx->key ? (char*)ioctx->key->key:0, ioctx->result, kvs_errstr(ioctx->result));
     exit(1);
   } else {
@@ -140,7 +141,7 @@ void complete(kvs_callback_context* ioctx) {
     break;
   case IOCB_ASYNC_CHECK_KEY_EXIST_CMD:
     exist = (uint8_t*)ioctx->result_buffer;
-    fprintf(stdout, "key %s exist? %x - %s\n", (char*)ioctx->key->key, *exist, kvs_errstr(*exist));
+    fprintf(stdout, "key %s exist? %s\n", (char*)ioctx->key->key, *exist == 0? "FALSE":"TRUE");
   default:
     //fprintf(stderr, "io_complete: op = %d, key = %s, vlen = %d, actual vlen = %d, result = %s\n", ioctx->opcode, (char*)ioctx->key->key, ioctx->value.length, ioctx->value.actual_value_size, kvs_errstr(ioctx->result));
     std::queue<char*> * keypool = (std::queue<char*> *)ioctx->private1;
@@ -156,9 +157,6 @@ void complete(kvs_callback_context* ioctx) {
     }
     pthread_mutex_unlock(&lock);
 
-    //free(ioctx->key);
-    //free(ioctx->value);
-    
     completed++;
     cur_qdepth--; 
     break;
@@ -177,15 +175,11 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
   struct iterator_info *iter_info = (struct iterator_info *)malloc(sizeof(struct iterator_info));
 
   if(iter_kv == 0) {
-    //iter_info->g_iter_mode.kvs_iterator_key = true;
     iter_info->g_iter_mode.iter_type = KVS_ITERATOR_KEY;
   } else {
-    //iter_info->g_iter_mode.kvs_iterator_kv = true;
     iter_info->g_iter_mode.iter_type = KVS_ITERATOR_KEY_VALUE;
   }
 
-  
-  //int nr = 0;
   int ret;
   static int total_entries = 0;
 
@@ -215,7 +209,8 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
     iter_ctx_open.option.iter_type = KVS_ITERATOR_KEY_VALUE;
 
   submitted = completed = 0;
-  
+
+  //kvs_close_iterator_all(cont_hd);
   ret = kvs_open_iterator(cont_hd, &iter_ctx_open, &iter_info->iter_handle); 
   if(ret) {
     fprintf(stdout, "open iter failed with err %s\n", kvs_errstr(ret));
@@ -315,7 +310,7 @@ int perform_read(kvs_container_handle cont_hd, int count, int maxdepth, kvs_key_
     struct timespec t1, t2;
     clock_gettime(CLOCK_REALTIME, &t1);
         
-    long int seq = 1;
+    long int seq = 0;
 
     while (num_submitted < count) {
 
@@ -328,11 +323,9 @@ int perform_read(kvs_container_handle cont_hd, int count, int maxdepth, kvs_key_
 	memset(value, 0, vlen);
 	kvs_retrieve_option option;
 	memset(&option, 0, sizeof(kvs_retrieve_option));
-	//option.kvs_retrieve_default = true;
 	option.kvs_retrieve_decompress = false;
 	option.kvs_retrieve_delete = false;
 	const kvs_retrieve_context ret_ctx = {option, &keypool, &valuepool};
-	//const kvs_key  kvskey = { key, klen };
 	kvs_key *kvskey = (kvs_key*)malloc(sizeof(kvs_key));
 	kvskey->key = key;
 	kvskey->length = klen;
@@ -400,7 +393,7 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, kvs
     valuepool.push(valuemem);
   }
 
-  long int seq = 1;
+  long int seq = 0;
   fprintf(stdout, "\n===========\n");
   fprintf(stdout, "   Do Write Operation\n");
   fprintf(stdout, "===========\n");
@@ -425,13 +418,10 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, kvs
       sprintf(value, "value%ld", seq);
       kvs_store_option option;
       memset(&option, 0, sizeof(kvs_store_option));
-      //option.kvs_store_default = true;
       option.st_type = KVS_STORE_POST;
       option.kvs_store_compress = false;
       
       const kvs_store_context put_ctx = {option, &keypool, &valuepool };
-      //const kvs_key  kvskey = { key, klen};
-      //const kvs_value kvsvalue = { value, vlen, 0, 0 /*offset */};
       kvs_key *kvskey = (kvs_key*)malloc(sizeof(kvs_key));
       kvskey->key = key;
       kvskey->length = klen;
@@ -499,7 +489,7 @@ int perform_delete(kvs_container_handle cont_hd, int count, int maxdepth, kvs_ke
     valuepool.push(valuemem);
   }
 
-  long int seq = 1;
+  long int seq = 0;
 
   fprintf(stdout, "\n===========\n");
   fprintf(stdout, "   Do Delete Operation\n");
@@ -515,12 +505,10 @@ int perform_delete(kvs_container_handle cont_hd, int count, int maxdepth, kvs_ke
       char *key   = keypool.front(); keypool.pop();
       pthread_mutex_unlock(&lock);
       sprintf(key, "%0*ld", klen - 1, seq++);
-      //const kvs_key  kvskey = { key, klen};
       kvs_key *kvskey = (kvs_key*)malloc(sizeof(kvs_key));
       kvskey->key = key;
       kvskey->length = klen;
       kvs_delete_option option;
-      //option.kvs_delete_default = true;
       option.kvs_delete_error = false;
       const kvs_delete_context del_ctx = { option, &keypool, &valuepool};
       int ret = kvs_delete_tuple_async(cont_hd, kvskey, &del_ctx, complete);
@@ -583,7 +571,7 @@ int perform_key_exist(kvs_container_handle cont_hd, int count, int maxdepth, kvs
     valuepool.push(valuemem);
   }
 
-  long int seq = 1;
+  long int seq = 0;
   fprintf(stdout, "\n===========\n");
   fprintf(stdout, "   Do key exist check Operation\n");
   fprintf(stdout, "===========\n");
@@ -683,6 +671,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  
   if(dev_path == NULL) {
     fprintf(stderr, "Please specify KV SSD device path\n");
     usage(argv[0]);
@@ -703,7 +692,6 @@ int main(int argc, char *argv[]) {
   options.emul_config_file =  configfile;
   
   if(found) { // spdk driver
-    //use_udd = 1;
     options.memory.use_dpdk = 1;
     char *core;
     core = options.udd.core_mask_str;
@@ -727,7 +715,7 @@ int main(int argc, char *argv[]) {
   kvs_device_handle dev;
   ret = kvs_open_device(dev_path, &dev);
   if(ret != KVS_SUCCESS) {
-    fprintf(stderr, "Device open failed\n");
+    fprintf(stderr, "Device open failed %s\n", kvs_errstr(ret));
     exit(1);
   }
   
@@ -765,11 +753,8 @@ int main(int argc, char *argv[]) {
     perform_delete(cont_handle, num_ios, qdepth, klen, vlen);
     break;
   case ITERATOR_OP:
-    perform_insertion(cont_handle, num_ios, qdepth, klen, vlen);
+    //perform_insertion(cont_handle, num_ios, qdepth, klen, vlen);
     perform_iterator(cont_handle, 0);
-    //perform_iterator(cont_handle, 1);
-    /* Iterator a key-value pair only works in emulator */
-    //perform_iterator(cont_handle, is_polling, 1);
     break;
   case KEY_EXIST_OP:
     perform_key_exist(cont_handle, num_ios, qdepth,  klen, vlen);

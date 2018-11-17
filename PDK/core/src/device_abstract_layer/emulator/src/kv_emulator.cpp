@@ -83,6 +83,10 @@ kv_result kv_emulator::kv_store(const kv_key *key, const kv_value *value, uint8_
         return KV_ERR_DEV_CAPACITY;
     }
 
+    if (option != KV_STORE_OPT_DEFAULT && option != KV_STORE_OPT_IDEMPOTENT) {
+        return KV_ERR_OPTION_INVALID;
+    }
+
     const std::string valstr = std::string((char *)value->value, value->length);
     struct timespec begin;
     if (m_use_iops_model) {
@@ -140,6 +144,11 @@ kv_result kv_emulator::kv_retrieve(const kv_key *key, uint8_t option, kv_value *
     if (m_use_iops_model) {
         kv_emul_timer.start2(&begin);
     }
+
+    if (option != KV_RETRIEVE_OPT_DEFAULT) {
+        return KV_ERR_OPTION_INVALID;
+    }
+
     //const uint64_t start_tick = kv_emul_timer.start();
     {
 
@@ -234,6 +243,10 @@ kv_result kv_emulator::kv_delete(const kv_key *key, uint8_t option, uint32_t *re
         return KV_ERR_KEY_INVALID;
     }
 
+    if (option != KV_DELETE_OPT_DEFAULT && option != KV_DELETE_OPT_ERROR) {
+        return KV_ERR_OPTION_INVALID;
+    }
+
     std::unique_lock<std::mutex> lock(m_map_mutex);
     auto it = m_map.find((kv_key*)key);
     if (it != m_map.end()) {
@@ -248,6 +261,10 @@ kv_result kv_emulator::kv_delete(const kv_key *key, uint8_t option, uint32_t *re
         m_map.erase(it);
         free(key->key);
         delete key;
+    } else {
+        if (option == KV_DELETE_OPT_ERROR) {
+            return KV_ERR_KEY_NOT_EXIST;
+        }
     }
 
     return KV_SUCCESS;

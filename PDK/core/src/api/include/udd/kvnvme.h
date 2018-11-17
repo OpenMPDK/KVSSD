@@ -47,11 +47,7 @@
 #include <sys/queue.h>
 #include <fcntl.h>
 #include "kv_types.h"
-
-// NOTE: (0911)below constants have been moved to kv_types.h
-//#define	LBA_TYPE_SSD	0
-//#define	KV_TYPE_SSD	1
-//#define	MAX_CPU_CORES	64
+#include "spdk/env.h"
 
 #define	SYNC_IO_QUEUE	1
 #define	ASYNC_IO_QUEUE	2
@@ -60,6 +56,7 @@
 #define	KV_MEM_SIZE	8192
 
 #define	DEFAULT_IO_QUEUE_DEPTH		256
+#define DEFAULT_IO_QUEUE_ID	(-1)
 
 #ifdef __cplusplus
 extern "C" {
@@ -116,8 +113,7 @@ typedef struct kv_nvme_cpl {
  * @brief Initializes the underlying uNVMe Driver environment
  */
 void kv_env_init(uint32_t process_mem_size_mb);
-
-void kv_env_init_with_shmid(uint32_t process_mem_size_mb, int shmid);
+void kv_env_init_with_spdk_opts(struct spdk_env_opts* opts);
 
 /**
  * @brief Initialize a KV NVMe Device
@@ -136,7 +132,7 @@ int kv_nvme_init(const char *bdf, kv_nvme_io_options *options, unsigned int ssd_
  *         when not initialized(=return 0), most of SDK APIs will not work
  *  @return 1 = initialized , 0 = not initialized
  */
-int kv_nvme_is_dd_initialized();
+int kv_nvme_is_dd_initialized(void);
 
 /**
  * @brief Open a KV NVMe Device
@@ -147,13 +143,13 @@ int kv_nvme_is_dd_initialized();
 uint64_t kv_nvme_open(const char *bdf);
 
 /**
- * @brief Display the WAF (Write Amplificaton Factor) in a KV NVMe Device
+ * @brief Display WAF(Write Amplification Factor) of the KV NVMe Device
  * @param handle Handle to the KV NVMe Device
  */
 uint64_t kv_nvme_get_waf(uint64_t handle);
 
 /**
- * @brief Gmet Smart Log with given log id and buffer
+ * @brief Get Smart Log with given log id and buffer
  * @param handle Handle to the KV NVMe Device
  * @log_id log page identifier to read
  * @buffer buffer to store read log (Heap)
@@ -182,6 +178,12 @@ uint16_t kv_nvme_get_io_queue_size(uint64_t handle);
  * @param handle Handle to the KV NVMe Device
  */
 uint32_t kv_nvme_get_sector_size(uint64_t handle);
+
+/**
+ * @brief return Number of Sectors in the device
+ * @param handle Handle to the KV NVMe Device
+ */
+uint64_t kv_nvme_get_num_sectors(uint64_t handle);
 
 /**
  * @brief return current QD being submitted
@@ -225,79 +227,99 @@ kv_nvme_cpl_t *kv_nvme_submit_raw_cmd(uint64_t handle, kv_nvme_cmd_t cmd, void *
 /**
  * @brief Store Key-Value pair to a KV NVMe Device
  * @param handle Handle to the KV NVMe Device
+ * @param qid submission queue id
  * @param kv_pair kv_pair that is to be stored to the KV NVMe Device
  * @return 0 : Success
  * @return > 0: Status of the Store command
  */
-int kv_nvme_write(uint64_t handle, const kv_pair* kv);
+int kv_nvme_write(uint64_t handle, int qid, kv_pair* kv);
 
 /**
  * @brief Append Key-Value pair to a KV NVMe Device
  * @param handle Handle to the KV NVMe Device
+ * @param qid submission queue id
  * @param kv_pair kv_pair that is to be stored to the KV NVMe Device
  * @return 0 : Success
  * @return > 0: Status of the Store command
  */
-int kv_nvme_append(uint64_t handle, const kv_pair* kv);
+int kv_nvme_append(uint64_t handle, int qid, kv_pair* kv);
 
 /**
  * @brief Store Key-Value pair to a KV NVMe Device Asynchronously
  * @param handle Handle to the KV NVMe Device
+ * @param qid submission queue id
  * @param kv_pair kv_pair that is to be stored to the KV NVMe Device
  * @return 0 : Success
  * @return > 0: Status of the Store command
  */
-int kv_nvme_write_async(uint64_t handle, const kv_pair* kv);
+int kv_nvme_write_async(uint64_t handle, int qid, kv_pair* kv);
 
 /**
  * @brief Retrieve Value for a particular Key, from a KV NVMe Device
  * @param handle Handle to the KV NVMe Device
+ * @param qid submission queue id
  * @param kv_pair kv_pair that is to be passed to the KV NVMe Device
  * @return 0 : Success
  * @return > 0: Status of the Retrieve command
  */
-int kv_nvme_read(uint64_t handle, kv_pair* pair);
+int kv_nvme_read(uint64_t handle, int qid, kv_pair* pair);
 
 /**
  * @brief Retrieve Value for a particular Key, from a KV NVMe Device Asynchronously
  * @param handle Handle to the KV NVMe Device
+ * @param qid submission queue id
  * @param kv_pair kv_pair that is to be passed to the KV NVMe Device
  * @return 0 : Success
  * @return > 0: Status of the Retrieve command
  */
-int kv_nvme_read_async(uint64_t handle, kv_pair* pair);
+int kv_nvme_read_async(uint64_t handle, int qid, kv_pair* pair);
 
 /**
  * @brief Delete a particular Key, from a KV NVMe Device
  * @param handle Handle to the KV NVMe Device
+ * @param qid submission queue id
  * @param kv_pair kv_pair that is to be deleted from the KV NVMe Device
  * @return 0 : Success
  * @return > 0: Status of the Delete command
  */
-int kv_nvme_delete(uint64_t handle, const kv_pair *key);
+int kv_nvme_delete(uint64_t handle, int qid, const kv_pair *key);
 
 /**
  * @brief Delete a particular Key, from a KV NVMe Device Asynchronously
  * @param handle Handle to the KV NVMe Device
+ * @param qid submission queue id
  * @param kv_pair kv_pair that is to be deleted from the KV NVMe Device
  * @return 0 : Success
  * @return > 0: Status of the Delete command
  */
-int kv_nvme_delete_async(uint64_t handle, const kv_pair *key);
+int kv_nvme_delete_async(uint64_t handle, int qid, const kv_pair *key);
 
 /**
- * @brief Check if existence of a particular Key set, from a KV NVMe Device Asynchronously
- * @param handle Handle to the KV NVMe Device
- * @param key_list Key list that is going to check whether those exist in the KV NVMe Device
- * @param result Result bytes of each key existenc e(Exist=1|Not Exist=0)
- * @return 0 : Success
- * @return > 0: Status of the Exist command
+ * @brief Checks if given key exist and returns status(status code=0 : exist, 0x10=not exist)
+ * @param kv kv_pair which contains a namespace and key information
+ * @param qid submission queue id
+ * @return KV_SUCCESS
+ * @return KV_ERR_NOT_EXIST_KEY
+ * @return KV_ERR_SDK_INVALID_PARAM
+ * @return KV_ERR_IO
  */
-int kv_nvme_exist(uint64_t handle, const kv_key_list *key_list, kv_value *result);
+int kv_nvme_exist(uint64_t handle, int qid, const kv_pair *kv_pair);
+
+/**
+ * @brief Checks if given key exist and returns status in async manner (status code=0 : exist, 0x10=not exist)
+ * @param kv kv_pair which contains a namespace and key information
+ * @param qid submission queue id
+ * @return KV_SUCCESS
+ * @return KV_ERR_NOT_EXIST_KEY
+ * @return KV_ERR_SDK_INVALID_PARAM
+ * @return KV_ERR_IO
+ */
+int kv_nvme_exist_async(uint64_t handle, int qid, const kv_pair *kv_pair);
 
 /**
  * @brief open iterate handle
  * @param handle Handle to the KV NVMe Device
+ * @param keyspace_id  keyspace_id
  * @param bitmask  bitmask
  * @param prefix  key prefix of matching key set
  * @param iterate_type  one of four types (key-only, key-value, key-only with delete, key-value with delete )
@@ -305,7 +327,7 @@ int kv_nvme_exist(uint64_t handle, const kv_key_list *key_list, kv_value *result
  * @return > 0 : iterator id opened
  * @return = UINT8_MAX: fail to open iterator
  */
-uint32_t kv_nvme_iterate_open(uint64_t handle, const uint32_t bitmask, const uint32_t prefix, const uint8_t iterate_type);
+uint32_t kv_nvme_iterate_open(uint64_t handle, const uint8_t keyspace_id, const uint32_t bitmask, const uint32_t prefix, const uint8_t iterate_type);
 
 /**
  * @brief close iterate handle
@@ -320,20 +342,22 @@ int kv_nvme_iterate_close(uint64_t handle, const uint8_t iterator);
 /**
  * @brief read matching key set from given iterator
  * @param handle Handle to the KV NVMe Device
+ * @param qid submission queue id
  * @param it kv_iterate structure including iterator id and result buffer 
  * @return = 0 : Success
  * @return != 0 : Fail to Close iterator
  */
-int kv_nvme_iterate_read(uint64_t handle, kv_iterate* it);
+int kv_nvme_iterate_read(uint64_t handle, int qid, kv_iterate* it);
 
 /**
  * @brief read matching key set from given iterator
  * @param handle Handle to the KV NVMe Device
+ * @param qid submission queue id
  * @param it kv_iterate structure including iterator id and result buffer 
  * @return = 0 : Success
  * @return != 0 : Fail to Close iterator
  */
-int kv_nvme_iterate_read_async(uint64_t handle, kv_iterate* it);
+int kv_nvme_iterate_read_async(uint64_t handle, int qid, kv_iterate* it);
 
 /**
  * @brief return array describing iterate handle(s)
@@ -345,23 +369,15 @@ int kv_nvme_iterate_read_async(uint64_t handle, kv_iterate* it);
  */
 int kv_nvme_iterate_info(uint64_t handle, kv_iterate_handle_info* info, int nr_handle);
 
-/**
- * @brief read matching key set from given iterator asynchronously
- * @param handle Handle to the KV NVMe Device
- * @param it kv_iterate structure including iterator id and result buffer 
- * @return = 0 : Success
- * @return != 0 : Fail to Close iterator
- */
-int kv_nvme_iterate_read_async(uint64_t handle, kv_iterate* it);
-
 
 /**
  * @brief Format the KV NVMe Device 
  * @param handle Handle to the KV NVMe Device
+ * @param erase_user_data 0 = erase map only, 1 = erase user data
  * @return 0 : Success
  * @return > 0: Status of the Delete command
  */
-int kv_nvme_format(uint64_t handle);
+int kv_nvme_format(uint64_t handle, int erase_user_data);
 
 /**
  * @brief Get the Total Size of the KV NVMe Device (In Bytes)
@@ -398,22 +414,22 @@ int kv_nvme_finalize(char *bdf);
 /**
  * @brief Allocate Physically Contiguous Memory
  * @param size Size of the physically contiguous memory to allocate (in bytes)
- * @return ptr : Valid pointer to the physically contiguous memory if succcess, else NULL
+ * @return ptr : Valid pointer to the physically contiguous memory if success, else NULL
  */
 void *kv_alloc(unsigned long long size);
 
 /**
- * @brief Allocate Physically Contiguous Memory and Fill it with Zeroes
+ * @brief Allocate Physically Contiguous Memory and Fill it with zeros
  * @param size Size of the physically contiguous memory to allocate (in bytes)
- * @return ptr : Valid pointer to the physically contiguous memory if succcess, else NULL
+ * @return ptr : Valid pointer to the physically contiguous memory if success, else NULL
  */
 void *kv_zalloc(unsigned long long size);
 
 /**
- * @brief Allocate Physically Contiguous Memory and Fill it with Zeroes
+ * @brief Allocate Physically Contiguous Memory and Fill it with zeros
  * @param size Size of the physically contiguous memory to allocate (in bytes)
  * @param socket_id NUMA Socket ID (-1 = SPDK_ENV_SOCKET_ID_ANY)
- * @return ptr : Valid pointer to the physically contiguous memory if succcess, else NULL
+ * @return ptr : Valid pointer to the physically contiguous memory if success, else NULL
  */
 void *kv_zalloc_socket(unsigned long long size, int socket_id);
 
@@ -427,6 +443,16 @@ void kv_free(void *ptr);
  * @brief Show API Info (buildtime / system info)
  */
 void kv_nvme_sdk_info(void);
+
+/**
+ * @brief process completion of all CQs in a SSD
+ */
+void kv_nvme_process_completion(uint64_t handle);
+
+/**
+ * @brief process completion of a specific CQ in a SSD
+ */
+void kv_nvme_process_completion_queue(uint64_t handle, uint32_t queue_id);
 
 #ifdef __cplusplus
 }

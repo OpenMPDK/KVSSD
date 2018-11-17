@@ -64,8 +64,7 @@ char udd_core_masks[256];
 char udd_cq_thread_masks[256];
 uint32_t udd_mem_size_mb = 1024;
 kvs_iterator_option g_iter_mode;
-int g_iter_key_size = 16;
-int iter_read_size = 32 * 1024;
+#define iter_read_size (32 * 1024)
 
 void print_iterator_keyvals(kvs_iterator_list *iter_list){
   uint8_t *it_buffer = (uint8_t *) iter_list->it_list;
@@ -256,28 +255,33 @@ void on_io_complete(kvs_callback_context* ioctx) {
     case IOCB_ASYNC_PUT_CMD:
       //ctx->op = OP_INSERT;
       ctx->value = ioctx->value->value;
+      ctx->key = ioctx->key->key;
       l_stat = owner->l_write;
       release_kvskeyvalue(owner, ioctx->key, ioctx->value); 
       break;
     case IOCB_ASYNC_GET_CMD:
       //ctx->op= OP_GET;
       ctx->value = ioctx->value->value;
+      ctx->key = ioctx->key->key;
       l_stat = owner->l_read;
       release_kvskeyvalue(owner, ioctx->key, ioctx->value); 
       break;
     case IOCB_ASYNC_DEL_CMD:
       //ctx->op= OP_DEL;
+      ctx->key = ioctx->key->key;
+      ctx->value = NULL;
       l_stat = owner->l_delete;
       release_kvskeyvalue(owner, ioctx->key, 0); 
       break;
     case IOCB_ASYNC_ITER_NEXT_CMD:
       //ctx->op = OP_ITER_NEXT;
       //print_iterator_keyvals(&owner->iter_list);
+      ctx->key = ctx->value = NULL;
       owner->has_iter_finish = 1;
       break;
     }
   
-    ctx->key = ioctx->key->key;
+    //ctx->key = ioctx->key->key;
     add_event(owner, ctx);
   } else {  // kdd
     if(kdd_is_polling) {
@@ -560,11 +564,16 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
 					  Db **pDb, int id)
 {
 
+  int ret;
   Db *ppdb;
   *pDb = (Db*)malloc(sizeof(Db));
   ppdb = *pDb;
 
-  kvs_open_device(dev_path, &ppdb->dev);
+  ret = kvs_open_device(dev_path, &ppdb->dev);
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "Device open failed %s\n", kvs_errstr(ret));
+    exit(1);
+  }
   
   ppdb->id = id;
   ppdb->context_idx = 0;
@@ -682,7 +691,7 @@ couchstore_error_t kvs_store_sync(Db *db, Doc* const docs[],
     ret = kvs_store_tuple(db->cont_hd, &kvskey, &kvsvalue, &put_ctx);
 
     if(ret != KVS_SUCCESS) {
-      fprintf(stderr, "KVBENCH: store tuple sync failed %s\n", (char*)docs[i]->id.buf);
+      fprintf(stderr, "KVBENCH: store tuple sync failed %s 0x%x\n", (char*)docs[i]->id.buf, ret);
       exit(1);
     }
   }
@@ -790,19 +799,20 @@ couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
   iter_ctx.private1 = db;
   iter_ctx.private2 = NULL;
 
-  kvs_open_iterator(db->cont_hd, &iter_ctx, &db->iter_handle);
+  //kvs_close_iterator_all(db->cont_hd);
+  int ret = kvs_open_iterator(db->cont_hd, &iter_ctx, &db->iter_handle);
+  if(ret) {
+    fprintf(stdout, "open iter failed with err %s\n", kvs_errstr(ret));
+    exit(1);
+  }
   db->iter_list.end = 0;
   db->iter_list.num_entries = 0;
   db->iter_list.size = iter_read_size;
-  if(use_udd)
-    db->iter_list.it_list = kvs_zalloc(iter_read_size, 4096);
-  else {
-    uint8_t *buffer;
-    posix_memalign((void **)&buffer, 4096, iter_read_size);
-    memset(buffer, 0, iter_read_size);
-    db->iter_list.it_list = (uint8_t*) buffer;
-  }
 
+  uint8_t *buffer;
+  buffer =(uint8_t*) kvs_malloc(iter_read_size, 4096);
+  db->iter_list.it_list = (uint8_t*)buffer;
+  
   return COUCHSTORE_SUCCESS; 
 }
 
@@ -815,7 +825,7 @@ couchstore_error_t couchstore_iterator_close(Db *db) {
     iter_ctx.private2 = NULL;
     ret = kvs_close_iterator(db->cont_hd, db->iter_handle, &iter_ctx);
     db->iter_handle = NULL;
-    if(db->iter_list.it_list) free(db->iter_list.it_list);
+    if(db->iter_list.it_list) kvs_free(db->iter_list.it_list);
     fprintf(stdout, "Iterator closed \n");
   }
   return COUCHSTORE_SUCCESS;
@@ -829,7 +839,8 @@ couchstore_error_t couchstore_iterator_next(Db *db) {
   iter_ctx.private2 = NULL;
 
   kvs_iterator_list *iter_list = &db->iter_list;
-
+  iter_list->size = iter_read_size;
+  
   if(use_udd){ 
     db->has_iter_finish = 0;
   }

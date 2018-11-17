@@ -406,6 +406,9 @@ namespace kvadi {
                         else if(dev_status_code == 0x303){
                             req->ioctx.retcode = KV_ERR_KEY_LENGTH_INVALID;
                         }
+                        else if(dev_status_code == 0x304){
+                            req->ioctx.retcode = KV_ERR_OPTION_INVALID; // for invalid option
+                        }
                         else if(dev_status_code == 0x308){
                             req->ioctx.retcode = KV_ERR_VALUE_LENGTH_MISALIGNED;
                         }
@@ -427,8 +430,14 @@ namespace kvadi {
                         else if (dev_status_code == 0x303){
                             req->ioctx.retcode = KV_ERR_KEY_LENGTH_INVALID;
                         }
+                        else if(dev_status_code == 0x304){
+                            req->ioctx.retcode = KV_ERR_OPTION_INVALID; // for invalid option
+                        }
                         else if (dev_status_code == 0x308){
                             req->ioctx.retcode = KV_ERR_VALUE_LENGTH_MISALIGNED;
+                        }
+                        else if(dev_status_code == 0x310){
+                            req->ioctx.retcode = KV_ERR_KEY_NOT_EXIST;
                         }
                         else if (dev_status_code == 0x311){
                             req->ioctx.retcode = KV_ERR_UNCORRECTIBLE;
@@ -446,7 +455,10 @@ namespace kvadi {
 
                     else if(req->ioctx.opcode == KV_OPC_DELETE){
                         if(dev_status_code == 0x310){
-                            req->ioctx.retcode = KV_ERR_KEY_EXIST;
+                            req->ioctx.retcode = KV_ERR_KEY_NOT_EXIST;
+                        }
+                        else if(dev_status_code == 0x304){
+                            req->ioctx.retcode = KV_ERR_OPTION_INVALID; // for invalid option
                         }
                         else {
                             req->ioctx.retcode = KV_ERR_SYS_IO;
@@ -839,6 +851,7 @@ namespace kvadi {
         struct nvme_passthru_kv_cmd cmd;
         uint8_t dev_option = 0;
         if (!m_ready) return KV_ERR_DEV_INIT;
+        /*
         switch(option) {
             case KV_STORE_OPT_COMPRESS:
                 dev_option = 1;
@@ -850,10 +863,11 @@ namespace kvadi {
                 dev_option = 0;
                 break;
         }
+        */
         memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
         cmd.opcode = nvme_cmd_kv_store;
         cmd.nsid = m_nsid;
-        cmd.cdw4 = dev_option;
+        cmd.cdw4 = option;
         cmd.cdw5 = value->offset;
         cmd.data_addr = (__u64)value->value;
         cmd.data_length = value->length;
@@ -878,9 +892,10 @@ namespace kvadi {
 
     kv_result kv_linux_kernel::kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx) {
         struct nvme_passthru_kv_cmd cmd;
-        uint8_t dev_option = 0;
+        // uint8_t dev_option = 0;
         if (!m_ready) return KV_ERR_DEV_INIT;
 
+        /*
         switch(option) {
             case KV_RETRIEVE_OPT_DECOMPRESS:
                 dev_option = 1;
@@ -888,11 +903,11 @@ namespace kvadi {
             default:
                 dev_option = 0;
                 break;
-        }
+        } */
         memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
         cmd.opcode = nvme_cmd_kv_retrieve;
         cmd.nsid = m_nsid;
-        cmd.cdw4 = dev_option;
+        cmd.cdw4 = option;
         cmd.cdw5 = value->offset;
         cmd.data_addr =(__u64)value->value;
         //Actual buffer size, was value->actual_value_size is being  returned after the call.
@@ -972,6 +987,7 @@ namespace kvadi {
         } else {
             memcpy(cmd.key, key->key, key->length);
         }
+        cmd.cdw4 = option;
         cmd.cdw11 = key->length - 1;
         cmd.reqid = (__u64)ioctx;
         cmd.ctxid = m_ctxid;
@@ -985,7 +1001,7 @@ namespace kvadi {
     }
 
     // iterator
-    kv_result kv_linux_kernel::kv_open_iterator(const kv_iterator_option opt, const kv_group_condition *cond, bool_t keylen_fixed, kv_iterator_handle *iter_hdl, void *ioctx) {
+    kv_result kv_linux_kernel::kv_open_iterator(const kv_iterator_option option, const kv_group_condition *cond, bool_t keylen_fixed, kv_iterator_handle *iter_hdl, void *ioctx) {
 
         if (cond == NULL || iter_hdl == NULL || cond == NULL) {
             return KV_ERR_PARAM_INVALID;
@@ -996,21 +1012,30 @@ namespace kvadi {
         struct nvme_passthru_kv_cmd cmd;
         if (!m_ready) return KV_ERR_DEV_INIT;
         memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
-        uint8_t dev_option =  KV_ITERATOR_OPT_KEY; // 0x00 < [DEFAULT] iterator command gets only key entri
-        switch(opt){
+        uint8_t dev_option; // =  option; // KV_ITERATOR_OPT_KEY; // 0x00 < [DEFAULT] iterator command gets only key entri
+        switch(option){
+            case KV_ITERATOR_OPT_KEY:
+                dev_option = 0x04; 
+                break;
             case KV_ITERATOR_OPT_KV:
-                return KV_ERR_SYS_IO; // Not supported yet- returns Key-Values both.
+                dev_option = 0x08;
+                //return KV_ERR_SYS_IO; // Not supported yet- returns Key-Values both.
+                break;
+            case KV_ITERATOR_OPT_KV_WITH_DELETE:
+                dev_option = 0x10;
+                //return KV_ERR_SYS_IO; // Not supported yet- returns Key-Values both.
                 break;
             default:
                 ///< [DEFAULT] iterator command gets only key entries without values
-                dev_option = KV_ITERATOR_OPT_KEY;
+                dev_option = 0x80;
         }
-        (void) dev_option;
+
 
         cmd.opcode = nvme_cmd_kv_iter_req;
         cmd.nsid = m_nsid;
 #ifdef ITER_EXT
-        cmd.cdw4 = (0x01|0x04); // For open option ITER_OPTION_OPEN
+        // cmd.cdw4 = (0x01|0x04); // For open option ITER_OPTION_OPEN
+        cmd.cdw4 = (dev_option|0x01); // For open option ITER_OPTION_OPEN
 #else
         cmd.cdw4 = 0x01; // For open option ITER_OPTION_OPEN
 #endif

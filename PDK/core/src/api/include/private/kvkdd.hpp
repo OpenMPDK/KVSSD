@@ -80,12 +80,13 @@ public:
   virtual ~KDDriver();
   virtual int32_t init(const char*devpath, const char* configfile, int queuedepth, int is_polling) override;
   virtual int32_t process_completions(int max) override;
-  virtual int32_t store_tuple(int contid, const kvs_key *key, const kvs_value *value, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
-  virtual int32_t retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
-  virtual int32_t delete_tuple(int contid, const kvs_key *key, uint8_t option, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
+  virtual int32_t store_tuple(int contid, const kvs_key *key, const kvs_value *value, kvs_store_option option /*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
+  virtual int32_t retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, kvs_retrieve_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
+  virtual int32_t delete_tuple(int contid, const kvs_key *key, kvs_delete_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
   virtual int32_t exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
   virtual int32_t open_iterator(int contid, kvs_iterator_option option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) override;
   virtual int32_t close_iterator(int contid, kvs_iterator_handle hiter);
+  virtual int32_t close_iterator_all(int contid);
   virtual int32_t iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL);
   virtual float get_waf() override;
   virtual int32_t get_used_size(int32_t *dev_util) override;
@@ -95,7 +96,7 @@ public:
 private:
     int create_queue(int qdepth, uint16_t qtype, kv_queue_handle *handle, int cqid, int is_polling);
   //int create_qpair(int qdepth, kv_queue_handle *sh, kv_queue_handle *ch);
-  kv_kdd_context* prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, uint8_t option, void *private1, void *private2, bool syncio, kvs_callback_function cbfn);
+  kv_kdd_context* prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, void *private1, void *private2, bool syncio, kvs_callback_function cbfn);
   //int add_ioevent(int opcode, int32_t cont_id, const kvs_key *key, const kvs_value *value, uint8_t option,void *private1, void *private2, bool sync, int result);
 	bool ispersist;
   //std::map<kvemul_key, kvemul_value> main_index;

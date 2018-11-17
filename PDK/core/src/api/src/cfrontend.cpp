@@ -498,7 +498,6 @@ kvs_result kvs_get_tuple_info (kvs_container_handle cont_hd, const kvs_key *key,
   int ret = kvs_retrieve_tuple(cont_hd, key, &kvsvalue, &ret_ctx);
   if(ret != KVS_SUCCESS) {
     fprintf(stderr, "get_tuple_info failed: key= %s error= 0x%x - %s\n", (char *) key->key, ret, kvs_errstr(ret));
-    //exit(1);
   } else {
     info->key_length = key->length;
     info->value_length = kvsvalue.actual_value_size;
@@ -512,12 +511,7 @@ kvs_result kvs_get_tuple_info (kvs_container_handle cont_hd, const kvs_key *key,
 
 kvs_result kvs_store_tuple(kvs_container_handle cont_hd, const kvs_key *key,
 		const kvs_value *value, const kvs_store_context *ctx) {
-  /*
-  const bool sync = (!g_env.use_async)
-    || (ctx->option & KVS_SYNC_IO) == KVS_SYNC_IO;
-  return cont_hd->dev->driver->store_tuple(0, key, value, 0,
-  					   ctx->private1, ctx->private2, sync, 0);
-  */
+
   int ret;
 
   if(key == NULL || value == NULL )
@@ -527,7 +521,7 @@ kvs_result kvs_store_tuple(kvs_container_handle cont_hd, const kvs_key *key,
   if(ret)
     return (kvs_result)ret;
   
-  ret =  cont_hd->dev->driver->store_tuple(0, key, value, ctx->option.st_type,
+  ret =  cont_hd->dev->driver->store_tuple(0, key, value, ctx->option,
 					   ctx->private1, ctx->private2, 1, 0);
   return (kvs_result)ret;
 }
@@ -543,7 +537,7 @@ kvs_result kvs_store_tuple_async(kvs_container_handle cont_hd, const kvs_key *ke
   if(ret)
     return (kvs_result)ret;
   
-  ret = cont_hd->dev->driver->store_tuple(0, key, value, ctx->option.st_type,
+  ret = cont_hd->dev->driver->store_tuple(0, key, value, ctx->option,
 					   ctx->private1, ctx->private2, 0, cbfn);
   return (kvs_result)ret;
 }
@@ -551,12 +545,7 @@ kvs_result kvs_store_tuple_async(kvs_container_handle cont_hd, const kvs_key *ke
 
 kvs_result kvs_retrieve_tuple(kvs_container_handle cont_hd, const kvs_key *key,
 			      kvs_value *value, const kvs_retrieve_context *ctx) {
-  /*
-  const bool sync = (!g_env.use_async)
-    || (ctx->option & KVS_SYNC_IO) == KVS_SYNC_IO;
-  return cont_hd->dev->driver->retrieve_tuple(0, key, value, 0,
-					      ctx->private1, ctx->private2, sync, 0);
-*/
+
   int ret;
   if(key == NULL || value == NULL)
     return KVS_ERR_PARAM_INVALID;
@@ -564,7 +553,7 @@ kvs_result kvs_retrieve_tuple(kvs_container_handle cont_hd, const kvs_key *key,
   if(ret)
     return (kvs_result)ret;
   
-  ret = cont_hd->dev->driver->retrieve_tuple(0, key, value, 0,
+  ret = cont_hd->dev->driver->retrieve_tuple(0, key, value, ctx->option,
 					     ctx->private1, ctx->private2, 1, 0);
   return (kvs_result)ret;
 }
@@ -580,7 +569,7 @@ kvs_result kvs_retrieve_tuple_async(kvs_container_handle cont_hd, const kvs_key 
   if(ret)
     return (kvs_result)ret;
   
-  ret = cont_hd->dev->driver->retrieve_tuple(0, key, value, 0/*ctx->option*/,
+  ret = cont_hd->dev->driver->retrieve_tuple(0, key, value, ctx->option,
 					      ctx->private1, ctx->private2, 0, cbfn);
   return (kvs_result)ret;
 }
@@ -588,12 +577,7 @@ kvs_result kvs_retrieve_tuple_async(kvs_container_handle cont_hd, const kvs_key 
 
 kvs_result kvs_delete_tuple(kvs_container_handle cont_hd, const kvs_key *key,
 		const kvs_delete_context *ctx) {
-  /*
-  const bool sync = (!g_env.use_async)
-    || (ctx->option & KVS_SYNC_IO) == KVS_SYNC_IO;
-  return cont_hd->dev->driver->delete_tuple(0, key, 0, ctx->private1,
-					    ctx->private2, sync, 0);
-*/
+
   int ret;
   if(key == NULL)
     return KVS_ERR_PARAM_INVALID;
@@ -601,7 +585,7 @@ kvs_result kvs_delete_tuple(kvs_container_handle cont_hd, const kvs_key *key,
   if(ret)
     return (kvs_result)ret;
   
-  ret = cont_hd->dev->driver->delete_tuple(0, key, 0, ctx->private1,
+  ret = cont_hd->dev->driver->delete_tuple(0, key, ctx->option, ctx->private1,
 					    ctx->private2, 1, 0);
   return (kvs_result)ret;
 }
@@ -615,7 +599,7 @@ kvs_result kvs_delete_tuple_async(kvs_container_handle cont_hd, const kvs_key* k
   ret = validate_request(key, 0);
   if(ret) return (kvs_result)ret;
   
-  ret = cont_hd->dev->driver->delete_tuple(0, key, 0/*ctx->option*/, ctx->private1,
+  ret = cont_hd->dev->driver->delete_tuple(0, key, ctx->option, ctx->private1,
 					    ctx->private2, 0, cbfn);
   return (kvs_result)ret;
 }
@@ -660,12 +644,17 @@ kvs_result kvs_close_iterator(kvs_container_handle cont_hd, kvs_iterator_handle 
   return (kvs_result)ret;
 }
 
+
+kvs_result kvs_close_iterator_all(kvs_container_handle cont_hd) {
+
+  int ret;
+  ret = cont_hd->dev->driver->close_iterator_all(0);
+  return (kvs_result)ret;
+}
+
 kvs_result kvs_iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle hiter,
 			  kvs_iterator_list *iter_list, const kvs_iterator_context *ctx) {
-  /*
-  const bool sync = (!g_env.use_async)  ||
-    (ctx->option & KVS_SYNC_IO) == KVS_SYNC_IO;
-  */
+
   int ret;
   if(iter_list == NULL)
     return KVS_ERR_PARAM_INVALID;

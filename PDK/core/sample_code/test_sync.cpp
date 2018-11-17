@@ -68,8 +68,8 @@ void usage(char *program)
   printf("-d      device_path  :  kvssd device path. e.g. emul: /dev/kvemul; kdd: /dev/nvme0n1; udd: 0000:06:00.0\n");
   printf("-n      num_ios      :  total number of ios\n");
   printf("-o      op_type      :  1: write; 2: read; 3: delete; 4: iterator; 5: key exist check\n");
-  printf("-k      klen         :  key length\n");
-  printf("-v      vlen         :  value length\n");
+  printf("-k      klen         :  key length (ignore this for iterator)\n");
+  printf("-v      vlen         :  value length (ignore this for iterator)\n");
   printf("-t      threads      :  number of threads\n");
   printf("==============\n");
 }
@@ -78,9 +78,7 @@ void usage(char *program)
 void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_iterator_option g_iter_mode){
   uint8_t *it_buffer = (uint8_t *) iter_list->it_list;
   uint32_t i;
-  //memset(&g_iter_mode, 0, sizeof(kvs_iterator_option));
-  
-  //if(g_iter_mode.kvs_iterator_kv) {
+
   if(g_iter_mode.iter_type) {
     // key and value iterator (KVS_ITERATOR_KEY_VALUE)
     uint32_t vlen = sizeof(kvs_value_t);
@@ -113,7 +111,7 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_iterator_option g_
     // key only iterator (KVS_ITERATOR_KEY)
     uint32_t key_size = 0;
     char key[256];
-
+    
     for(i = 0;i < iter_list->num_entries; i++) {
        // get key size
        key_size = *((unsigned int*)it_buffer);
@@ -126,7 +124,6 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_iterator_option g_
 
        it_buffer += key_size;
     }
-
       
   }
 }
@@ -163,7 +160,6 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
   iter_ctx_open.bit_pattern = PREFIX_KV;
   iter_ctx_open.private1 = NULL;
   iter_ctx_open.private2 = NULL;
-  //memset(&iter_ctx_open.option, 0, sizeof(kvs_iterator_option));
 
   if(iter_kv == 0)
     iter_ctx_open.option.iter_type = KVS_ITERATOR_KEY;
@@ -231,7 +227,7 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
     fprintf(stderr, "Failed to close iterator\n");
     exit(1);
   }
-
+  
   if(buffer) kvs_free(buffer);
   if(iter_info) free(iter_info);
 
@@ -263,7 +259,7 @@ int perform_read(int id, kvs_container_handle cont_hd, int count, kvs_key_t klen
     ret = kvs_retrieve_tuple(cont_hd, &kvskey, &kvsvalue, &ret_ctx);
     if(ret != KVS_SUCCESS) {
       fprintf(stderr, "retrieve tuple %s failed with error 0x%x - %s\n", key, ret, kvs_errstr(ret));
-      exit(1);
+      //exit(1);
     } else {
       fprintf(stdout, "retrieve tuple %s with value = %s, vlen = %d, actual vlen = %d \n", key, value, kvsvalue.length, kvsvalue.actual_value_size);
     }
@@ -329,7 +325,7 @@ int perform_delete(int id, kvs_container_handle cont_hd, int count, kvs_key_t kl
     sprintf(key, "%0*d", klen - 1, i);
     const kvs_key  kvskey = { key, klen};
     
-    const kvs_delete_context del_ctx = { {true}, 0, 0};
+    const kvs_delete_context del_ctx = { {false}, 0, 0};
     int ret = kvs_delete_tuple(cont_hd, &kvskey, &del_ctx);
     if(ret != KVS_SUCCESS) {
       fprintf(stderr, "delete tuple failed with error 0x%x - %s\n", ret, kvs_errstr(ret));
@@ -363,7 +359,7 @@ int perform_key_exist(int id, kvs_container_handle cont_hd, int count, kvs_key_t
       fprintf(stderr, "exist tuple failed with error 0x%x - %s\n", ret, kvs_errstr(ret));
       exit(1);
     } else {
-      fprintf(stderr, "check key %s exist? 0x%x - %s\n", key, status, kvs_errstr(status));
+      fprintf(stderr, "check key %s exist? %s\n", key, status == 0? "FALSE":"TRUE");
     }
   }
 
@@ -387,7 +383,7 @@ void do_io(int id, kvs_container_handle cont_hd, int count, kvs_key_t klen, uint
     perform_delete(id, cont_hd, count, klen, vlen);
     break;
   case ITERATOR_OP:
-    perform_insertion(id, cont_hd, count, klen, vlen);
+    //perform_insertion(id, cont_hd, count, klen, vlen);
     perform_iterator(cont_hd, 0);
     //Iterator a key-value pair only works in emulator
     //perform_iterator(cont_handle, 1);
@@ -418,7 +414,7 @@ int main(int argc, char *argv[]) {
   kvs_key_t klen = 16;
   uint32_t vlen = 4096;
   int ret, c, t = 1;
- 
+
   while ((c = getopt(argc, argv, "d:n:o:k:v:t:h")) != -1) {
     switch(c) {
     case 'd':

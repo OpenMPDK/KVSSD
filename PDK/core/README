@@ -1,4 +1,4 @@
-Release version 0.6.0
+Release version 0.7.0
 
 This package provides a generic interface for user to communicate with Samsung's Key Value SSD through different types of device drivers (user space, and kernel space), and a Samsung Key Value SSD emulator. 
 
@@ -20,12 +20,12 @@ How to build:
        =======
        cmake -DWITH_EMU=ON ../
 
-       User Space Driver  * Not supported in the current v0.6 release
+       User Space Driver
        =======
        cmake -DWITH_SPDK=ON ../ 
-       * Replace <main_source_dir>/lib/libkvnvmedd.a if there is newer version of spdk driver available
+       * Replace <main_source_dir>/lib/libkvnvmedd.a if there is newer version of spdk driver available or if user wants to rebuild the driver
        * The pre-build library is on gcc version 5.4.0
-       * https://github.com/OpenMPDK/uNVMe v18.05
+       * https://github.com/OpenMPDK/uNVMe v18.11
 
     4. make -j<# of jobs>
        * # of jobs: execute multiple recipes simultaneously

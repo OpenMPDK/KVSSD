@@ -64,6 +64,7 @@ typedef struct {
 typedef enum {
   KVS_ITERATOR_KEY = 0,    // [DEFAULT] iterator command gets only key entries without value
   KVS_ITERATOR_KEY_VALUE,  // [OPTION] iterator command gets key and value pairs
+  KVS_ITERATOR_WITH_DELETE, // [OPTION] iterator command gets key and delete
 } kvs_iterator_type;
   
   

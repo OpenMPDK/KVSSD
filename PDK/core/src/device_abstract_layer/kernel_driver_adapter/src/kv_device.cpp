@@ -1022,9 +1022,11 @@ kv_result kv_device_internal::kv_delete(kv_queue_handle que_hdl, kv_namespace_ha
         return res;
     }
 
+    /*
     if (option != KV_DELETE_OPT_DEFAULT) {
         return KV_ERR_OPTION_INVALID;
     }
+    */
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
     if (dev == NULL) {
@@ -1149,9 +1151,11 @@ kv_result kv_device_internal::kv_retrieve(kv_queue_handle que_hdl, kv_namespace_
         return res;
     }
 
+    /*
     if (option != KV_RETRIEVE_OPT_DEFAULT && option != KV_RETRIEVE_OPT_DECOMPRESS) {
         return KV_ERR_OPTION_INVALID;
     }
+    */
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
     if (dev == NULL) {
@@ -1197,9 +1201,11 @@ kv_result kv_device_internal::kv_store(kv_queue_handle que_hdl, kv_namespace_han
         return res;
     }
 
+    /* disable checking, directly pass to device
     if (option != KV_STORE_OPT_DEFAULT && option != KV_STORE_OPT_IDEMPOTENT && option != KV_STORE_OPT_COMPRESS) {
         return KV_ERR_OPTION_INVALID;
     }
+    */
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
     if (dev == NULL) {

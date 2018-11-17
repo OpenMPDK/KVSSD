@@ -16,6 +16,13 @@ kernel_driver
       | - kernel_v4.15
 
 
+Known issue.
+======================================
+Some Ubuntu kernel v.4.15.XX image set nvme driver not as module, So it is impossible to loading kv nvme dirver.
+Currently, kernel_v4.15 driver was verified with kernel version 4.15.0-22-gerneric image.
+- get image from ubuntu web site (https://packages.ubuntu.com/xenial/kernel/linux-image-4.15.0-22-generic/)
+
+
 How-to build and install kernel driver
 ======================================
 1) build
@@ -26,4 +33,5 @@ make all
 2) install
 cd PDK/driver/PCIe/kernel_driver/kernel_v<version>/
 sudo ./re_insmod.sh
+
 
