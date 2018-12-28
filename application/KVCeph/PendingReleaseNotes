@@ -1,0 +1,40 @@
+>= 12.1.2
+---------
+* When running 'df' on a CephFS filesystem comprising exactly one data pool,
+  the result now reflects the file storage space used and available in that
+  data pool (fuse client only).
+* Added new commands "pg force-recovery" and "pg-force-backfill". Use them
+  to boost recovery or backfill priority of specified pgs, so they're
+  recovered/backfilled before any other. Note that these commands don't
+  interrupt ongoing recovery/backfill, but merely queue specified pgs
+  before others so they're recovered/backfilled as soon as possible.
+  New commands "pg cancel-force-recovery" and "pg cancel-force-backfill"
+  restore default recovery/backfill priority of previously forced pgs.
+
+
+12.2.1
+------
+
+* Clusters will need to upgrade to 12.2.1 before upgrading to any
+  Mimic 13.y.z version (either a development release or an eventual
+  stable Mimic release).
+
+- *CephFS*:
+
+  * Limiting MDS cache via a memory limit is now supported using the new
+    mds_cache_memory_limit config option (1GB by default).  A cache reservation
+    can also be specified using mds_cache_reservation as a percentage of the
+    limit (5% by default). Limits by inode count are still supported using
+    mds_cache_size. Setting mds_cache_size to 0 (the default) disables the
+    inode limit.
+
+* The maximum number of PGs per OSD before the monitor issues a
+  warning has been reduced from 300 to 200 PGs.  200 is still twice
+  the generally recommended target of 100 PGs per OSD.  This limit can
+  be adjusted via the ``mon_max_pg_per_osd`` option on the
+  monitors.  The older ``mon_pg_warn_max_per_osd`` option has been removed.
+
+* Creating pools or adjusting pg_num will now fail if the change would
+  make the number of PGs per OSD exceed the configured
+  ``mon_max_pg_per_osd`` limit.  The option can be adjusted if it
+  is really necessary to create a pool with more PGs.

@@ -1,0 +1,7 @@
+[gerrit]
+host=105.128.40.38
+port=29418
+project=ceph-kvssd.git
+defaultbranch=master
+defaultremove=review
+defaultrebase=0

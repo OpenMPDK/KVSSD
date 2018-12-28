@@ -1,0 +1,31 @@
+# local binary (Makefile)
+zstd
+zstd32
+zstd-compress
+zstd-decompress
+
+# Object files
+*.o
+*.ko
+default.profraw
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Default result files
+dictionary
+grillResults.txt
+_*
+tmp*
+*.zst
+result
+out
+
+# fuzzer
+afl
+
+# Misc files
+*.bat
+dirTest*
