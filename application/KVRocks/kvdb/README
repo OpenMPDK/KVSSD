@@ -1,0 +1,26 @@
+Insdb wrapper to comply with Rocksdb interface
+
+* build
+
+# cd kvdb
+# mkdir build ; cd build
+# cmake ..
+# make
+
+
+* data loading
+To reduce data loading overhead, rocksdb_commit_in_the_middle should be enabled for KVDB or RocksDB.
+Copy the rocksdb.cnf to Percona config directory
+
+#cp ./rocksdb.cnf /etc/mysql/percona-server.conf.d/
+
+* db_bench requires gflags library
+
+Ubuntu pkg would not work.
+To build db_bench, clone gflags soruce code from https://github.com/gflags/gflags.git
+
+# mkdir build && cd build
+# ccmake ..
+# make
+# make install
+

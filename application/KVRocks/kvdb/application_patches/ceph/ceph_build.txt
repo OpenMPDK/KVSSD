@@ -1,0 +1,35 @@
+---------------------- CEPH with KVDB ----------------------------------------------------
+
+o Build InSDB and KVDB as per KVDB kvbench instructions
+
+o Clone KVCeph at the same directory level as InSDB and KVDB
+
+# git clone git@msl-dc-gitlab.ssi.samsung.com:kvssd/kvceph.git
+
+
+o CMake with KVDB and InSDB paths
+
+# ./do_cmake.sh -DINSDB_ROOT_DIR=../insdb -DKVDB_ROOT_DIR=../kvdb
+
+o Build
+# cd build
+# make –j8
+
+o non-root access to kvssd device. ceph does not like running with root account. KV SSD driver did not allow non-root account, so it has been updated.
+   - install udev rules
+# cp ./insdb/kv_kernel_driver/iosched_dd_kr_new/nvme_iosched_driver_new/99-kv-nvme-dev.rules /etc/udev/rules.d
+   - install new kvssd driver bulit from InSDB repo.
+
+o Run the tests. Note that all the binaries are placed in build/bin directory after build.
+
+# cd bin
+
+o Keyvalue wrapper level test
+
+# ./ceph_test_keyvaluedb
+
+- Bluestore level test.
+- Note that you must delete temp directory manually if the test crashes (rm -rf *.test_temp_dir/ )
+- Note that GDB might not trace stacks when the test crashes. Try with ‘sudo gdb’
+
+#  ./ceph_test_objectstore

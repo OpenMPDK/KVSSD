@@ -1,0 +1,73 @@
+---------------------- Build KVDB plugin for Percona server ----------------------------------------------
+
+o Build InSDB and KVDB as per KVDB bench instructions
+
+o Clone Percona server from Github at the same directory level as InSDB and KVDB
+  Check out version Percona-Server-5.7.20-19
+
+# git clone git@msl-dc-gitlab.ssi.samsung.com:kvssd/kv-percona-server.git
+# cd kv-percona-server
+# git checkout Percona-Server-5.7.20-19-branch
+
+o update dependent source code
+
+# git submodule init
+# git submodule update
+
+o CMake with KVDB and InSDB paths
+
+# cmake . -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_CONFIG=mysql_release -DFEATURE_SET=community -DWITH_EMBEDDED_SERVER=OFF -DCMAKE_INSTALL_PREFIX=/usr/mysql -DINSDB_ROOT_DIR=../insdb -DKVDB_ROOT_DIR=../kvdb
+
+o Build the source tree. the plugin should be created as storage/rocksdb/ha_rocksdb.so
+
+# make –j8
+
+---------------------- Install Percona server and KVDB plugin ----------------------------------------------------
+
+o Download Percona server 5.7.20-19 form Percona website
+
+-rw-r--r--  1 hobin.lee ads   1551042 Dec 28  2017 percona-server-client-5.7_5.7.20-19-1.trusty_amd64.deb
+-rw-r--r--  1 hobin.lee ads    207684 Dec 28  2017 percona-server-common-5.7_5.7.20-19-1.trusty_amd64.deb
+-rw-r--r--  1 hobin.lee ads  26621190 Dec 28  2017 percona-server-rocksdb-5.7_5.7.20-19-1.trusty_amd64.deb
+-rw-r--r--  1 hobin.lee ads  24588774 Dec 28  2017 percona-server-server-5.7_5.7.20-19-1.trusty_amd64.deb
+
+o Install the packages. use apt-get to install its dependency packages
+
+# sudo apt-get install ./*.deb
+
+o make a backup of existing rocksdb plugin, and install KVDB plugin
+
+# sudo cp /usr/lib/mysql/plugin/ha_rocksdb.so .
+# sudo cp /home/hobin.lee/git/percona-server/storage/rocksdb/ha_rocksdb.so /usr/lib/mysql/plugin/
+
+o Install MyRocks configuration file
+To reduce data loading overhead, rocksdb_commit_in_the_middle should be enabled for KVDB or RocksDB.
+Copy the rocksdb.cnf to Percona config directory from patches/percona-server/setup/ in KVDB repository.
+
+#cp ./kvmysqld.cnf /etc/mysql/percona-server.conf.d/
+
+o apparmor in Ubuntu block nvme device access. switch to complaint mode to allow nvme device access.
+  if apparmor is not installed, go to next step
+
+#aa-complain /usr/sbin/mysqld
+
+
+o start Percona server
+
+# sudo service mysql start
+
+o enable KVDB plugin
+
+# sudo ps-admin --enable-rocksdb -u root
+
+--------------------- non-root access to kvssd device. MyRocks does not allow to run with root account. --------
+
+
+o KV SSD driver did not allow non-root account, so it has been updated.
+  Update your KV SSD driver if not done yet.
+
+o install udev rules ( 99-kv-nvme-dev.rules ) to change /dev/nvme permissions when it's created.
+
+# cp ./insdb/kv_kernel_driver/iosched_dd_kr_new/nvme_iosched_driver_new/99-kv-nvme-dev.rules /etc/udev/rules.d
+   - install new kvssd driver bulit from InSDB repo.
+

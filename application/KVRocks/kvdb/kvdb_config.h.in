@@ -1,0 +1,9 @@
+#pragma once
+
+// the configured options and settings for Tutorial
+#define KVDB_VERSION_MAJOR @KVDB_VERSION_MAJOR@
+#define KVDB_VERSION_MINOR @KVDB_VERSION_MINOR@
+
+#cmakedefine HAVE_TCMALLOC
+#cmakedefine HAVE_JEMALLOC
+#cmakedefine KVDB_ENABLE_IOTRACE

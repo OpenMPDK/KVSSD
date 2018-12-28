@@ -1,0 +1,105 @@
+#
+# The Percona Server 5.7 configuration file.
+#
+# One can use all long options that the program supports.
+# Run program with --help to get a list of available options and with
+# --print-defaults to see which it would actually understand and use.
+#
+# For explanations see
+# http://dev.mysql.com/doc/mysql/en/server-system-variables.html
+
+[mysqld]
+# disabled due to flush issues
+# rocksdb_commit_in_the_middle=1
+
+# tmp-table-size=10G
+# max-heap-table-size=10G
+# 
+# net_read_timeout = 288000
+# net_write_timeout = 288000
+# interactive_timeout = 288000
+# wait_timeout = 288000
+# max_allowed_packet = 1024M
+
+# enable core
+core-file
+gdb
+
+user   = mysql
+pid-file = /var/run/mysqld/mysqld.pid
+socket   = /var/run/mysqld/mysqld.sock
+port   = 3306
+#basedir    = /usr
+
+#datadir    = /var/lib/mysql
+datadir    = /nvmessd/mysql
+
+tmpdir   = /tmp
+#lc-messages-dir  = /usr/share/mysql
+explicit_defaults_for_timestamp
+
+log-error    = /var/log/mysql/error.log
+
+# Recommended in standard MySQL setup
+sql_mode=NO_ENGINE_SUBSTITUTION,STRICT_ALL_TABLES
+
+## copied from
+## https://github.com/facebook/mysql-5.6/wiki/my.cnf-tuning
+#
+plugin-load=rocksdb=ha_rocksdb.so;rocksdb_cfstats=ha_rocksdb.so;rocksdb_dbstats=ha_rocksdb.so;rocksdb_perf_context=ha_rocksdb.so;rocksdb_perf_context_global=ha_rocksdb.so;rocksdb_cf_options=ha_rocksdb.so;rocksdb_compaction_stats=ha_rocksdb.so;rocksdb_global_info=ha_rocksdb.so;rocksdb_ddl=ha_rocksdb.so;rocksdb_index_file_map=ha_rocksdb.so;rocksdb_locks=ha_rocksdb.so;rocksdb_trx=ha_rocksdb.so
+
+#
+default-storage-engine=rocksdb
+#skip-innodb
+default-tmp-storage-engine=MyISAM
+binlog_format=ROW
+collation-server=latin1_bin
+transaction-isolation=READ-COMMITTED
+
+rocksdb_lock_wait_timeout=288000
+rocksdb_max_open_files=-1
+rocksdb_max_background_jobs=8
+rocksdb_max_total_wal_size=512M
+rocksdb_block_size=16384
+rocksdb_block_cache_size= 4G
+rocksdb_table_cache_numshardbits=6
+
+rocksdb_use_direct_reads=on
+rocksdb_use_direct_io_for_flush_and_compaction=on
+
+#####################
+# insdb settings
+rocksdb_kv_ssd=/dev/nvme0n1
+
+rocksdb_sktable_low_key_count =  25000000
+rocksdb_sktable_high_key_count = 25500000
+rocksdb_num_write_worker = 8
+rocksdb_max_request_size = 24576
+rocksdb_flush_threshold = 1048576
+rocksdb_min_update_cnt_table_flush = 6144
+rocksdb_slowdown_trigger = 65536
+rocksdb_align_size = 4
+
+rocksdb_max_uval_prefetched_size = 500M
+rocksdb_max_uval_iter_buffered_size = 4G
+rocksdb_approx_key_size = 16
+rocksdb_approx_val_size = 100
+####################
+
+# rate limiter
+rocksdb_bytes_per_sync=4194304
+rocksdb_wal_bytes_per_sync=4194304
+rocksdb_rate_limiter_bytes_per_sec=104857600 #100MB/s. Increase if you're running on higher spec machines
+
+# triggering compaction if there are many sequential deletes
+rocksdb_compaction_sequential_deletes_count_sd=1
+rocksdb_compaction_sequential_deletes=199999
+rocksdb_compaction_sequential_deletes_window=200000
+
+# read free replication
+# rocksdb_rpl_lookup_rows=0
+
+# read free replication
+# rocksdb_rpl_lookup_rows=0
+
+rocksdb_default_cf_options=write_buffer_size=128m;target_file_size_base=32m;max_bytes_for_level_base=512m;level0_file_num_compaction_trigger=4;level0_slowdown_writes_trigger=10;level0_stop_writes_trigger=15;max_write_buffer_number=4;compression_per_level=kLZ4Compression;bottommost_compression=kZSTD;compression_opts=-14:1:0;block_based_table_factory={cache_index_and_filter_blocks=1;filter_policy=bloomfilter:10:false;whole_key_filtering=1};level_compaction_dynamic_level_bytes=true;optimize_filters_for_hits=true;compaction_pri=kMinOverlappingRatio

@@ -1,0 +1,157 @@
+----- Kvdb bench build and run ----
+
+* this is directions to build kvdb_bench. kvdb_bench requires three components: kv driver, insdb, and kvdb.
+   The kv driver resides in insdb repo.
+
+* check out insdb, kvdb, and kvbench from gitlab into one directory
+   - use stable_for_kvdb branch in insdb repo.
+
+-----------------------------------------------------------------------------     
+# git clone git@msl-dc-gitlab.ssi.samsung.com:kvssd/insdb.git
+# git clone git@msl-dc-gitlab.ssi.samsung.com:kvssd/kvdb.git
+# git clone git@msl-dc-gitlab.ssi.samsung.com:kvssd/kvbench.git
+# ls
+insdb  kvbench  kvdb
+-----------------------------------------------------------------------------     
+
+  * build the kernel driver
+
+      o Change directory into the kernel driver
+  
+-----------------------------------------------------------------------------     
+# cd insdb/kv_kernel_driver/iosched_dd_kr_new/nvme_iosched_driver_new
+# make
+-----------------------------------------------------------------------------     
+
+      o If you get the following error, uncomment nvme-core-y in Makefile
+
+-----------------------------------------------------------------------------     
+WARNING: "nvme_nvm_unregister" [/home/hobin.lee/git/insdb/kv_kernel_driver/iosched_dd_kr_new/nvme_iosched_driver_new/nvme-core.ko] undefined!
+WARNING: "nvme_nvm_ns_supported" [/home/hobin.lee/git/insdb/kv_kernel_driver/iosched_dd_kr_new/nvme_iosched_driver_new/nvme-core.ko] undefined!
+WARNING: "nvme_nvm_register" [/home/hobin.lee/git/insdb/kv_kernel_driver/iosched_dd_kr_new/nvme_iosched_driver_new/nvme-core.ko] undefined!
+-----------------------------------------------------------------------------     
+ 
+Makefile -----------------------------------------------------------------      
+#nvme-core-y                   += lightnvm.o
+-----------------------------------------------------------------------------     
+
+      o replace stock kernel drivers with kv kernel drivers
+               
+-----------------------------------------------------------------------------     
+# sudo rmmod nvme
+# sudo rmmod nvme-core
+# sudo insmod ./nvme-core.ko
+# sudo insmod ./nvme.ko
+-----------------------------------------------------------------------------     
+
+  * build folly library
+    The library needs C++14 support with GCC 4.9+
+    It depends on the following library. Each library also should be built and installed.
+
+     https://github.com/google/googletest/archive/release-1.8.0.tar.gz
+     https://github.com/facebook/zstd/archive/v1.3.5.tar.gz
+
+    The libraries in the following is packaged and easily installable by apt-get or yum.
+
+#    sudo apt-get install \
+    g++ \
+    cmake \
+    libboost-all-dev \
+    libevent-dev \
+    libdouble-conversion-dev \
+    libgoogle-glog-dev \
+    libgflags-dev \
+    libiberty-dev \
+    liblz4-dev \
+    liblzma-dev \
+    libsnappy-dev \
+    make \
+    zlib1g-dev \
+    binutils-dev \
+    libjemalloc-dev \
+    libssl-dev \
+    libc6-dev \
+    pkg-config
+
+-----------------------------------------------------------------------------     
+# cd folly
+# mkdir _build && cd _build
+# cmake configure ..
+# make -j $(nproc)
+# make install
+-----------------------------------------------------------------------------     
+
+  * build insdb
+
+      o Change directory from the kernel driver to insdb. note that kernel driver is located in insdb repo. 
+                 
+-----------------------------------------------------------------------------     
+# cd insdb/insdb-master/
+# make
+-----------------------------------------------------------------------------     
+
+
+  * build kvdb
+
+       o kvdb requires higher version of glags than Ubuntu package.
+         build and install gflags dependency.
+
+-----------------------------------------------------------------------------     
+# cd ../../../kvdb
+# cd gflags-v2.2.1
+# mkdir build && cd build
+# ccmake ..
+# make
+# make install
+-----------------------------------------------------------------------------     
+
+       o change directory to kvdb, and create a build directory
+
+-----------------------------------------------------------------------------
+# cd ..
+# mkdir build
+-----------------------------------------------------------------------------     
+
+       o create cmake and build
+
+-----------------------------------------------------------------------------     
+# cmake ..
+# make
+-----------------------------------------------------------------------------     
+
+  * build kvdb_bench
+  
+        o change directory to kvbench
+
+-----------------------------------------------------------------------------     
+# cd ../../kvbench/
+-----------------------------------------------------------------------------     
+
+         o create a build directory
+-----------------------------------------------------------------------------     
+# mkdir build_kvdb
+# cd build_kvdb
+-----------------------------------------------------------------------------     
+
+          o create cmake and build
+
+-----------------------------------------------------------------------------     
+# cmake -DCMAKE_INCLUDE_PATH=../kvdb/include/ -DCMAKE_LIBRARY_PATH="-L../../insdb/insdb/insdb-master/out-static/ -L../../kvdb/build/" ../
+# make kvdb_bench
+-----------------------------------------------------------------------------     
+
+
+  * run the test.
+     note that kvdb_bench requires insdb and kvdb shared libraries
+     note that sudo was required from my system, but you can try it without it.
+-----------------------------------------------------------------------------     
+# LD_LIBRARY_PATH="../../insdb/insdb/insdb-master/out-shared/:../../kvdb/build/" ./kvdb_bench -f bench_config-kvdb.ini
+-----------------------------------------------------------------------------     
+
+
+  * build db_bench for KVDB
+# apt-get remove libgflags-dev  libgflags2v5 
+# clone and install https://github.com/gflags/gflags.git
+# uncomment db_bench in CMakeList.txt
+
+
