@@ -66,7 +66,7 @@ void usage(char *program)
   printf("==============\n");
   printf("usage: %s -d device_path [-n num_ios] [-o op_type] [-k klen] [-v vlen] [-t threads]\n", program);
   printf("-d      device_path  :  kvssd device path. e.g. emul: /dev/kvemul; kdd: /dev/nvme0n1; udd: 0000:06:00.0\n");
-  printf("-n      num_ios      :  total number of ios\n");
+  printf("-n      num_ios      :  total number of ios (ignore this for iterator)\n");
   printf("-o      op_type      :  1: write; 2: read; 3: delete; 4: iterator; 5: key exist check\n");
   printf("-k      klen         :  key length (ignore this for iterator)\n");
   printf("-v      vlen         :  value length (ignore this for iterator)\n");
@@ -191,6 +191,7 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
 
   while(1) {
     iter_info->iter_list.size = iter_buff;
+    memset(iter_info->iter_list.it_list, 0, iter_buff);
     ret = kvs_iterator_next(cont_hd, iter_info->iter_handle, &iter_info->iter_list, &iter_ctx_next);
     if(ret != KVS_SUCCESS) {
       fprintf(stderr, "iterator next fails with error 0x%x - %s\n", ret, kvs_errstr(ret));
@@ -199,7 +200,7 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
     }
         
     total_entries += iter_info->iter_list.num_entries;
-    print_iterator_keyvals(&iter_info->iter_list, iter_info->g_iter_mode);
+    //print_iterator_keyvals(&iter_info->iter_list, iter_info->g_iter_mode);
         
     if(iter_info->iter_list.end) {
       fprintf(stdout, "Done with all keys. Total: %d\n", total_entries);
@@ -261,7 +262,7 @@ int perform_read(int id, kvs_container_handle cont_hd, int count, kvs_key_t klen
       fprintf(stderr, "retrieve tuple %s failed with error 0x%x - %s\n", key, ret, kvs_errstr(ret));
       //exit(1);
     } else {
-      fprintf(stdout, "retrieve tuple %s with value = %s, vlen = %d, actual vlen = %d \n", key, value, kvsvalue.length, kvsvalue.actual_value_size);
+      //fprintf(stdout, "retrieve tuple %s with value = %s, vlen = %d, actual vlen = %d \n", key, value, kvsvalue.length, kvsvalue.actual_value_size);
     }
   }
 
@@ -509,7 +510,7 @@ int main(int argc, char *argv[]) {
 
   struct timespec t1, t2;
   clock_gettime(CLOCK_REALTIME, &t1);
-  
+
   for(int i = 0; i < t; i++){
     args[i].id = i;
     args[i].klen = klen;
@@ -526,6 +527,8 @@ int main(int argc, char *argv[]) {
 
     ret = pthread_create(&tid[i], attr, iothread, &args[i]);
     if (ret != 0) { fprintf(stderr, "thread exit\n"); exit(1); }
+    pthread_attr_destroy(attr);
+    free(attr);
   }
 
   for(int i = 0; i < t; i++) {

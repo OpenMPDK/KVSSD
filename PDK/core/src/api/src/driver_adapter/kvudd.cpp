@@ -45,13 +45,12 @@
 #include <udd/kvnvme.h>
 #include <udd/kv_types.h>
 
-#define MAX_POOLSIZE 1024
+#define MAX_POOLSIZE 10240
 #define GB_SIZE (1024 * 1024 * 1024)
 
 KUDDriver::KUDDriver(kv_device_priv *dev, kvs_callback_function user_io_complete_):
   KvsDriver(dev, user_io_complete_), queue_depth(256), num_cq_threads(1), mem_size_mb(1024)
 {
-
   fprintf(stdout, "init udd\n");
 }
 
@@ -225,7 +224,7 @@ void print_coremask(uint64_t x)
   printf("coremask = %s\n", b);
 }
   
-int32_t KUDDriver::init(const char* devpath, bool syncio, uint64_t sq_core, uint64_t cq_core, uint32_t mem_size_mb) {
+int32_t KUDDriver::init(const char* devpath, bool syncio, uint64_t sq_core, uint64_t cq_core, uint32_t mem_size_mb, int queue_depth) {
 
   int ret;
 
@@ -237,7 +236,7 @@ int32_t KUDDriver::init(const char* devpath, bool syncio, uint64_t sq_core, uint
     options.sync_mask = 0;     // Use Async I/O mode
   options.num_cq_threads = 1;  // Use only one CQ Processing Thread
   options.cq_thread_mask = (1ULL << cq_core); //cq_core; 
-  options.queue_depth = 256; // MAX QD
+  options.queue_depth = queue_depth;
   options.mem_size_mb = mem_size_mb; 
   unsigned int ssd_type = KV_TYPE_SSD;
 
@@ -652,7 +651,7 @@ int32_t KUDDriver::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys
 int32_t KUDDriver::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_option option, uint32_t bitmask,
 				 uint32_t bit_pattern, kvs_iterator_handle *iter_hd) {
   
-  int ret;
+  int ret = 0;
 
   uint8_t option_udd;
 
@@ -660,13 +659,15 @@ int32_t KUDDriver::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_opt
     option_udd = KV_KEY_ITERATE;
   else
     option_udd = KV_KEY_ITERATE_WITH_RETRIEVE;
-
+  
   int nr_iterate_handle = KV_MAX_ITERATE_HANDLE;
+  int opened = 0;
   kv_iterate_handle_info info[KV_MAX_ITERATE_HANDLE];
   ret = kv_nvme_iterate_info(handle, info, nr_iterate_handle);
   if (ret == KV_SUCCESS) {
     for(int i=0;i<nr_iterate_handle;i++){
       if(info[i].status == ITERATE_HANDLE_OPENED){
+	opened++;
 	if(info[i].bitmask == bitmask && info[i].prefix == bit_pattern) {	
 	  //kv_nvme_iterate_close(handle, info[i].handle_id);
 	  fprintf(stdout, "WARN: Iterator with same prefix/bitmask is already opened\n");
@@ -678,23 +679,37 @@ int32_t KUDDriver::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_opt
     }
   }
 
+  if(opened == KV_MAX_ITERATE_HANDLE)
+    return KVS_ERR_ITERATOR_MAX;
+  
   uint32_t iterator = KV_INVALID_ITERATE_HANDLE;
   iterator = kv_nvme_iterate_open(handle, KV_KEYSPACE_IODATA, bitmask, bit_pattern, /*(option == KVS_ITERATOR_OPT_KEY ? KV_KEY_ITERATE : KV_KEY_ITERATE_WITH_RETRIEVE)*/option_udd);
 
   if(iterator != KV_INVALID_ITERATE_HANDLE){
-    fprintf(stdout, "Iterate_Open Success: iterator id=%d\n", iterator);
-    kvs_iterator_handle iterh = (kvs_iterator_handle)malloc(sizeof(struct _kvs_iterator_handle));
-    iterh->iterator = iterator;
-    *iter_hd = iterh;
-  }
+    if(iterator == KV_ERR_ITERATE_HANDLE_ALREADY_OPENED)
+      ret = KVS_ERR_ITERATOR_OPEN;
+    else if (iterator == KV_ERR_ITERATE_NO_AVAILABLE_HANDLE)
+      ret = KVS_ERR_ITERATOR_MAX;
+    else {
+      fprintf(stdout, "Iterate_Open Success: iterator id=0x%x\n", iterator);
+      ret = 0;
+    }
+    //kvs_iterator_handle iterh = (kvs_iterator_handle)malloc(sizeof(struct _kvs_iterator_handle));
+    //iterh->iterator = iterator;
+    //*iter_hd = iterh;
+    *iter_hd = iterator;
+  } else
+    ret = KVS_ERR_ITERATE_REQUEST_FAIL;
+  
   return ret;
 }
 
 int32_t KUDDriver::close_iterator(int contid, kvs_iterator_handle hiter) {
 
   int ret = 0;
-  if(hiter->iterator > 0)
-    ret = kv_nvme_iterate_close(handle, hiter->iterator);
+  //if(hiter->iterator > 0)
+  if(hiter > 0)
+    ret = kv_nvme_iterate_close(handle, hiter/*->iterator*/);
 
   if(ret != KV_SUCCESS) {
     if(ret == KV_ERR_ITERATE_FAIL_TO_PROCESS_REQUEST) {
@@ -702,7 +717,7 @@ int32_t KUDDriver::close_iterator(int contid, kvs_iterator_handle hiter) {
     } else
       ret = KVS_ERR_SYS_IO;
   }
-  if(hiter) free(hiter);
+  //if(hiter) free(hiter);
   
   return ret;
 }
@@ -724,29 +739,33 @@ int32_t KUDDriver::close_iterator_all(int contid) {
   return KVS_SUCCESS;
 }
 
+int32_t KUDDriver::list_iterators(int contid, kvs_iterator_info *kvs_iters, uint32_t count) {
+
+  //int nr_iterate_handle = KV_MAX_ITERATE_HANDLE;
+  //kv_iterate_handle_info info[KV_MAX_ITERATE_HANDLE];
+  
+  int ret = kv_nvme_iterate_info(handle, (kv_iterate_handle_info*)kvs_iters, count);
+
+  if(ret == KV_ERR_DD_INVALID_PARAM)
+    ret = KVS_ERR_PARAM_INVALID;
+  
+  return ret;
+}
+
 int32_t KUDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
 
   int ret = -EINVAL;
 
   auto ctx = prep_io_context(IOCB_ASYNC_ITER_NEXT_CMD, 0, 0, 0, private1, private2, syncio, cbfn);
-  /*
-  ctx->iocb.value.value = iter_list->it_list;
-  ctx->iocb.value.length = iter_list->size;
-  ctx->iocb.value.offset = 0;
-  */
+
   ctx->iter_list = iter_list;
-  /*
-  ctx->iocb.value = iter_list->it_list;
-  ctx->iocb.valuesize = iter_list->size;
-  ctx->iocb.value_offset = 0;
-  ctx->iter_list = iter_list; 
-  */
+
   kv_iterate *it = (kv_iterate *)kv_zalloc(sizeof(kv_iterate)); 
   if(!it) {
     return -ENOMEM;
   }
 
-  it->iterator = hiter->iterator;
+  it->iterator = hiter;//hiter->iterator;
   it->kv.key.length = 0;
   it->kv.key.key = NULL;
   it->kv.value.value = iter_list->it_list;
@@ -903,6 +922,7 @@ KUDDriver::~KUDDriver() {
     this->kv_pair_pool.pop();
     kv_free(p);
   }
+
   /*
   while(!this->udd_context_pool.empty()){
     auto p = this->udd_context_pool.front();

@@ -229,11 +229,11 @@ static int aio_service_exit(void)
 
 static struct nvme_kaioctx * find_kaioctx(__u32 ctxid) {
 	struct nvme_kaioctx * tmp = NULL;
-	unsigned long flags;
-	spin_lock_irqsave(&g_kaioctx_tb_spinlock, flags);
+	//unsigned long flags;
+	//spin_lock_irqsave(&g_kaioctx_tb_spinlock, flags);
 	tmp = g_kaioctx_tb[ctxid];
 	if (tmp) ref_kaioctx(tmp);
-	spin_unlock_irqrestore(&g_kaioctx_tb_spinlock, flags);
+	//spin_unlock_irqrestore(&g_kaioctx_tb_spinlock, flags);
 	return tmp;
 }
 

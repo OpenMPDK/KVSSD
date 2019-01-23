@@ -576,8 +576,12 @@ kv_result kv_device_internal::kv_sanitize(kv_queue_handle que_hdl, kv_device_han
     io_cmd *cmd = new io_cmd(dev, ns, que_hdl);
 
     cmd->ioctx.timeout_usec = 0;
-    cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+    if (post_fn) {
+        cmd->ioctx.post_fn = post_fn->post_fn;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_SANITIZE_DEVICE;
     cmd->ioctx.command.sanitize_info = info;
     cmd->ioctx.key = NULL;
@@ -862,8 +866,12 @@ kv_result kv_device_internal::kv_purge(kv_queue_handle que_hdl, kv_namespace_han
 
     io_cmd *cmd = new io_cmd(dev, ns, que_hdl);
     cmd->ioctx.timeout_usec = 0;
-    cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+    if (post_fn) {
+        cmd->ioctx.post_fn = post_fn->post_fn;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_PURGE;
     cmd->ioctx.command.purge_info = info;
     cmd->ioctx.key = NULL;
@@ -903,8 +911,12 @@ kv_result kv_device_internal::kv_open_iterator(kv_queue_handle que_hdl, kv_names
     io_cmd *cmd = new io_cmd(dev, ns, que_hdl);
     cmd->ioctx.timeout_usec = 0;
     cmd->ioctx.result.hiter = 0;
-    cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+    if (post_fn) {
+        cmd->ioctx.post_fn = post_fn->post_fn;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_OPEN_ITERATOR;
     cmd->ioctx.command.iterator_open_info.it_op = it_op;
     cmd->ioctx.command.iterator_open_info.it_cond.bitmask = it_cond->bitmask;
@@ -916,7 +928,7 @@ kv_result kv_device_internal::kv_open_iterator(kv_queue_handle que_hdl, kv_names
 }
 
 kv_result kv_device_internal::kv_close_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_postprocess_function *post_fn, kv_iterator_handle iter_hdl) {
-    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == NULL) {
+    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == 0) {
         return KV_ERR_PARAM_INVALID;
     }
 
@@ -941,8 +953,12 @@ kv_result kv_device_internal::kv_close_iterator(kv_queue_handle que_hdl, kv_name
     io_cmd *cmd = new io_cmd(dev, ns, que_hdl);
     cmd->ioctx.timeout_usec = 0;
     cmd->ioctx.result.hiter = iter_hdl;
-    cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+    if (post_fn) {
+        cmd->ioctx.post_fn = post_fn->post_fn;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_CLOSE_ITERATOR;
     cmd->ioctx.command.iterator_close_info = info;
     cmd->ioctx.key = NULL;
@@ -962,7 +978,7 @@ bool_t kv_device_internal::is_keylen_fixed() {
 
 // async IO
 kv_result kv_device_internal::kv_iterator_next_set(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_postprocess_function *post_fn, kv_iterator_list *iter_list) {
-    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == NULL) {
+    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == 0) {
         return KV_ERR_PARAM_INVALID;
     }
 
@@ -988,8 +1004,12 @@ kv_result kv_device_internal::kv_iterator_next_set(kv_queue_handle que_hdl, kv_n
     io_cmd *cmd = new io_cmd(dev, ns, que_hdl);
     cmd->ioctx.timeout_usec = 0;
     cmd->ioctx.result.hiter = iter_hdl;
-    cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+    if (post_fn) {
+        cmd->ioctx.post_fn = post_fn->post_fn;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_ITERATE_NEXT;
     cmd->ioctx.command.iterator_next_info = info;
     cmd->ioctx.key = NULL;
@@ -1001,7 +1021,7 @@ kv_result kv_device_internal::kv_iterator_next_set(kv_queue_handle que_hdl, kv_n
 
 // async IO
 kv_result kv_device_internal::kv_iterator_next(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_postprocess_function *post_fn, kv_key *key, kv_value *value) {
-    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == NULL) {
+    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == 0) {
         return KV_ERR_PARAM_INVALID;
     }
 
@@ -1028,8 +1048,12 @@ kv_result kv_device_internal::kv_iterator_next(kv_queue_handle que_hdl, kv_names
     io_cmd *cmd = new io_cmd(dev, ns, que_hdl);
     cmd->ioctx.timeout_usec = 0;
     cmd->ioctx.result.hiter = iter_hdl;
-    cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+    if (post_fn) {
+        cmd->ioctx.post_fn = post_fn->post_fn;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_ITERATE_NEXT_SINGLE_KV;
     cmd->ioctx.command.iterator_next_info = info;
     cmd->ioctx.key = NULL;
@@ -1039,7 +1063,7 @@ kv_result kv_device_internal::kv_iterator_next(kv_queue_handle que_hdl, kv_names
     return dev->submit_io(que_hdl, cmd);
 }
 
-// async IO
+// this is sync call
 kv_result kv_device_internal::kv_list_iterators(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_postprocess_function  *post_fn, kv_iterator *kv_iters, uint32_t *iter_cnt) {
     if (que_hdl == NULL || ns_hdl == NULL || kv_iters == NULL || iter_cnt == NULL) {
         return KV_ERR_PARAM_INVALID;
@@ -1067,14 +1091,19 @@ kv_result kv_device_internal::kv_list_iterators(kv_queue_handle que_hdl, kv_name
     io_cmd *cmd = new io_cmd(dev, ns, que_hdl);
     cmd->ioctx.timeout_usec = 0;
     cmd->ioctx.result.hiter = 0;
-    cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+    if (post_fn) {
+        cmd->ioctx.post_fn = post_fn->post_fn;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_LIST_ITERATOR;
     cmd->ioctx.command.iterator_list_info = info;
     cmd->ioctx.key = NULL;
     cmd->ioctx.value = NULL;
 
-    return dev->submit_io(que_hdl, cmd);
+    // since this is sync admin call, directly call and return result
+    return ns->kv_list_iterators(kv_iters, iter_cnt, cmd);
 }
 
 // async IO
@@ -1116,8 +1145,12 @@ kv_result kv_device_internal::kv_delete(kv_queue_handle que_hdl, kv_namespace_ha
     cmd->ioctx.key = key;
     cmd->ioctx.value = NULL;
     cmd->ioctx.timeout_usec = 0;
+    if (post_fn) {
         cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_DELETE;
     cmd->ioctx.command.delete_info = info;
 
@@ -1152,8 +1185,12 @@ kv_result kv_device_internal::kv_delete_group(kv_queue_handle que_hdl, kv_namesp
     cmd->ioctx.key = NULL;
     cmd->ioctx.value = NULL;
     cmd->ioctx.timeout_usec = 0;
+    if (post_fn) {
         cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_DELETE_GROUP;
     cmd->ioctx.command.delete_group_info= info;
 
@@ -1195,8 +1232,12 @@ kv_result kv_device_internal::kv_exist(kv_queue_handle que_hdl, kv_namespace_han
     cmd->ioctx.key = keys;
     cmd->ioctx.value = 0;
     cmd->ioctx.timeout_usec = 0;
-    cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+    if (post_fn) {
+        cmd->ioctx.post_fn = post_fn->post_fn;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_CHECK_KEY_EXIST;
     cmd->ioctx.result.buffer = buffer;
     cmd->ioctx.command.key_exist_info.result = buffer;
@@ -1246,8 +1287,12 @@ kv_result kv_device_internal::kv_retrieve(kv_queue_handle que_hdl, kv_namespace_
     cmd->ioctx.key = key;
     cmd->ioctx.value = value;
     cmd->ioctx.timeout_usec = 0;
-    cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+    if (post_fn) {
+        cmd->ioctx.post_fn = post_fn->post_fn;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_GET;
     cmd->ioctx.command.get_info = info;
    
@@ -1296,8 +1341,12 @@ kv_result kv_device_internal::kv_store(kv_queue_handle que_hdl, kv_namespace_han
     cmd->ioctx.key = key;
     cmd->ioctx.value = const_cast<kv_value *>(value);
     cmd->ioctx.timeout_usec = 0;
-    cmd->ioctx.post_fn = post_fn->post_fn;
-    cmd->ioctx.private_data = post_fn->private_data;
+    if (post_fn) {
+        cmd->ioctx.post_fn = post_fn->post_fn;
+        cmd->ioctx.private_data = post_fn->private_data;
+    } else {
+        cmd->ioctx.post_fn = NULL;
+    }
     cmd->ioctx.opcode = KV_OPC_STORE;
     cmd->ioctx.command.store_info = info;
 

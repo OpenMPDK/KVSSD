@@ -174,7 +174,7 @@ kv_result kv_namespace_internal::kv_retrieve(const kv_key *key, uint8_t option, 
 
 // at this stage to interact with kvstore, these APIs are all synchronous
 kv_result kv_namespace_internal::kv_open_iterator(const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_iterator_handle *iter_hdl, void *ioctx) {
-    if (iter_hdl == NULL || it_cond == NULL) {
+    if (iter_hdl == 0 || it_cond == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
@@ -188,7 +188,7 @@ kv_result kv_namespace_internal::kv_close_iterator(kv_iterator_handle iter_hdl, 
 }
 
 kv_result kv_namespace_internal::kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, void *ioctx) {
-    if (iter_hdl == NULL || iter_list == NULL) {
+    if (iter_hdl == 0 || iter_list == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
@@ -197,7 +197,7 @@ kv_result kv_namespace_internal::kv_iterator_next_set(kv_iterator_handle iter_hd
 
 
 kv_result kv_namespace_internal::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key, kv_value *value, void *ioctx) {
-    if (iter_hdl == NULL || key == NULL || value == NULL) {
+    if (iter_hdl == 0 || key == NULL || value == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 

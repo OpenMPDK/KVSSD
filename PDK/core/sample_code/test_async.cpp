@@ -39,7 +39,6 @@
 #include <queue>
 #include <kvs_api.h>
 
-//static int use_udd = 0;
 std::atomic<int> submitted(0);
 std::atomic<int> completed(0);
 std::atomic<int> cur_qdepth(0);
@@ -48,8 +47,6 @@ pthread_mutex_t lock;
 struct iterator_info{
   kvs_iterator_handle iter_handle;
   kvs_iterator_list iter_list;
-  int has_iter_finish;
-  //int g_iter_mode;
   kvs_iterator_option g_iter_mode;
 };
 #define iter_buff (32*1024)
@@ -59,8 +56,8 @@ void usage(char *program)
   printf("==============\n");
   printf("usage: %s -d device_path [-n num_ios] [-q queue_depth] [-o op_type] [-k klen] [-v vlen]\n", program);
   printf("-d      device_path  :  kvssd device path. e.g. emul: /dev/kvemul; kdd: /dev/nvme0n1; udd: 0000:06:00.0\n");
-  printf("-n      num_ios      :  total number of ios\n");
-  printf("-q      queue_depth  :  queue depth\n");
+  printf("-n      num_ios      :  total number of ios (ignore this for iterator)\n");
+  printf("-q      queue_depth  :  queue depth (ignore this for iterator)\n");
   printf("-o      op_type      :  1: write; 2: read; 3: delete; 4: iterator; 5: check key exist\n");
   printf("-k      klen         :  key length (ignore this for iterator)\n");
   printf("-v      vlen         :  value length (ignore this for iterator)\n");
@@ -97,7 +94,7 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_iterator_option  g
     // key only iterator (KVS_ITERATOR_KEY)
 
     // For fixed key length
-    /*
+    /*    
     for(i = 0; i < iter_list->num_entries; i++)
       fprintf(stdout, "Iterator get key %s\n",  it_buffer + i * 16);
     */
@@ -119,7 +116,6 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_iterator_option  g
 
       it_buffer += key_size;
     }
-
   }
 }
 
@@ -129,19 +125,19 @@ void complete(kvs_callback_context* ioctx) {
     fprintf(stderr, "io error: op = %d, key = %s, result = 0x%x, err = %s\n", ioctx->opcode, ioctx->key ? (char*)ioctx->key->key:0, ioctx->result, kvs_errstr(ioctx->result));
     exit(1);
   } else {
-    fprintf(stderr, "io_complete: op = %d, key = %s, result = %s\n", ioctx->opcode, ioctx->key? (char*)ioctx->key->key : 0 , kvs_errstr(ioctx->result));
+    //fprintf(stderr, "io_complete: op = %d, key = %s, result = %s\n", ioctx->opcode, ioctx->key? (char*)ioctx->key->key : 0 , kvs_errstr(ioctx->result));
   }
 
-  auto owner = (struct iterator_info*) ioctx->private1;
   uint8_t *exist;
   switch(ioctx->opcode) {
   case IOCB_ASYNC_ITER_NEXT_CMD:
-    owner->has_iter_finish = 1;
     completed++;
     break;
   case IOCB_ASYNC_CHECK_KEY_EXIST_CMD:
     exist = (uint8_t*)ioctx->result_buffer;
     fprintf(stdout, "key %s exist? %s\n", (char*)ioctx->key->key, *exist == 0? "FALSE":"TRUE");
+    if(ioctx->result_buffer)
+      free(ioctx->result_buffer);
   default:
     //fprintf(stderr, "io_complete: op = %d, key = %s, vlen = %d, actual vlen = %d, result = %s\n", ioctx->opcode, (char*)ioctx->key->key, ioctx->value.length, ioctx->value.actual_value_size, kvs_errstr(ioctx->result));
     std::queue<char*> * keypool = (std::queue<char*> *)ioctx->private1;
@@ -150,10 +146,12 @@ void complete(kvs_callback_context* ioctx) {
     if(ioctx->key) {
       if(ioctx->key->key)
 	keypool->push((char*)ioctx->key->key);
+      free(ioctx->key);
     }
     if(ioctx->value) {
       if(ioctx->value->value)
 	valuepool->push((char*)ioctx->value->value);
+      free(ioctx->value);
     }
     pthread_mutex_unlock(&lock);
 
@@ -172,6 +170,9 @@ void complete(kvs_callback_context* ioctx) {
 int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
 {
 
+  int count = KVS_MAX_ITERATE_HANDLE;
+  kvs_iterator_info kvs_iters[count];
+
   struct iterator_info *iter_info = (struct iterator_info *)malloc(sizeof(struct iterator_info));
 
   if(iter_kv == 0) {
@@ -182,7 +183,6 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
 
   int ret;
   static int total_entries = 0;
-
 
   fprintf(stdout, "\n===========\n");
   fprintf(stdout, "   Do Iterate Operation\n");
@@ -198,7 +198,7 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
   for (int i = 0; i < 4; i++){
     PREFIX_KV |= (prefix_str[i] << i*8);
   }
-  
+
   iter_ctx_open.bit_pattern = PREFIX_KV;
   iter_ctx_open.private1 = NULL;
   iter_ctx_open.private2 = NULL;
@@ -217,11 +217,27 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
     exit(1);
   }
   
+  memset(kvs_iters, 0, sizeof(kvs_iters));
+  int res = kvs_list_iterators(cont_hd, kvs_iters, count);
+  if(res) {
+    printf("kv_list_iterators with error: 0x%X\n", res);
+    exit(1);
+  } else {
+    for (int j = 0; j < count; j++){
+      if(kvs_iters[j].status == 1) fprintf(stdout, "found handler %d 0x%x 0x%x\n",
+					   kvs_iters[j].iter_handle,
+					   kvs_iters[j].bit_pattern,
+					   kvs_iters[j].bitmask);
+    }
+  }
+
   /* Do iteration */
+
   submitted = completed = 0;
   iter_info->iter_list.size = iter_buff;
   uint8_t *buffer;
   buffer =(uint8_t*) kvs_malloc(iter_buff, 4096);
+  memset(buffer, 0, iter_buff);
   iter_info->iter_list.it_list = (uint8_t*) buffer;
 
   kvs_iterator_context iter_ctx_next;
@@ -236,6 +252,7 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
 
   while(1) {
     iter_info->iter_list.size = iter_buff;
+    memset(iter_info->iter_list.it_list, 0, iter_buff);
     ret = kvs_iterator_next_async(cont_hd, iter_info->iter_handle, &iter_info->iter_list, &iter_ctx_next, complete);
     if(ret != KVS_SUCCESS) {
       fprintf(stderr, "iterator next fails with error 0x%x - %s\n", ret, kvs_errstr(ret));
@@ -250,7 +267,7 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
       usleep(1);
       
     total_entries += iter_info->iter_list.num_entries;
-    print_iterator_keyvals(&iter_info->iter_list, iter_info->g_iter_mode);
+    //print_iterator_keyvals(&iter_info->iter_list, iter_info->g_iter_mode);
 
     if(iter_info->iter_list.end) {
       fprintf(stdout, "Done with all keys. Total: %d\n", total_entries);
@@ -260,14 +277,13 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
       memset(iter_info->iter_list.it_list, 0,  iter_buff);
     }
   }
-
+  
   clock_gettime(CLOCK_REALTIME, &t2);
   unsigned long long start, end;
   start = t1.tv_sec * 1000000000L + t1.tv_nsec;
   end = t2.tv_sec * 1000000000L + t2.tv_nsec;
   double sec = (double)(end - start) / 1000000000L;
   fprintf(stdout, "Total time %.2f sec; Throughput %.2f keys/sec\n", sec, (double)total_entries /sec );
-  
 
   /* Close iterator */
   kvs_iterator_context iter_ctx_close;
@@ -590,8 +606,8 @@ int perform_key_exist(kvs_container_handle cont_hd, int count, int maxdepth, kvs
       kvskey->length = klen;
       const kvs_exist_context exist_ctx = {&keypool, &valuepool};
 
-      uint8_t status;
-      int ret = kvs_exist_tuples_async(cont_hd, 1, kvskey, 1, &status, &exist_ctx, complete);
+      uint8_t *status = (uint8_t*)malloc(sizeof(uint8_t));
+      int ret = kvs_exist_tuples_async(cont_hd, 1, kvskey, 1, status, &exist_ctx, complete);
       if (ret != KVS_SUCCESS) {
 	fprintf(stderr, "exit tuple failed with err %s\n", kvs_errstr(ret));
 	exit(1);
@@ -640,7 +656,7 @@ int main(int argc, char *argv[]) {
   //int is_polling = 0;
   int c;
   int ret;
- 
+
   while ((c = getopt(argc, argv, "d:n:q:o:k:v:h")) != -1) {
     switch(c) {
     case 'd':
@@ -739,6 +755,8 @@ int main(int argc, char *argv[]) {
 	  (float)dev_info->capacity/1024/1024/1024, dev_info->max_value_len,
 	  dev_info->max_key_len, dev_info->optimal_value_len);
   
+  if(dev_info)
+    free(dev_info);
   
   switch(op_type) {
   case WRITE_OP:
@@ -757,6 +775,7 @@ int main(int argc, char *argv[]) {
     perform_iterator(cont_handle, 0);
     break;
   case KEY_EXIST_OP:
+    //perform_insertion(cont_handle, num_ios, qdepth,  klen, vlen);
     perform_key_exist(cont_handle, num_ios, qdepth,  klen, vlen);
     break;
   default:

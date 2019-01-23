@@ -122,10 +122,11 @@ typedef struct _kvs_device_handle *kvs_device_handle;
  */
 struct _kvs_container_handle;
 typedef struct _kvs_container_handle* kvs_container_handle;
-
+  /*
 struct _kvs_iterator_handle;
 typedef struct _kvs_iterator_handle * kvs_iterator_handle;
-
+  */
+typedef uint8_t kvs_iterator_handle;  
 
 /**
    kvs_iterator_list
@@ -139,6 +140,23 @@ typedef struct {
   void    *it_list;       /*!< iterator list buffer */
 } kvs_iterator_list;
 
+  
+  /**
+   * kvs_iterator_info
+   * kvs_iterator_info contains iterator metadata associated with an iterator. 
+   */
+typedef struct {
+  kvs_iterator_handle iter_handle;                /*!< iterator */
+  uint8_t status;                     /*!< iterator status: 1(opened), 0(closed) */
+  uint8_t type;                       /*!< iterator type */
+  uint8_t keyspace_id;                /*!< KSID that the iterate handle deals with */
+  uint32_t bit_pattern;               /*!< bit pattern for condition */
+  uint32_t bitmask;                   /*!< bit mask for bit pattern to use */
+  uint8_t is_eof;                     /*!< 1 (The iterate is finished), 0 (The iterate is not finished) */ 
+  uint8_t reserved[3];
+} kvs_iterator_info;
+  
+  
 typedef struct {
   uint32_t name_len;
   char *name;
@@ -244,7 +262,7 @@ typedef struct {
   void *private1;                 /*!< a pointer passed from a user */
   void *private2;                 /*!< a pointer passed from a user */
   kvs_result result;              /*!< IO result */
-  kvs_iterator_handle*iter_hd;    /*!< iterator handle */
+  kvs_iterator_handle *iter_hd;   /*!< iterator handle */
 } kvs_callback_context;
 
 

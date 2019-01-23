@@ -43,6 +43,7 @@
 #include "kvs_adi.h"
 #include "kvs_utils.h"
 
+#define MAX_LOG_PAGE_SIZE 512
 class kv_device_api {
 public:
     virtual ~kv_device_api() {}
@@ -114,6 +115,8 @@ struct _kv_iterator_handle {
     int id;
     char current_key[SAMSUNG_KV_MAX_KEY_LEN];
     int keylength;
+
+    uint32_t nsid;
 
     kv_iterator_option it_op;
     kv_group_condition it_cond;

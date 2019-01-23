@@ -44,7 +44,7 @@
 
 #include <map>
 #include <list>
-#include <regex>
+//#include <regex>
 #include <string>
 
 struct {
@@ -196,13 +196,13 @@ kvs_result kvs_init_env(kvs_init_options* options) {
 kv_device_priv *_find_local_device_from_path(const std::string &devpath,
 		std::map<std::string, kv_device_priv *> &list_devices) {
 
-  static std::regex emu_pattern("/dev/kvemul*");
+  //static std::regex emu_pattern("/dev/kvemul*");
   kv_device_priv *dev = 0;
-  std::smatch matches;
+  //std::smatch matches;
 
 #if defined WITH_SPDK
-  static std::regex pciaddr_pattern("[^:]*:(.*)$");
-  if (std::regex_search(devpath, matches, pciaddr_pattern)) {
+  //static std::regex pciaddr_pattern("[^:]*:(.*)$");
+  //if (std::regex_search(devpath, matches, pciaddr_pattern)) {
     kv_device_priv *udd = new kv_device_priv();
     static int uddnsid = 0;
     udd->nsid = uddnsid++;
@@ -210,10 +210,12 @@ kv_device_priv *_find_local_device_from_path(const std::string &devpath,
     udd->iskerneldev = false;
     udd->isspdkdev = true;
     return udd;
+    /*
   } else {
     fprintf(stderr, "WRN: Please specify spdk device path properly\n");
     exit(1);
   }
+    */
 #else
   static const char *emulpath = "/dev/kvemul";
   if (devpath == emulpath) {
@@ -265,15 +267,6 @@ KvsDriver *_select_driver(kv_device_priv *dev) {
 #endif
     return nullptr;
 }
-/*
-inline bool is_emulator_path(const char *devpath) {
-  return (devpath == 0 || strncmp(devpath, "/dev/kvemul", strlen("/dev/kvemul"))== 0);
-}
-
-inline bool is_spdk_path(const char *devpath) {
-  return (strncmp(devpath, "trtype", 6) == 0);
-  }
-*/
 
 void build_error_table() {
   errortable[0x0]="KVS_SUCCESS";
@@ -387,7 +380,7 @@ kvs_result kvs_open_device(const char *dev_path, kvs_device_handle *dev_hd) {
     int curr_dev = g_env.udd_option.num_devices;
     uint64_t sq_core = g_env.udd_option.core_masks[curr_dev];
     uint64_t cq_core = g_env.udd_option.cq_masks[curr_dev];
-    ret = user_dev->driver->init(dev_path, g_env.udd_option.syncio/*!g_env.use_async*/, sq_core, cq_core, g_env.udd_option.mem_size_mb);
+    ret = user_dev->driver->init(dev_path, g_env.udd_option.syncio/*!g_env.use_async*/, sq_core, cq_core, g_env.udd_option.mem_size_mb, g_env.queuedepth);
     g_env.udd_option.num_devices++;
   } else {
     fprintf(stderr, "WRN: Please specify spdk device path properly\n");
@@ -414,6 +407,7 @@ kvs_result kvs_close_device(kvs_device_handle user_dev) {
     return KVS_ERR_DEV_NOT_EXIST;
   
   delete user_dev->driver;
+  delete user_dev->dev;
   g_env.open_devices.remove(user_dev);
   free(user_dev);
   return KVS_SUCCESS;
@@ -649,6 +643,15 @@ kvs_result kvs_close_iterator_all(kvs_container_handle cont_hd) {
 
   int ret;
   ret = cont_hd->dev->driver->close_iterator_all(0);
+  return (kvs_result)ret;
+}
+
+kvs_result kvs_list_iterators(kvs_container_handle cont_hd, kvs_iterator_info *kvs_iters, int count) {
+  int ret;
+  if(kvs_iters == NULL)
+    return KVS_ERR_PARAM_INVALID;
+
+  ret = cont_hd->dev->driver->list_iterators(0, kvs_iters, count);
   return (kvs_result)ret;
 }
 

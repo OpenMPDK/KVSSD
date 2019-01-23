@@ -87,6 +87,7 @@ public:
   virtual int32_t iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
   virtual int32_t close_iterator(int contid, kvs_iterator_handle hiter) override;
   virtual int32_t close_iterator_all(int contid) override;
+  virtual int32_t list_iterators(int contid, kvs_iterator_info *kvs_iters, uint32_t count) override;
   virtual float get_waf() override;
   virtual int32_t get_used_size(int32_t *dev_util)override;
   virtual int32_t get_total_size(int64_t *dev_capa) override;
@@ -95,12 +96,8 @@ public:
 private:
   int create_queue(int qdepth, uint16_t qtype, kv_queue_handle *handle, int cqid, int is_polling);
   kv_emul_context* prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, void *private1, void *private2, bool syncio, kvs_callback_function cbfn);
-  //int add_ioevent(int opcode, int32_t cont_id, const kvs_key *key, const kvs_value *value, uint8_t option,void *private1, void *private2, bool sync, int result);
-	bool ispersist;
-  //std::map<kvemul_key, kvemul_value> main_index;
-  //std::queue<kv_iocb*> iocb_pool;
-  //	std::queue<kv_iocb*> event_pool;
-	std::string datapath;
+  bool ispersist;
+  std::string datapath;
 };
 
 

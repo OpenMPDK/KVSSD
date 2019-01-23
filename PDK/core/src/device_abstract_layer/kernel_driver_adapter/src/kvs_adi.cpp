@@ -154,7 +154,7 @@ kv_result kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, 
 }
 
 kv_result kv_close_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_postprocess_function *post_fn) {
-    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == NULL) {
+    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == 0) {
         return KV_ERR_PARAM_INVALID;
     }
 
@@ -165,7 +165,7 @@ kv_result kv_close_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
 
 kv_result kv_iterator_next(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, kv_postprocess_function *post_fn) {
 
-    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == NULL || iter_list == NULL) {
+    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == 0 || iter_list == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 

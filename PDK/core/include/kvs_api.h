@@ -233,6 +233,14 @@ kvs_result kvs_close_iterator(kvs_container_handle cont_hd, kvs_iterator_handle 
  */
 kvs_result kvs_close_iterator_all(kvs_container_handle cont_hd);
 
+/*! retrieves a list of iterators in this device
+ * \param cont_hd container handle
+ * \param kvs_iters an array of kvs_iterator_info
+ * \param count the number of iterators to retrieve
+ * \ingroup KV_API
+ */
+kvs_result kvs_list_iterators(kvs_container_handle cont_hd, kvs_iterator_info *kvs_iters, int count);
+
   
 /*! iterator next
  *

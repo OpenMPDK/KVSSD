@@ -88,48 +88,6 @@ public:
 };
 
 /*
- * Low level Device APIs
- *
- * A simple wrapper for KV SSD functions
- */
-  /*
-class KvsDeviceImpl {
-    _on_iocomplete io_complete;
-public:
-
-  KvsDeviceImpl():
-	  io_complete(0), num_threads(0), persistent(false)
-  {}
-
-  virtual ~KvsDeviceImpl() { }
-
-  bool is_persistent() { return persistent; }
-  int32_t make_persistent() { this->persistent = true; return KVS_SUCCESS; }
-
-  // for emulator debugging
-  virtual void dump() {}
-  virtual bool init() { return false; }
-
-  // emulator persistency
-  virtual bool load(const char *datapath) { return true; }
-  virtual bool set_dumppath(const char *datapath) { return true; }
-
-  // kv operations
-  virtual int32_t store_tuple(int contid, const kvs_key *key, kvs_value *value, uint8_t option) = 0;
-  virtual int32_t retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, uint8_t option) = 0;
-  virtual int32_t retrieve_tuples(int contid, int num_tuples, kvs_key **keys, kvs_value **values, uint8_t option, int *results) { return KVS_ERR_OPTION_INVALID; }
-  virtual int32_t delete_tuple(int contid, const kvs_key *key, uint8_t option) = 0;
-
-  virtual int getfd() = 0;
-
-protected:
-  unsigned int num_threads;
-  bool persistent;
-
-};
-  */
-
-/*
  * KvsDevice represents a KV SSD
  *
  */
@@ -165,7 +123,7 @@ public:
   virtual int32_t init();
   virtual int32_t init(int socket) { return 0; }
   virtual int32_t init(const char* devpath, const char* configfile, int queuedepth, int is_polling) {return 0;}
-  virtual int32_t init(const char* devpath, bool syncio, uint64_t sq_core, uint64_t cq_core, uint32_t mem_size_mb) {return 0;}
+  virtual int32_t init(const char* devpath, bool syncio, uint64_t sq_core, uint64_t cq_core, uint32_t mem_size_mb, int queue_depth) {return 0;}
   virtual int32_t init(const char* devpath, bool syncio) {return 0;}
   virtual int32_t process_completions(int max) =0;
   virtual int32_t store_tuple(int contid, const kvs_key *key, const kvs_value *value, kvs_store_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
@@ -175,6 +133,7 @@ public:
   virtual int32_t open_iterator(int contid, kvs_iterator_option option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) = 0;
   virtual int32_t close_iterator(int contid, kvs_iterator_handle hiter) = 0;
   virtual int32_t close_iterator_all(int contid) = 0;
+  virtual int32_t list_iterators(int contid, kvs_iterator_info *kvs_iters, uint32_t count) = 0;
   virtual int32_t iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
   virtual float get_waf() {return 0.0;}
   virtual int32_t get_used_size(int32_t *dev_util) {return 0;}
@@ -189,14 +148,17 @@ struct _kvs_device_handle {
 };
 
 struct _kvs_container_handle {
+  uint8_t container_id;
   kvs_device_handle dev;
   char name[256];
 };
 
 struct _kvs_iterator_handle{
+  /*
 #ifndef WITH_SPDK  
   kv_iterator_handle iterh_adi;
 #endif
+  */
   uint32_t iterator;
 };
 

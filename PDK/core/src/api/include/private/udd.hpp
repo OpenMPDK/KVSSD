@@ -69,12 +69,12 @@ public:
   
   std::mutex lock;
   std::queue<kv_pair*> kv_pair_pool;
-  std::queue<kv_udd_context*> udd_context_pool;
+  //std::queue<kv_udd_context*> udd_context_pool;
   
 public:
   KUDDriver(kv_device_priv *dev, kvs_callback_function user_io_complete_);
   virtual ~KUDDriver();
-  virtual int32_t init(const char*devpath, bool syncio, uint64_t sq_core, uint64_t cq_core, uint32_t mem_size_mb) override;
+  virtual int32_t init(const char*devpath, bool syncio, uint64_t sq_core, uint64_t cq_core, uint32_t mem_size_mb, int queue_depth) override;
   virtual int32_t process_completions(int max) override;
   virtual int32_t store_tuple(int contid, const kvs_key *key, const kvs_value *value, kvs_store_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
   virtual int32_t retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, kvs_retrieve_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
@@ -83,6 +83,7 @@ public:
   virtual int32_t open_iterator(int contid, kvs_iterator_option option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) override;
   virtual int32_t close_iterator(int contid, kvs_iterator_handle hiter) override;
   virtual int32_t close_iterator_all(int contid) override;
+  virtual int32_t list_iterators(int contid, kvs_iterator_info *kvs_iters, uint32_t count) override;
   virtual int32_t iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
   virtual float get_waf() override;
   virtual int32_t get_used_size(int32_t *dev_util) override;

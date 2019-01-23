@@ -1,6 +1,11 @@
 
 Release History
 
+---   v0.7.1
+   KV API support for list_iterator operation
+   Bug fix
+
+
 ---   v0.7.0
    KV API support for user space driver (uNVMe) v18.11
    Support options for retrieve/store/delete/iterator (refer to Samsung API spec).

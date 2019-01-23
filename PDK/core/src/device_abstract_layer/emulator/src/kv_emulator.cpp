@@ -37,6 +37,7 @@
 #include <string>
 
 #include <time.h>
+#include "io_cmd.hpp"
 #include "kv_emulator.hpp"
 
 uint64_t _kv_emul_queue_latency;
@@ -45,7 +46,9 @@ namespace kvadi {
 
 static kv_timer kv_emul_timer;
 
-kv_emulator::kv_emulator(uint64_t capacity, std::vector<double> iops_model_coefficients, bool_t use_iops_model): stat(iops_model_coefficients), m_capacity(capacity),m_available(capacity), m_use_iops_model(use_iops_model) {}
+kv_emulator::kv_emulator(uint64_t capacity, std::vector<double> iops_model_coefficients, bool_t use_iops_model, uint32_t nsid): stat(iops_model_coefficients), m_capacity(capacity),m_available(capacity), m_use_iops_model(use_iops_model), m_nsid(nsid) {
+    memset(m_iterator_list, 0, sizeof(m_iterator_list));
+}
 
 // delete any remaining keys in memory
 kv_emulator::~kv_emulator() {
@@ -278,12 +281,24 @@ kv_result kv_emulator::kv_open_iterator(const kv_iterator_option opt, const kv_g
         return KV_ERR_PARAM_INVALID;
     }
 
-    if (m_it_map.size() >= SAMSUNG_MAX_ITERATORS) {
+    std::unique_lock<std::mutex> lock(m_it_map_mutex);
+    uint32_t cur_it_count = m_it_map.size();
+    if (cur_it_count >= SAMSUNG_MAX_ITERATORS) {
+        *iter_hdl = 0;
         return KV_ERR_TOO_MANY_ITERATORS_OPEN;
     }
 
-    (*iter_hdl) = new _kv_iterator_handle();
-    auto iH = (*iter_hdl);
+    // check if an existing iterator already have the prefix
+    for (int i = 0; i < SAMSUNG_MAX_ITERATORS; i++) {
+        if (m_iterator_list[i].prefix == cond->bit_pattern 
+            && m_iterator_list[i].bitmask == cond->bitmask
+            && m_iterator_list[i].status == 1) {
+            *iter_hdl = 0;
+            return KVS_ERR_ITERATOR_OPEN;
+        }
+    }
+
+    _kv_iterator_handle *iH = new _kv_iterator_handle();
     iH->it_op = opt;
     iH->it_cond.bitmask = cond->bitmask;
     iH->it_cond.bit_pattern = cond->bit_pattern;
@@ -297,17 +312,43 @@ kv_result kv_emulator::kv_open_iterator(const kv_iterator_option opt, const kv_g
     //std::bitset<32> set0 (*(uint32_t*)iH->current_key);
     //std::cerr << "minkey = " << set0 << std::endl;
 
-    std::unique_lock<std::mutex> lock(m_it_map_mutex);
-    m_it_map.insert(iH);
+    // get next available itid, itid start with 1
+    kv_iterator_handle itid = 1;
+    for (; itid <= SAMSUNG_MAX_ITERATORS; itid++) {
+        if (m_it_map.find(itid) == m_it_map.end()) {
+            break;
+        }
+    }
 
+    m_it_map.insert(std::make_pair(itid, iH));
+
+    // update the list
+    m_iterator_list[itid - 1].handle_id = itid;
+    m_iterator_list[itid - 1].status = 1;
+    m_iterator_list[itid - 1].type = opt;
+    m_iterator_list[itid - 1].keyspace_id = m_nsid;
+    m_iterator_list[itid - 1].prefix = cond->bit_pattern;
+    m_iterator_list[itid - 1].bitmask = cond->bitmask;
+    m_iterator_list[itid - 1].is_eof = 0;
+
+    (*iter_hdl) = itid;
     return KV_SUCCESS;
 }
 
-kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, void *ioctx) {
+kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_handle_id, kv_iterator_list *iter_list, void *ioctx) {
     (void) ioctx;
 
-    if (iter_hdl == NULL || iter_list == NULL) {
+    if (iter_handle_id == 0 || iter_list == NULL) {
         return KV_ERR_PARAM_INVALID;
+    }
+
+    std::unique_lock<std::mutex> lock(m_map_mutex);
+    _kv_iterator_handle *iter_hdl = NULL;
+    auto it1 = m_it_map.find(iter_handle_id);
+    if (it1 != m_it_map.end()) {
+        iter_hdl = it1->second;
+    } else {
+        return KV_ERR_ITERATOR_NOT_EXIST;
     }
 
     const bool include_value = iter_hdl->it_op == KV_ITERATOR_OPT_KV || iter_hdl->it_op == KV_ITERATOR_OPT_KV_WITH_DELETE;
@@ -332,7 +373,6 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iter
     uint32_t buffer_pos = 0;
     int counter = 0;
 
-    std::unique_lock<std::mutex> lock(m_map_mutex);
 
     uint32_t prefix = 0;
     auto it = m_map.lower_bound(&key);
@@ -401,18 +441,29 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iter
     // printf("emulator internal iterator: XXX got entries %d\n", counter);
     iter_list->num_entries = counter;
     if (end != TRUE) {
-        return KV_WRN_MORE;
+        m_iterator_list[iter_handle_id - 1].is_eof = 0;
+    } else {
+        m_iterator_list[iter_handle_id - 1].is_eof = 1;
     }
 
     return KV_SUCCESS;
 }
 
 // match iterator condition, return max of 1 key
-kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key, kv_value *value, void *ioctx) {
+kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_handle_id, kv_key *key, kv_value *value, void *ioctx) {
     (void) ioctx;
 
-    if (key == NULL || key->key == NULL || value == NULL || value->value == NULL) {
+    if (iter_handle_id == 0 || key == NULL || key->key == NULL || value == NULL || value->value == NULL) {
         return KV_ERR_PARAM_INVALID;
+    }
+
+    std::unique_lock<std::mutex> lock(m_map_mutex);
+    _kv_iterator_handle *iter_hdl = NULL;
+    auto it1 = m_it_map.find(iter_handle_id);
+    if (it1 != m_it_map.end()) {
+        iter_hdl = it1->second;
+    } else {
+        return KV_ERR_ITERATOR_NOT_EXIST;
     }
 
     const bool include_value = iter_hdl->it_op == KV_ITERATOR_OPT_KV || iter_hdl->it_op == KV_ITERATOR_OPT_KV_WITH_DELETE;
@@ -430,8 +481,6 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key
 
     // 4 leading bytes to match
     uint32_t to_match = iter_hdl->it_cond.bitmask & iter_hdl->it_cond.bit_pattern;
-
-    std::unique_lock<std::mutex> lock(m_map_mutex);
 
     uint32_t prefix = 0;
     auto it = m_map.lower_bound(&key1);
@@ -497,51 +546,60 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key
         key->length = klength;
         iter_hdl->keylength = klength;
         memcpy(iter_hdl->current_key, it->first->key, klength);
+        m_iterator_list[iter_handle_id - 1].is_eof = 0;
     } else {
         iter_hdl->end = TRUE;
+        m_iterator_list[iter_handle_id - 1].is_eof = 1;
     }
 
     return KV_SUCCESS;
 }
 
-kv_result kv_emulator::kv_close_iterator(kv_iterator_handle iter_hdl, void *ioctx) {
+kv_result kv_emulator::kv_close_iterator(kv_iterator_handle iter_handle_id, void *ioctx) {
     (void) ioctx;
 
-    if (iter_hdl == NULL) return KV_ERR_PARAM_INVALID;
+    if (iter_handle_id <= 0) return KV_ERR_PARAM_INVALID;
     {
         std::unique_lock<std::mutex> lock(m_it_map_mutex);
-        auto it = m_it_map.find(iter_hdl);
+        auto it = m_it_map.find(iter_handle_id);
         if (it != m_it_map.end()) {
+            delete it->second;
             m_it_map.erase(it);
         }
+
+        m_iterator_list[iter_handle_id - 1].status = 0;
     }
-    delete iter_hdl;
 
     return KV_SUCCESS;
 }
 
+// this is sync admin call
 kv_result kv_emulator::kv_list_iterators(kv_iterator *iter_list, uint32_t *count, void *ioctx) {
-    (void) ioctx;
 
     if (iter_list == NULL || count == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
-    {
-        uint32_t i = 0;
-        const uint32_t max = *count;
-        std::unique_lock<std::mutex> lock(m_it_map_mutex);
-        for (const auto &it : m_it_map) {
-            kv_iterator_handle handle = it;
-            if (i < max) {
-                iter_list[i].itid = i;
-                iter_list[i].iter_op = (kv_iterator_option)handle->it_op;
-                if (iter_list[i].iter_cond)
-                    memcpy(iter_list[i].iter_cond, &handle->it_cond, sizeof(kv_group_condition));
-            }
-        }
-        *count = i;
+    uint32_t i = 0;
+    const uint32_t min = std::min(*count, (uint32_t) SAMSUNG_MAX_ITERATORS);
+    std::unique_lock<std::mutex> lock(m_it_map_mutex);
+
+    for (; i < min; i++) {
+        iter_list[i].handle_id = m_iterator_list[i].handle_id;
+        iter_list[i].status = m_iterator_list[i].status;
+        iter_list[i].type = m_iterator_list[i].type;
+        iter_list[i].keyspace_id = m_iterator_list[i].keyspace_id;
+        iter_list[i].prefix = m_iterator_list[i].prefix;
+        iter_list[i].bitmask = m_iterator_list[i].bitmask;
+        iter_list[i].is_eof = m_iterator_list[i].is_eof;
     }
+    *count = min;
+
+    // this is sync admin call
+    // call postprocessing after completion of a command
+    io_cmd *ioreq = (io_cmd *) ioctx;
+    ioreq->call_post_process_func();
+    delete ioreq;
 
     return KV_SUCCESS;
 }

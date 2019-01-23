@@ -15,6 +15,7 @@ if [ -s /etc/redhat-release ]; then
 elif [ -f /etc/debian_version ]; then
     # Includes Ubuntu, Debian
     sudo apt-get install g++
+    sudo apt-get install cmake
     sudo apt-get install libcunit1-dev
     sudo apt-get install libaio-dev
     sudo apt-get install libtbb-dev

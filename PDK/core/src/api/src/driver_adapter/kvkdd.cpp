@@ -44,9 +44,6 @@
 #include <kvs_adi.h>
 #include <kvs_api.h>
 
-#define MAX_POOLSIZE 10240
-//#define use_pool
-
 KDDriver::KDDriver(kv_device_priv *dev, kvs_callback_function user_io_complete_):
   KvsDriver(dev, user_io_complete_), devH(0),nsH(0), sqH(0), cqH(0), int_handler(0)
 {
@@ -59,7 +56,6 @@ void interrupt_func(void *data, int number) {
   (void) data;
   (void) number;
 
-  //fprintf(stdout, "inside interrupt\n");
 }
 
 void kdd_on_io_complete(kv_io_context *context){
@@ -83,8 +79,10 @@ void kdd_on_io_complete(kv_io_context *context){
 
   if(ctx->syncio) {
     if(context->opcode == KV_OPC_OPEN_ITERATOR) {
-      kvs_iterator_handle iterh = (kvs_iterator_handle)iocb->private1;
-      iterh->iterh_adi = context->result.hiter;
+      //kvs_iterator_handle iterh = (kvs_iterator_handle)iocb->private1;
+      //iterh/*iterh_adi*/ = context->result.hiter;
+      kvs_iterator_handle *iterh = (kvs_iterator_handle*)iocb->private1;
+      *iterh = context->result.hiter;
     }
     if(owner->int_handler != 0) {
       std::unique_lock<std::mutex> lock(ctx->lock_sync);
@@ -95,35 +93,13 @@ void kdd_on_io_complete(kv_io_context *context){
   } else {
     if(context->opcode != KV_OPC_OPEN_ITERATOR && context->opcode != KV_OPC_CLOSE_ITERATOR) {
       if(ctx->on_complete && iocb) {
-	//fprintf(stdout, "api finished key %s\n", iocb->key->key);
 	ctx->on_complete(iocb);
       }
     }
-  }
-  
-#if defined use_pool
-  //const auto owner = ctx->owner;
-  if(ctx->value){    
-    std::unique_lock<std::mutex> lock(owner->lock);
-    if(ctx->key) {
-      owner->kv_key_pool.push(ctx->key);
-    }
-    if(ctx->value){
-      owner->kv_value_pool.push(ctx->value);
-    }
 
-  //if(!ctx->syncio) {
-    memset(ctx, 0, sizeof(KDDriver::kv_kdd_context));
-    owner->kv_ctx_pool.push(ctx);
-    //}
-    lock.unlock();
-  }
-#else
-  if(!ctx->syncio) {
     free(ctx);
     ctx = NULL;
   }
-#endif
 }
 
 int KDDriver::create_queue(int qdepth, uint16_t qtype, kv_queue_handle *handle, int cqid, int is_polling){
@@ -163,12 +139,6 @@ int32_t KDDriver::init(const char* devpath, const char* configfile, int queue_de
   
   kv_result ret;
 
-  for (int i = 0; i < MAX_POOLSIZE; i++) {
-    this->kv_key_pool.push(new kv_key());
-    this->kv_value_pool.push(new kv_value());
-    this->kv_ctx_pool.push(new kv_kdd_context());
-  }
-
   kv_device_init_t dev_init;
   dev_init.devpath = devpath;
   dev_init.need_persistency = FALSE;
@@ -195,15 +165,8 @@ int32_t KDDriver::init(const char* devpath, const char* configfile, int queue_de
 
 KDDriver::kv_kdd_context* KDDriver::prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, void *private1, void *private2, bool syncio, kvs_callback_function cbfn){
 
-#if defined use_pool  
-  std::unique_lock<std::mutex> lock(this->lock);
-  kv_kdd_context *ctx = this->kv_ctx_pool.front();
-  this->kv_ctx_pool.pop();
-  lock.unlock();
-#else
   kv_kdd_context *ctx = (kv_kdd_context *)calloc(1, sizeof(kv_kdd_context));
-#endif
-
+  
   ctx->on_complete = cbfn;
   ctx->iocb.opcode = opcode;
   //ctx->iocb.contid = contid;
@@ -221,6 +184,7 @@ KDDriver::kv_kdd_context* KDDriver::prep_io_context(int opcode, int contid, cons
 
   ctx->iocb.private1 = private1;
   ctx->iocb.private2 = private2;
+  ctx->iocb.result_buffer = NULL;
   ctx->owner = this;
 
   ctx->syncio = syncio;
@@ -277,32 +241,6 @@ int32_t KDDriver::store_tuple(int contid, const kvs_key *key, const kvs_value *v
     }
   }
  
-#if defined use_pool  
-  std::unique_lock<std::mutex> lock(this->lock);
-  kv_key *key_adi = this->kv_key_pool.front();
-  this->kv_key_pool.pop();
-  kv_value *value_adi = this->kv_value_pool.front();
-  this->kv_value_pool.pop();
-  lock.unlock();
-
-  if(key_adi ==NULL || value_adi == NULL) {
-    fprintf(stderr, "NO available kv pair %p %p\n", key_adi, value_adi);
-    exit(1);
-  }
-  ctx->key = key_adi;
-  ctx->value = value_adi;
-  
-  key_adi->key = key->key;
-  key_adi->length = (kv_key_t)key->length;
-  value_adi->value = value->value;
-  value_adi->length = (kv_value_t)value->length;
-  value_adi->actual_value_size = 0;
-
-  int ret = kv_store(this->sqH, this->nsH, key_adi, value_adi, option_adi, &f);
-#else
-  ctx->key = (kv_key*)key;
-  ctx->value = (kv_value*)value;
-
 
   int ret = kv_store(this->sqH, this->nsH, (kv_key*)key, (kv_value*)value, option_adi, &f);
   //while(ret != KV_SUCCESS) {
@@ -311,7 +249,6 @@ int32_t KDDriver::store_tuple(int contid, const kvs_key *key, const kvs_value *v
     ret = kv_store(this->sqH, this->nsH, (kv_key*)key, (kv_value*)value, option_adi, &f);
   }
   
-#endif
   if(syncio && ret == 0) {
     /*
     uint32_t processed = 0;
@@ -327,17 +264,8 @@ int32_t KDDriver::store_tuple(int contid, const kvs_key *key, const kvs_value *v
     lock.unlock();    
     if (syncio )ret = ctx->iocb.result;
 
-#if defined use_pool
-    std::unique_lock<std::mutex> lock(this->lock);
-    memset(ctx, 0, sizeof(KDDriver::kv_kdd_context));
-    this->kv_ctx_pool.push(ctx);
-    this->kv_key_pool.push(key_adi);
-    this->kv_value_pool.push(value_adi);
-    lock.unlock();
-#else
     free(ctx);
     ctx = NULL;
-#endif
   }
   
   return ret;
@@ -363,36 +291,11 @@ int32_t KDDriver::retrieve_tuple(int contid, const kvs_key *key, kvs_value *valu
       option_adi = KV_RETRIEVE_OPT_DECOMPRESS_DELETE;
   }
   
-  
-#if defined use_pool
-  std::unique_lock<std::mutex> lock(this->lock);
-  kv_key *key_adi = this->kv_key_pool.front();
-  this->kv_key_pool.pop();
-  kv_value *value_adi = this->kv_value_pool.front();
-  this->kv_value_pool.pop();
-  lock.unlock();
-  ctx->key = key_adi;
-  ctx->value = value_adi;
-    
-  key_adi->key = key->key;
-  key_adi->length = key->length;
-  value_adi->value = value->value;
-  value_adi->length = (kv_value_t)value->length;
-  value_adi->actual_value_size = 0;//(kv_value_t)value->length;
-  value_adi->offset = 0;
-
-  int ret = kv_retrieve(this->sqH, this->nsH, key_adi, option_adi, value_adi, &f);
-  
-#else
-  ctx->key = (kv_key*)key;
-  ctx->value = (kv_value*)value;
-  //ctx->value->value_size = ctx->value->length;
   int ret = kv_retrieve(this->sqH, this->nsH, (kv_key*)key, option_adi, (kv_value*)value, &f);
   //while(ret != KV_SUCCESS) {
   while(ret == KV_ERR_QUEUE_IS_FULL) {
     ret = kv_retrieve(this->sqH, this->nsH, (kv_key*)key, option_adi, (kv_value*)value, &f);
   }
-#endif
 
   if(syncio && ret == 0) {
     /*
@@ -408,17 +311,9 @@ int32_t KDDriver::retrieve_tuple(int contid, const kvs_key *key, kvs_value *valu
       ctx->done_cond_sync.wait(lock);
     lock.unlock();    
     if (syncio) ret = ctx->iocb.result;
-#if defined use_pool
-    std::unique_lock<std::mutex> lock(this->lock);
-    memset(ctx, 0, sizeof(KDDriver::kv_kdd_context));
-    this->kv_ctx_pool.push(ctx);
-    this->kv_key_pool.push(key_adi);
-    this->kv_value_pool.push(value_adi);
-    lock.unlock();
-#else
+
     free(ctx);
     ctx = NULL;
-#endif
   }
   return ret;
 }
@@ -433,27 +328,11 @@ int32_t KDDriver::delete_tuple(int contid, const kvs_key *key, kvs_delete_option
   else
     option_adi = KV_DELETE_OPT_ERROR;
   
-#if defined use_pool
-  std::unique_lock<std::mutex> lock(this->lock);
-  kv_key *key_adi = this->kv_key_pool.front();
-  this->kv_key_pool.pop();
-  lock.unlock();  
-  ctx->key = key_adi;
-  ctx->value = NULL;
-  
-  key_adi->key = key->key;
-  key_adi->length = key->length;
-
-  int ret =  kv_delete(this->sqH, this->nsH, key_adi, option_adi, &f);
-#else
-  ctx->key = (kv_key*)key;
-  ctx->value = NULL;
   int ret =  kv_delete(this->sqH, this->nsH, (kv_key*)key, option_adi, &f);
   //while(ret != KV_SUCCESS) {
   while(ret == KV_ERR_QUEUE_IS_FULL) {
     ret =  kv_delete(this->sqH, this->nsH, (kv_key*)key, option_adi, &f);
   }
-#endif
   
   if(syncio && ret == 0) {
     /*
@@ -469,16 +348,9 @@ int32_t KDDriver::delete_tuple(int contid, const kvs_key *key, kvs_delete_option
       ctx->done_cond_sync.wait(lock);
     lock.unlock();    
     if (syncio )ret = ctx->iocb.result;
-#if defined use_pool
-    std::unique_lock<std::mutex> lock(this->lock);
-    memset(ctx, 0, sizeof(KDDriver::kv_kdd_context));
-    this->kv_ctx_pool.push(ctx);
-    this->kv_key_pool.push(key_adi);
-    lock.unlock();
-#else
+
     free(ctx);
     ctx = NULL;
-#endif
   }    
   
   return ret;
@@ -496,9 +368,6 @@ int32_t KDDriver::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys,
   
   kv_postprocess_function f = {kdd_on_io_complete, (void*)ctx};
 
-  ctx->key = (kv_key*)keys;
-  ctx->value = NULL;
-  
   int ret = kv_exist(this->sqH, this->nsH, (kv_key*)keys, key_cnt, buffer_size, result_buffer, &f);
   //while(ret != KV_SUCCESS) {
   while(ret == KV_ERR_QUEUE_IS_FULL) {
@@ -511,20 +380,13 @@ int32_t KDDriver::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys,
       ctx->done_cond_sync.wait(lock);
     lock.unlock();
     if (syncio )ret = ctx->iocb.result;
-#if defined use_pool
-    std::unique_lock<std::mutex> lock(this->lock);
-    memset(ctx, 0, sizeof(KDDriver::kv_kdd_context));
-    this->kv_ctx_pool.push(ctx);
-    lock.unlock();
-#else
+
     free(ctx);
     ctx = NULL;
-#endif
   }
   
   return ret;
 }
-
 
 int32_t KDDriver::open_iterator(int contid, kvs_iterator_option option /*uint8_t option*/, uint32_t bitmask,
 				uint32_t bit_pattern, kvs_iterator_handle *iter_hd) {
@@ -534,8 +396,32 @@ int32_t KDDriver::open_iterator(int contid, kvs_iterator_option option /*uint8_t
     fprintf(stderr, "Kernel driver does not support iterator for key-value retrieve\n");
     exit(1);
   }
-  kvs_iterator_handle iterh = (kvs_iterator_handle)malloc(sizeof(struct _kvs_iterator_handle));
-  auto ctx = prep_io_context(IOCB_ASYNC_ITER_OPEN_CMD, 0, 0, 0, iterh, 0/*private1, private2*/, TRUE, 0); 
+
+  kv_iterator kv_iters[SAMSUNG_MAX_ITERATORS];
+  memset(kv_iters, 0, sizeof(kv_iters));
+  uint32_t count = SAMSUNG_MAX_ITERATORS;
+
+  kv_result res = kv_list_iterators(sqH, nsH, kv_iters, &count, NULL);
+  if(res)
+    printf("kv_list_iterators with error: 0x%X\n", res);
+
+  int opened = 0;
+  for(uint32_t i = 0; i< count; i++){
+    if(kv_iters[i].status == 1) {
+      opened++;
+      //fprintf(stdout, "found handler %d, prefix 0x%x 0x%x\n", kv_iters[i].handle_id, kv_iters[i].prefix, kv_iters[i].bitmask);
+      if(kv_iters[i].prefix == bit_pattern && kv_iters[i].bitmask == bitmask) {
+	fprintf(stdout, "WARN: Iterator with same prefix/bitmask is already opened\n");
+	return KVS_ERR_ITERATOR_OPEN;
+      }
+    }
+  }
+  if(opened == SAMSUNG_MAX_ITERATORS)
+    return KVS_ERR_ITERATOR_MAX;
+
+  //kvs_iterator_handle iterh = (kvs_iterator_handle)malloc(sizeof(struct _kvs_iterator_handle));
+
+  auto ctx = prep_io_context(IOCB_ASYNC_ITER_OPEN_CMD, 0, 0, 0, (void*)iter_hd, 0/*private1, private2*/, TRUE, 0); 
 
   kv_group_condition grp_cond = {bitmask, bit_pattern};
   kv_postprocess_function f = {kdd_on_io_complete, (void*)ctx};  
@@ -575,17 +461,11 @@ int32_t KDDriver::open_iterator(int contid, kvs_iterator_option option /*uint8_t
   }
 
   ret = ctx->iocb.result;
-  *iter_hd = iterh;
-#if defined use_pool
-  std::unique_lock<std::mutex> lock(this->lock);
-  memset(ctx, 0, sizeof(KDDriver::kv_kdd_context));
-  this->kv_ctx_pool.push(ctx);
-  lock.unlock();
-#else
+  //*iter_hd = iterh;
+
   free(ctx);
   ctx = NULL;
-#endif
-  
+
   return ret;
 }
 
@@ -595,7 +475,7 @@ int32_t KDDriver::close_iterator(int contid, kvs_iterator_handle hiter) {
   
   kv_postprocess_function f = {kdd_on_io_complete, (void*)ctx};
 
-  ret = kv_close_iterator(this->sqH, this->nsH, hiter->iterh_adi, &f);
+  ret = kv_close_iterator(this->sqH, this->nsH, hiter/*iterh_adi*/, &f);
 
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_close_iterator failed with error:  0x%X\n", ret);
@@ -616,18 +496,11 @@ int32_t KDDriver::close_iterator(int contid, kvs_iterator_handle hiter) {
     lock.unlock();
   }
 
-  if(hiter) free(hiter);
+  //if(hiter) free(hiter);
 
-#if defined use_pool
-  std::unique_lock<std::mutex> lock(this->lock);
-  memset(ctx, 0, sizeof(KDDriver::kv_kdd_context));
-  this->kv_ctx_pool.push(ctx);
-  lock.unlock();
-#else
   free(ctx);
   ctx = NULL;
-#endif
-  
+
   return 0;
 }
 
@@ -638,13 +511,21 @@ int32_t KDDriver::close_iterator_all(int contid) {
 
 }
 
+int32_t KDDriver::list_iterators(int contid, kvs_iterator_info *kvs_iters, uint32_t count) {
+
+  kv_result res = kv_list_iterators(sqH, nsH, (kv_iterator *)kvs_iters, &count, NULL);
+
+  return res;
+}
+
 int32_t KDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
   
   int ret = 0;
+
   auto ctx = prep_io_context(IOCB_ASYNC_ITER_NEXT_CMD, 0, 0, 0, private1, private2, syncio, cbfn);
   kv_postprocess_function f = {kdd_on_io_complete, (void*)ctx};
   
-  ret = kv_iterator_next(this->sqH, this->nsH, hiter->iterh_adi, (kv_iterator_list *)iter_list, &f);
+  ret = kv_iterator_next(this->sqH, this->nsH, hiter/*hiter->iterh_adi*/, (kv_iterator_list *)iter_list, &f);
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_iterator_next failed with error:  0x%X\n", ret);
     return ret;
@@ -663,15 +544,8 @@ int32_t KDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *it
     lock.unlock();
     ret = ctx->iocb.result;
 
-#if defined use_pool
-    std::unique_lock<std::mutex> lock(this->lock);
-    memset(ctx, 0, sizeof(KDDriver::kv_kdd_context));
-    this->kv_ctx_pool.push(ctx);
-    lock.unlock();
-#else
     free(ctx);
     ctx = NULL;
-#endif
   }
 
   return ret;
@@ -738,24 +612,6 @@ int32_t KDDriver::process_completions(int max)
 
 
 KDDriver::~KDDriver() {
-
-  while(!this->kv_key_pool.empty()) {
-    auto p = this->kv_key_pool.front();
-    this->kv_key_pool.pop();
-    delete p;
-  }
-
-  while(!this->kv_value_pool.empty()) {
-    auto p = this->kv_value_pool.front();
-    this->kv_value_pool.pop();
-    delete p;
-  }
-
-  while(!this->kv_ctx_pool.empty()) {
-    auto p = this->kv_ctx_pool.front();
-    this->kv_ctx_pool.pop();
-    delete p;
-  }
 
   // shutdown device
   if(this->int_handler) {

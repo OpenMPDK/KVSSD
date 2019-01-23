@@ -67,7 +67,7 @@ void on_io_complete(kv_io_context *context){
     const char *cmd = (context->opcode == KV_OPC_GET)? "GET": ((context->opcode == KV_OPC_STORE)? "PUT": (context->opcode == KV_OPC_DELETE)? "DEL":"OTHER");
     fprintf(stderr, "%s failed with error 0x%x\n", cmd, context->retcode);
   } 
-  
+
   //const char *cmd = (context->opcode == KV_OPC_GET)? "GET": ((context->opcode == KV_OPC_STORE)? "PUT": (context->opcode == KV_OPC_DELETE)? "DEL":"OTHER");
 
   KvEmulator::kv_emul_context *ctx = (KvEmulator::kv_emul_context*)context->private_data;
@@ -75,13 +75,16 @@ void on_io_complete(kv_io_context *context){
   const auto owner = ctx->owner;
   
   iocb->result = (kvs_result)context->retcode;
+  
   if(context->opcode == KV_OPC_GET)
     iocb->value->actual_value_size = context->value->actual_value_size;
   
   if(ctx->syncio) {
     if(context->opcode == KV_OPC_OPEN_ITERATOR) {
-      kvs_iterator_handle iterh = (kvs_iterator_handle)iocb->private1;
-      iterh->iterh_adi = context->result.hiter;
+      //kvs_iterator_handle iterh = (kvs_iterator_handle)iocb->private1;
+      //iterh/*iterh_adi*/ = context->result.hiter;
+      kvs_iterator_handle *iterh = (kvs_iterator_handle*)iocb->private1;
+      *iterh = context->result.hiter;
     }
     if(owner->int_handler != 0) {
       std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
@@ -91,36 +94,32 @@ void on_io_complete(kv_io_context *context){
     }
   } else {
     if(context->opcode != KV_OPC_OPEN_ITERATOR && context->opcode != KV_OPC_CLOSE_ITERATOR) {
-      if(ctx->on_complete && iocb)
+      if(ctx->on_complete && iocb){
 	ctx->on_complete(iocb);
+      }
     }
-  }
-  
+
 #if defined use_pool
-  //const auto owner = ctx->owner;
-  if(!ctx->syncio) {
-    std::unique_lock<std::mutex> lock(owner->lock);
-    if(ctx->key) {
-      owner->kv_key_pool.push(ctx->key);
+    if(!ctx->syncio) {
+      std::unique_lock<std::mutex> lock(owner->lock);
+      if(ctx->key) {
+	owner->kv_key_pool.push(ctx->key);
+      }
+      if(ctx->value) {
+	owner->kv_value_pool.push(ctx->value);
+      }
+      
+      memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+      owner->kv_ctx_pool.push(ctx);
+      lock.unlock();
     }
-    if(ctx->value) {
-      owner->kv_value_pool.push(ctx->value);
-    }
-  //  if(!ctx->syncio) {
-    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context)); 
-    owner->kv_ctx_pool.push(ctx);
-    //free(ctx);
-    //ctx = NULL;
-    //}
-    lock.unlock();
-  }
 #else
-  if(!ctx->syncio) {
-    free(ctx);
-    ctx = NULL;
-  }
+    if(!ctx->syncio) {
+      free(ctx);
+      ctx = NULL;
+    }
 #endif
-  
+  }
 }
 
 int KvEmulator::create_queue(int qdepth, uint16_t qtype, kv_queue_handle *handle, int cqid, int is_polling){
@@ -470,7 +469,7 @@ int32_t KvEmulator::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *key
   // no need for key_adi pool
   ctx->key = NULL;
   ctx->value = NULL;
-
+  
   int ret = kv_exist(this->sqH, this->nsH, (kv_key*)keys, key_cnt, buffer_size, result_buffer, &f);
 
   if(syncio && ret == 0) {
@@ -497,8 +496,9 @@ int32_t KvEmulator::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_op
 				  uint32_t bit_pattern, kvs_iterator_handle *iter_hd) {
   
   int ret = 0;
-  kvs_iterator_handle iterh = (kvs_iterator_handle)malloc(sizeof(struct _kvs_iterator_handle));
-  auto ctx = prep_io_context(IOCB_ASYNC_ITER_OPEN_CMD, 0, 0, 0, iterh, 0/*private1, private2*/, TRUE, 0);
+  //kvs_iterator_handle iterh = (kvs_iterator_handle)malloc(sizeof(struct _kvs_iterator_handle));
+  
+  auto ctx = prep_io_context(IOCB_ASYNC_ITER_OPEN_CMD, 0, 0, 0, (void*)iter_hd, 0/*private1, private2*/, TRUE, 0);
   kv_group_condition grp_cond = {bitmask, bit_pattern};
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
 
@@ -529,7 +529,7 @@ int32_t KvEmulator::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_op
   }
 
   ret = ctx->iocb.result;
-  *iter_hd = iterh;
+  //*iter_hd = iterh;
 #if defined use_pool
   
   std::unique_lock<std::mutex> lock(this->lock);
@@ -554,7 +554,7 @@ int32_t KvEmulator::close_iterator(int contid, kvs_iterator_handle hiter) {
 
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
   //this->done = 0;
-  ret = kv_close_iterator(this->sqH, this->nsH, hiter->iterh_adi, &f);
+  ret = kv_close_iterator(this->sqH, this->nsH, hiter/*iterh_adib*/, &f);
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_open_iterator failed with error:  0x%X\n", ret);
     exit(1);
@@ -572,7 +572,7 @@ int32_t KvEmulator::close_iterator(int contid, kvs_iterator_handle hiter) {
     lock_s.unlock();
   }
 
-  if(hiter) free(hiter);
+  //if(hiter) free(hiter);
   
 #if defined use_pool
   
@@ -597,14 +597,33 @@ int32_t KvEmulator::close_iterator_all(int contid) {
   fprintf(stderr, "WARN: this feature is not supported in the emulator\n");
   return KVS_ERR_OPTION_INVALID;
 }
+
+
+int32_t KvEmulator::list_iterators(int contid, kvs_iterator_info *kvs_iters, uint32_t count) {
+
+  //auto ctx = prep_io_context(IOCB_ASYNC_ITER_OPEN_CMD, 0, 0, 0, 0, 0, TRUE, 0);
+  //uint32_t count = SAMSUNG_MAX_ITERATORS;
+  //kv_postprocess_function f = {on_io_complete, (void*)ctx};
+
+  kv_result res = kv_list_iterators(sqH, nsH, (kv_iterator *)kvs_iters, &count, NULL/*&f*/);
+
+  for(uint32_t i = 0; i< count; i++){
+    if(kvs_iters[i].status == 1) fprintf(stdout, "found handler %d %x %x\n",
+					 kvs_iters[i].iter_handle, kvs_iters[i].bit_pattern, kvs_iters[i].bitmask);
+  }
   
+  //free(ctx);
+  //ctx = NULL;
+  return res;
+}
+
 int32_t KvEmulator::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
 
   int ret = 0;
   auto ctx = prep_io_context(IOCB_ASYNC_ITER_NEXT_CMD, 0, 0, 0, private1, private2, syncio, cbfn);
   kv_postprocess_function f = {on_io_complete, (void*)ctx};
 
-  ret = kv_iterator_next(this->sqH, this->nsH, hiter->iterh_adi, (kv_iterator_list *)iter_list, &f);
+  ret = kv_iterator_next(this->sqH, this->nsH, hiter/*iterh_adi*/, (kv_iterator_list *)iter_list, &f);
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_iterator_next failed with error:  0x%X\n", ret);
     return ret;

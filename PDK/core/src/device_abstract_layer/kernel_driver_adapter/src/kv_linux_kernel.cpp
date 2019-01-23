@@ -362,6 +362,7 @@ namespace kvadi {
                         }
                     }
                     else if (req->ioctx.opcode == KV_OPC_CLOSE_ITERATOR){
+                        // fprintf(stderr, "close iterator device returned status: 0x%x\n", dev_status_code);
                         if(dev_status_code == 0x390){ // Iterator does not exists
                             req->ioctx.retcode = KV_ERR_ITERATOR_NOT_EXIST;
                         }
@@ -508,14 +509,21 @@ namespace kvadi {
                     }
                 }
                 else if (req->ioctx.retcode == 0 && req->ioctx.opcode == KV_OPC_OPEN_ITERATOR) {
-                    if (req->ioctx.result.hiter) {
-                        req->ioctx.result.hiter->id = (aioevents.events[i].result & 0x000000FF);
-                    }
+                    req->ioctx.result.hiter = (aioevents.events[i].result & 0x000000FF);
+                    // fprintf(stderr, "open iterator got id: %d\n", req->ioctx.result.hiter);
 
+                    // open iterator actually failed
+                    /*
+                     * no interpretation
+                    if (req->ioctx.result.hiter == 0) {
+                        req->ioctx.retcode = KV_ERR_ITERATE_REQUEST_FAIL;
+                    }
+                    */
                 }
                 else if (req->ioctx.retcode == 0 && req->ioctx.opcode == KV_OPC_ITERATE_NEXT) {
 #ifndef ITER_EXT
-                        req->ioctx.result.hiter->id = ((aioevents.events[i].result >> 16) && 0xff);
+                        req->ioctx.result.hiter = ((aioevents.events[i].result >> 16) && 0xff);
+                        // fprintf(stderr, "iterator next got id: %d\n", req->ioctx.result.hiter);
 #endif
 
 // for iteration behavior before and including EHA50K0K
@@ -849,7 +857,7 @@ namespace kvadi {
     // basic operations to submit a command to device
     kv_result kv_linux_kernel::kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) {
         struct nvme_passthru_kv_cmd cmd;
-        uint8_t dev_option = 0;
+        // uint8_t dev_option = 0;
         if (!m_ready) return KV_ERR_DEV_INIT;
         /*
         switch(option) {
@@ -1007,8 +1015,6 @@ namespace kvadi {
             return KV_ERR_PARAM_INVALID;
         }
 
-        (*iter_hdl) = new _kv_iterator_handle();
-
         struct nvme_passthru_kv_cmd cmd;
         if (!m_ready) return KV_ERR_DEV_INIT;
         memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
@@ -1030,12 +1036,11 @@ namespace kvadi {
                 dev_option = 0x80;
         }
 
-
         cmd.opcode = nvme_cmd_kv_iter_req;
         cmd.nsid = m_nsid;
 #ifdef ITER_EXT
         // cmd.cdw4 = (0x01|0x04); // For open option ITER_OPTION_OPEN
-        cmd.cdw4 = (dev_option|0x01); // For open option ITER_OPTION_OPEN
+        cmd.cdw4 = (dev_option |0x01); // For open option ITER_OPTION_OPEN
 #else
         cmd.cdw4 = 0x01; // For open option ITER_OPTION_OPEN
 #endif
@@ -1063,13 +1068,9 @@ namespace kvadi {
         cmd.opcode = nvme_cmd_kv_iter_req;
         cmd.nsid = m_nsid;
         cmd.cdw4 = 0x02; // For close option ITER_OPTION_CLOSE
-        cmd.cdw5 = iter_hdl->id; // Iterator handle
+        cmd.cdw5 = iter_hdl; // Iterator handle id
         cmd.reqid = (__u64)ioctx;
         cmd.ctxid = m_ctxid;
-
-        if (iter_hdl) {
-            delete iter_hdl;
-        }
 
         int ret = 0;
         ret = ioctl(m_fd, NVME_IOCTL_AIO_CMD, &cmd);
@@ -1092,7 +1093,7 @@ namespace kvadi {
         // key space id set to namespace id for now
         cmd.cdw3 = m_nsid;
         cmd.cdw4 = 0;
-        cmd.cdw5 = iter_hdl->id; // Iterator handle
+        cmd.cdw5 = iter_hdl; // Iterator handle id
         cmd.data_addr = (__u64)iter_list->it_list;
         cmd.data_length = iter_list->size;
         cmd.cdw10 = ((iter_list->size) >> 2);
@@ -1110,33 +1111,93 @@ namespace kvadi {
     }
 
     kv_result kv_linux_kernel::kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key, kv_value *value, void *ioctx) {
-        struct nvme_passthru_kv_cmd cmd;
-        if (!m_ready) return KV_ERR_DEV_INIT;
-        memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
-
-        cmd.opcode = nvme_cmd_kv_iter_read;
-        cmd.nsid = m_nsid;
-        cmd.cdw4 = 0; // fixed key length
-        cmd.cdw5 = iter_hdl->id; // Iterator handle
-        cmd.data_addr = (__u64)iter_hdl->buffer;
-        cmd.data_length = ITERATOR_BUFFER_LEN;
-        cmd.cdw10 = ((ITERATOR_BUFFER_LEN) >> 2);
-        cmd.reqid = (__u64)ioctx;
-        cmd.ctxid = m_ctxid;
-        int ret = 0;
-        ret = ioctl(m_fd, NVME_IOCTL_AIO_CMD, &cmd);
-        if(ret<0){
-            return KV_ERR_SYS_IO;
-        } // rest of all are Vendor specific error (SCT x03)
-        m_iter_next++;
-        m_req++;
-        // m_cond_reqempty.notify_one();
-        return KV_SUCCESS;
+        // not supported by device yet
+        return KV_ERR_DD_UNSUPPORTED_CMD;
     }
 
+    // this uses ADMIN command, which is carried out synchronously
     kv_result kv_linux_kernel::kv_list_iterators(kv_iterator *iter_list, uint32_t *count, void *ioctx) {
-        // fprintf(stderr, "kv_list_iterators not supported yet\n");
-        return KV_ERR_DD_UNSUPPORTED_CMD;
+        if (!m_ready) return KV_ERR_DEV_INIT;
+        if (*count == 0) {
+            return KV_ERR_BUFFER_SMALL;
+        }
+
+        struct nvme_passthru_cmd cmd;
+        memset(&cmd, 0, sizeof(struct nvme_passthru_cmd));
+
+        io_cmd *ioreq = (io_cmd *) ioctx;
+
+        /////////////////////////////////
+        uint32_t log_page_id = 0xd0;
+        char logbuf[MAX_LOG_PAGE_SIZE];
+        uint32_t buffer_size = MAX_LOG_PAGE_SIZE;
+        memset(logbuf, 0, buffer_size);
+
+        uint32_t offset = 0;
+
+        cmd.opcode = 0x02; //nvme_admin_get_log_page;
+        cmd.addr = (uint64_t) logbuf;
+        cmd.data_len = buffer_size;
+        cmd.nsid = m_nsid;
+
+        cmd.cdw10 = (__u32)(((buffer_size >> 2) -1) << 16) | ((__u32)log_page_id & 0x000000ff);
+
+        int ret = ioctl(m_fd, NVME_IOCTL_ADMIN_CMD, &cmd);
+        if (ret != 0) {
+            return KV_ERR_SYS_IO;
+        }
+
+        // after command is finished
+        /* FIXED FORMAT */
+        int handle_info_size = 16;
+
+        // count of open iterators
+        uint32_t open_count = 0;
+        for(uint32_t i=0; i < SAMSUNG_MAX_ITERATORS; i++) {
+            offset = (i*handle_info_size);
+            uint8_t status = (*(uint8_t*)(logbuf + offset + 1));
+
+/*
+  no filering just return
+            if (status == 0) {
+                continue;
+            }
+*/
+
+            if (open_count >= *count) {
+                break;
+            }
+
+            iter_list[open_count].status = status;
+            iter_list[open_count].handle_id = (*(uint8_t*)(logbuf + offset + 0));
+            iter_list[open_count].type = (*(uint8_t*)(logbuf + offset + 2));
+            iter_list[open_count].keyspace_id = (*(uint8_t*)(logbuf + offset + 3));
+
+            iter_list[open_count].prefix = (*(uint32_t*)(logbuf + offset + 4));
+            iter_list[open_count].bitmask = (*(uint32_t*)(logbuf + offset + 8));
+            iter_list[open_count].is_eof = (*(uint8_t*)(logbuf + offset + 12));
+            iter_list[open_count].reserved[0] = (*(uint8_t*)(logbuf + offset + 13));
+            iter_list[open_count].reserved[1] = (*(uint8_t*)(logbuf + offset + 14));
+            iter_list[open_count].reserved[2] = (*(uint8_t*)(logbuf + offset + 15));
+            // fprintf(stderr, "handle_id=%d status=%d type=%d prefix=%08x bitmask=%08x is_eof=%d\n",
+            //             iter_list[open_count].handle_id, iter_list[open_count].status, iter_list[open_count].type, iter_list[open_count].prefix, iter_list[open_count].bitmask, iter_list[open_count].is_eof);
+            open_count++;
+
+        }
+        *count = open_count;
+
+        if (!m_dev->is_polling()) {
+            // call interrupt handler function.
+            if (m_interrupt_handler) {
+                m_interrupt_handler->handler(m_interrupt_handler->private_data, m_interrupt_handler->number);
+            }
+        }
+
+        // call postprocessing after completion of a command
+        ioreq->call_post_process_func();
+        delete ioreq;
+
+        return KV_SUCCESS;
     }
 
     kv_result kv_linux_kernel::kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) {

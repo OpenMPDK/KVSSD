@@ -112,7 +112,7 @@ public:
 
 class kv_emulator : public kv_device_api{
 public:
-    kv_emulator(uint64_t capacity, std::vector<double> iops_model_coefficients, bool_t use_iops_model);
+    kv_emulator(uint64_t capacity, std::vector<double> iops_model_coefficients, bool_t use_iops_model, uint32_t nsid);
     virtual ~kv_emulator();
 
     // basic operations
@@ -152,12 +152,16 @@ private:
     typedef std::map<kv_key*, std::string, CmpEmulPrefix> emulator_map_t;
     //std::map<uint32_t, std::unordered_map<kv_key*, std::string> > m_map;
     std::map<kv_key*, std::string, CmpEmulPrefix> m_map;
-    std::set<kv_iterator_handle> m_it_map;
     std::mutex m_map_mutex;
+
+    std::map<int32_t, _kv_iterator_handle *> m_it_map;
+    kv_iterator m_iterator_list[SAMSUNG_MAX_ITERATORS];
     std::mutex m_it_map_mutex;
 
     // use IOPS model or not
     bool_t m_use_iops_model;
+
+    uint32_t m_nsid;
 
     kv_interrupt_handler m_interrupt_handler;
 };

@@ -168,7 +168,7 @@ kv_result io_cmd::execute_cmd() {
         case KV_OPC_CLOSE_ITERATOR: {
                 op_close_iterator_struct_t info = ioctx.command.iterator_close_info;
                 ioctx.retcode = ns->kv_close_iterator(info.iter_hdl, (void *) this);
-                ioctx.result.hiter = NULL;
+                ioctx.result.hiter = 0;
                 break;
             }
 
