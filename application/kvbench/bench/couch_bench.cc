@@ -3629,9 +3629,9 @@ void init_cpu_aff(struct bench_info *binfo){
     binfo->instances[i].nodeid_perf = -1;
   }
 
-  binfo->cpuinfo->cpulist = (int **)malloc(sizeof(int *) * binfo->cpuinfo->num_numanodes);
+  binfo->cpuinfo->cpulist = (int **)calloc(1, sizeof(int *) * binfo->cpuinfo->num_numanodes);
   for(i = 0; i < binfo->cpuinfo->num_numanodes; i++) {
-    binfo->cpuinfo->cpulist[i] = (int*)malloc(sizeof(int) * binfo->cpuinfo->num_cores_per_numanodes);
+    binfo->cpuinfo->cpulist[i] = (int*)calloc(1, sizeof(int) * binfo->cpuinfo->num_cores_per_numanodes);
   }
   
   while(fgets(line, sizeof line, fp)!= NULL ){

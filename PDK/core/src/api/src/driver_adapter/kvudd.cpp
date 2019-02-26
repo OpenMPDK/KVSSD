@@ -210,6 +210,7 @@ void udd_write_cb(kv_pair *kv, unsigned int result, unsigned int status) {
   if (kv) {
     std::unique_lock<std::mutex> lock(owner->lock);
     owner->kv_pair_pool.push(kv);
+    lock.unlock();
   }
 }
 
@@ -240,6 +241,7 @@ int32_t KUDDriver::init(const char* devpath, bool syncio, uint64_t sq_core, uint
   options.mem_size_mb = mem_size_mb; 
   unsigned int ssd_type = KV_TYPE_SSD;
 
+  //kv_env_init(options.mem_size_mb);
   ret = kv_nvme_init(devpath, &options, ssd_type);  
   if(ret) {
     if (ret == KV_ERR_DD_NO_DEVICE) {
@@ -319,6 +321,7 @@ int32_t KUDDriver::store_tuple(int contid, const kvs_key *key, const kvs_value *
   std::unique_lock<std::mutex> lock(this->lock);
   kv_pair *kv = this->kv_pair_pool.front();
   this->kv_pair_pool.pop();
+  lock.unlock();
   if(!kv) {
     fprintf(stderr, "failed to allocate kv pairs\n");
     exit(1);
@@ -426,6 +429,7 @@ int32_t KUDDriver::retrieve_tuple(int contid, const kvs_key *key, kvs_value *val
   std::unique_lock<std::mutex> lock(this->lock);
   kv_pair *kv = this->kv_pair_pool.front();
   this->kv_pair_pool.pop();
+  lock.unlock();
   if(!kv) {
     fprintf(stderr, "failed to allocate kv pairs\n");
     exit(1);
@@ -510,6 +514,7 @@ int32_t KUDDriver::delete_tuple(int contid, const kvs_key *key, kvs_delete_optio
   std::unique_lock<std::mutex> lock(this->lock);
   kv_pair *kv = this->kv_pair_pool.front();
   this->kv_pair_pool.pop();
+  lock.unlock();
   if(!kv) {
     fprintf(stderr, "failed to allocate kv pairs\n");
     exit(1);
@@ -587,6 +592,7 @@ int32_t KUDDriver::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys
   std::unique_lock<std::mutex> lock(this->lock);
   kv_pair *kv = this->kv_pair_pool.front();
   this->kv_pair_pool.pop();
+  lock.unlock();
   if(!kv) {
     fprintf(stderr, "failed to allocate kv pairs\n");
     exit(1);

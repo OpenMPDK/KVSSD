@@ -105,7 +105,7 @@ CONFIGURATION ==================================================================
    column 2 (coreid): cpu core id
    column 3 (dbid_load): DB instances id run on the corresponding cpu core during load
    column 4 (dbid_perf): DB instances id run on the corresponding cpu core during benchmark
-   e.g. the sample cpu.txt in the kvbench main directory shows a server having two numa nodes with total 48 cores. Two device instances (id: 0,1) will be tested. At `load` phase, device (DB) 0 will have one client thread using core 0 to generate workload, DB 1 will have one thread using core 2. At 'benchmark', each DB will have two threads. DB 0 is attached to core 0 & 2, DB 1 is attached to core 4 & 6. 
+   e.g. the sample cpu.txt in the kvbench main directory shows a server having two numa nodes with total 48 cores. Two device instances (id: 0,1) will be tested. At `load` phase, device (DB) 0 will have one client thread using core 0 to generate workload, DB 1 will have one thread using core 2. At 'benchmark', each DB will have two threads. DB 0 is attached to core 0 & 2, DB 1 is attached to core 4 & 6. If no coreid is specified (default '-1' for all DBs), user threads can use all available cores on the node. For KV using spdk driver, the coreid configuration must match the field in "[kvs] cq_thread_ids" which could not be '-1'. 
 
 2. bench_config.ini
 [document]
@@ -179,8 +179,8 @@ Performance measurement result files are in ./logs directory.
     - Benchmark phase:
       i.    KVS-run.latnecy.csv: similar to KVS-insert.latency.csv
       ii.   KVS-run.ops.csv: similar to KVS-insert.ops.csv
-
-
+    - Limitations:
+      i.    Direct operation to KV SSD does not capture IOs (disk bytes written) per process. This stats will be updated in future release.
 
 
 More information on ForestDB Benchmark website:

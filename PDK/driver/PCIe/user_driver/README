@@ -1,0 +1,14 @@
+A library for Samsung KVSSD APIs to support user driver based KVSSD operations.
+
+A pre-built library is included in KVSSD/PDK/core/lib, built on uNVMe driver v18.11.
+
+User can also build libkvnvmedd.a through the following steps :
+
+  - git clone https://github.com/OpenMPDK/uNVMe.git
+  - cd uNVMe
+  - git checkout v18.11
+  - ./make.sh intel
+  - cd driver
+  - make
+  - cp driver/core/libkvnvmedd.a KVSSD/PDK/core/lib
+
