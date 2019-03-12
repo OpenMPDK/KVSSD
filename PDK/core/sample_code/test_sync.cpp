@@ -285,8 +285,9 @@ int perform_insertion(int id, kvs_container_handle cont_hd, int count, kvs_key_t
   int start_key = id * count;
 
   for(int i = start_key; i < start_key + count; i++) {
+
     sprintf(key, "%0*d", klen - 1, i);
-    sprintf(value, "%0*d", klen - 1, i + 10); 
+    //sprintf(value, "%0*d", klen - 1, i + 10);
     kvs_store_option option;
     option.st_type = KVS_STORE_POST;
     option.kvs_store_compress = false;
@@ -302,6 +303,7 @@ int perform_insertion(int id, kvs_container_handle cont_hd, int count, kvs_key_t
     } else {
       //fprintf(stdout, "thread %d store key %s with value %s done \n", id, key, value);
     }
+
     if(i % 100 == 0)
       fprintf(stdout, "%d\r", i);
   }

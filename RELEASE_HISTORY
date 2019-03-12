@@ -1,6 +1,13 @@
 
 Release History
 
+---   v0.9.0
+   Add support for Ubuntu16.04 kernel driver v4.4.0-141
+   Bug fix
+
+---   v0.8.0
+   Bug fix
+
 ---   v0.7.1
    KV API support for list_iterator operation
    Bug fix

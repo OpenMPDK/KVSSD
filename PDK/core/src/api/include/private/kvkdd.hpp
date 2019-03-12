@@ -68,9 +68,6 @@ public:
 
   kv_interrupt_handler int_handler;
   std::mutex lock;
-  //std::queue<kv_key*> kv_key_pool;
-  //std::queue<kv_value*> kv_value_pool;  
-  //std::queue<kv_kdd_context*> kv_ctx_pool;
   
 public:
   KDDriver(kv_device_priv *dev, kvs_callback_function user_io_complete_);
