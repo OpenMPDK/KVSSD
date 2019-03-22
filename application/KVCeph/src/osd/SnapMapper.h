@@ -140,10 +140,6 @@ private:
     const hobject_t &oid,
     MapCacher::Transaction<std::string, bufferlist> *t);
 
-  // True if hoid belongs in this mapping based on mask_bits and match
-  bool check(const hobject_t &hoid) const {
-    return hoid.match(mask_bits, match);
-  }
 
   int _remove_oid(
     const hobject_t &oid,    ///< [in] oid to remove
@@ -151,7 +147,14 @@ private:
     );
 
 public:
-  static string make_shard_prefix(shard_id_t shard) {
+
+    //// TEMPORARILY MOVED TO PUBLIC:
+    // True if hoid belongs in this mapping based on mask_bits and match
+    bool check(const hobject_t &hoid) const {
+      return hoid.match(mask_bits, match);
+    }
+
+    static string make_shard_prefix(shard_id_t shard) {
     if (shard == shard_id_t::NO_SHARD)
       return string();
     char buf[20];

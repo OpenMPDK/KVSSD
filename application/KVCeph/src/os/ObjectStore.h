@@ -1487,6 +1487,7 @@ public:
     tls.back().register_on_applied(onreadable);
     tls.back().register_on_commit(ondisk);
     tls.back().register_on_applied_sync(onreadable_sync);
+    //cct->kvsdbg.sendmsg_ex("OSD::queue_transactions - calling kvsstore::queue transaction");
     return queue_transactions(osr, tls, op, handle);
   }
 

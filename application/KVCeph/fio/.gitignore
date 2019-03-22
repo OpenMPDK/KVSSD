@@ -1,0 +1,13 @@
+*.d
+*.o
+/.depend
+/FIO-VERSION-FILE
+/config-host.h
+/config-host.mak
+/config.log
+/cscope.out
+/fio
+y.tab.*
+lex.yy.c
+*.un~
+doc/output

@@ -102,7 +102,7 @@ int nvme_kv_store(int space_id, int fd, unsigned int nsid,
 	return ret;
 }
 
-
+ 
 int nvme_kv_retrieve(int space_id, int fd, unsigned int nsid,
 		const char *key, int key_len,
 		const char *value, int *value_len,

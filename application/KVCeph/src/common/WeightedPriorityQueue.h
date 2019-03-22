@@ -93,6 +93,19 @@ class WeightedPriorityQueue :  public OpQueue <T, K>
         lp.erase_and_dispose(lp.begin(), DelItem<ListPair>());
         return ret;
       }
+     
+      bool get_nth_op(unsigned n, T& t) {
+         Lit it = lp.begin();
+         for(unsigned i=0;i<n;i++) {
+           it++;
+           if (it == lp.end()) {
+           	return false;
+           }
+         }
+         t = it->item;
+         return true;
+      }
+     
       bool empty() const {
         return lp.empty();
       }
@@ -164,6 +177,12 @@ class WeightedPriorityQueue :  public OpQueue <T, K>
         check_end();
 	return ret;
       }
+      
+       bool get_nth_op(unsigned n, T& t) {
+        return next->get_nth_op(n,t);
+      }
+
+
       unsigned filter_class(K& cl, std::list<T>* out) {
 	unsigned count = 0;
         Kit i = klasses.find(cl, MapKey<Klass, K>());
@@ -256,6 +275,12 @@ class WeightedPriorityQueue :  public OpQueue <T, K>
 	  }
 	  return ret;
 	}
+
+        bool get_nth_op(unsigned n, T& t) {
+          Sit i = --queues.end();
+          return i->get_nth_op(n,t);
+        }
+
 	void filter_class(K& cl, std::list<T>* out) {
 	  for (Sit i = queues.begin(); i != queues.end();) {
 	    size -= i->filter_class(cl, out);
@@ -318,6 +343,15 @@ class WeightedPriorityQueue :  public OpQueue <T, K>
       }
       return normal.pop();
     }
+ 
+    bool get_nth_op(unsigned n, T& t) {
+      assert(strict.size + normal.size > 0);
+      if (!strict.empty()) {
+          if (strict.get_nth_op(n,t) == true) return true;
+      }
+      return normal.get_nth_op(n,t);
+    }
+    
     void dump(ceph::Formatter *f) const override {
       f->open_array_section("high_queues");
       strict.dump(f);

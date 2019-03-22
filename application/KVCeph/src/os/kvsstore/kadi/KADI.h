@@ -27,8 +27,13 @@
 //#define ITER_CLEANUP
 //#define OLD_KV_FORMAT
 
+
+#define ITER_BUFSIZE 32768
+
+
 class KvsTransContext;
 class KvsReadContext;
+class KvsSyncWriteContext;
 class CephContext;
 typedef uint8_t kv_key_t;
 typedef uint32_t kv_value_t;
@@ -69,6 +74,7 @@ enum nvme_kv_opcode {
     nvme_cmd_kv_iter_req	= 0xB1,
     nvme_cmd_kv_iter_read	= 0xB2,
     nvme_cmd_kv_exist	= 0xB3,
+    nvme_cmd_kv_capacity = 0x06
 };
 
 enum {
@@ -109,8 +115,8 @@ typedef struct {
     void (*post_fn)(kv_io_context &op, void *post_data);   ///< asynchronous notification callback (valid only for async I/O)
     void *private_data;       ///< private data address which can be used in callback (valid only for async I/O)
 } kv_cb;
-
-
+class KvsStore;
+class KADI;
 typedef struct
 {
     unsigned char handle;
@@ -130,9 +136,11 @@ class iterbuf_reader {
     int byteswritten;
 
     int numkeys;
+    KADI *db;
+    KvsStore *store;
 public:
-    iterbuf_reader(CephContext *c, kv_iter_context *ctx_);
-    iterbuf_reader(CephContext *c, void *buf_, int length_);
+    //iterbuf_reader(CephContext *c, kv_iter_context *ctx_);
+    iterbuf_reader(CephContext *c, void *buf_, int length_, KADI *db, KvsStore *store_ = 0);
 
     bool hasnext() { return byteswritten - bufoffset > 0; }
 
@@ -154,14 +162,14 @@ public:
         void (*post_fn)(kv_io_context &result, void *data);
         void *post_data;
 
-        struct nvme_passthru_kv_cmd cmd;
+        volatile struct nvme_passthru_kv_cmd cmd;
 
         void call_post_fn(kv_io_context &result) {
             if (post_fn != NULL) post_fn(result, post_data);
         }
     } aio_cmd_ctx;
 
-    KADI(CephContext *c): cct(c) {}
+    KADI(CephContext *c): cct(c) { }
     ~KADI() { close(); }
 
 private:
@@ -186,29 +194,41 @@ private:
 
     inline aio_cmd_ctx* get_cmdctx(int reqid) {
         std::unique_lock<std::mutex> lock (cmdctx_lock);
-        return pending_cmdctxs[reqid];
+        auto p = pending_cmdctxs.find(reqid);
+        if (p == pending_cmdctxs.end())
+            return 0;
+        return p->second;
     }
 
     void release_cmd_ctx(aio_cmd_ctx *p);
+    void dump_delete_cmd(struct nvme_passthru_kv_cmd *cmd);
+    void dump_retrieve_cmd(struct nvme_passthru_kv_cmd *cmd);
 
 public:
 
     kv_result kv_store(kv_key *key, kv_value *value, kv_cb& cb);
     kv_result kv_retrieve(kv_key *key, kv_value *value, kv_cb& cb);
+    kv_result kv_retrieve_sync(kv_key *key, kv_value *value);
+    kv_result kv_retrieve_sync(kv_key *key, kv_value *value, uint64_t offset, size_t length, bufferlist &bl, bool &ispartial);
     kv_result kv_delete(kv_key *key, kv_cb& cb, int check_exist = 0);
     kv_result iter_open(kv_iter_context *iter_handle);
     kv_result iter_close(kv_iter_context *iter_handle);
     kv_result iter_read(kv_iter_context *iter_handle);
     kv_result iter_readall(kv_iter_context *iter_ctx, std::list<std::pair<void*, int> > &buflist);
     kv_result poll_completion(uint32_t &num_events, uint32_t timeout_us);
-
+    bool exist(kv_key *key);
+    bool exist(void *key, int length);
     int open(std::string &devpath);
     int close();
     int fill_ioresult(const aio_cmd_ctx &ioctx, const struct nvme_aioevent &event, kv_io_context &result);
     kv_result submit_batch(aio_iter begin, aio_iter end, void *priv, bool write );
     kv_result aio_submit(KvsTransContext *txc);
     kv_result aio_submit(KvsReadContext *txc);
-    kv_result sync_read(kv_key *key, bufferlist &bl, int valuesize);
+    kv_result aio_submit(KvsSyncWriteContext *txc);
+    kv_result sync_submit(KvsReadContext *txc);
+    kv_result aio_submit_prefetch(KvsReadContext *txc);
+    kv_result sync_read(kv_key *key, bufferlist &bl, int valuesize = 4096);
+    kv_result get_freespace(uint64_t &bytesused, uint64_t &capacity, double &utilization);
 
     std::string errstr(int res) {
         if (res == KV_SUCCESS) return "SUCCESS";

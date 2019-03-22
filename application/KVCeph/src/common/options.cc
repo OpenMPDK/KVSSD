@@ -3644,11 +3644,22 @@ std::vector<Option> get_global_options() {
     .set_default(1024)
     .set_description("Max number of pools per OSD the cluster will allow"),
     Option("kvsstore_dev_path", Option::TYPE_STR, Option::LEVEL_ADVANCED)
-    .set_default("/dev/nvme5n1")
+    .set_default("/dev/nvme0n1")
     .set_description("Default KV device if nothing is mentioned"),
-    Option("enable_onode_prefetch", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
+    Option("kvsstore_readcache_bytes", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(1024*1024*1024ul)
+    .set_description("the size of read cache (default: 1GB)"),
+    Option("kvsstore_max_cached_onodes", Option::TYPE_UINT, Option::LEVEL_ADVANCED)
+    .set_default(100000ul)
+    .set_description("the size of read cache (default: 1M)"),
+    /*Option("enable_onode_prefetch", Option::TYPE_BOOL, Option::LEVEL_ADVANCED)
     .set_default(true)
-    .set_description("enable onode prefetching"),
+    .set_description("enable onode prefetching"),*/
+    Option("enable_onode_prefetch", Option::TYPE_STR, Option::LEVEL_ADVANCED)
+    .set_default("disabled")
+    .set_enum_allowed( { "enq", "deq", "disabled" } )
+    .set_description("enable onode prefetching")
+    .set_long_description("enable onode prefetching. prefetch at enqueue time, dequeue time or no prefetch."),
     // -----------------------------------------
     // kstore
 

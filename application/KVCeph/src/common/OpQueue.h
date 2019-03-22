@@ -16,7 +16,6 @@
 #define OP_QUEUE_H
 
 #include "include/msgr.h"
-
 #include <list>
 #include <functional>
 
@@ -55,6 +54,9 @@ class OpQueue {
     virtual bool empty() const = 0;
     // Return an op to be dispatch
     virtual T dequeue() = 0;
+    // Return nth op
+    //virtual void get_nth_op(int n, OpRequestRef& t)  { };
+    virtual bool get_nth_op(unsigned n, T& t)  {return false; };
     // Formatted output of the queue
     virtual void dump(ceph::Formatter *f) const = 0;
     // Don't leak resources on destruction

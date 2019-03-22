@@ -16,13 +16,13 @@
 #undef dout_prefix
 #define dout_prefix *_dout << "[kvs] "
 
-//#define FTRACE
+#define FTRACE
 #define FTRACE2
-#define PRINTRKEY(k) 
+//#define PRINTRKEY(k) 
 #define PRINTRKEY_CCT(ct, k)
 
 #ifndef FTRACE
-#define FTRACE //FtraceObject obj(__FUNCTION__, cct);
+#define FTRACE FtraceObject fobj(__FUNCTION__, cct);
 #endif
 
 #ifndef FTRACE2
@@ -30,7 +30,7 @@
 #endif
 
 #define PRINTWKEY(k) derr << __func__ << ": write key = " << print_key((const char*)(k)->key, (k)->length) << dendl;
-//#define PRINTRKEY(k) derr << __func__ << ": read key = " << print_key((const char*)(k)->key, (k)->length) << dendl;
+#define PRINTRKEY(k) derr << __func__ << ": read key = " << print_key((const char*)(k)->key, (k)->length) << dendl;
 //#define PRINTRKEY_CCT(ct, k) lderr(ct) << __func__ << ": read key = " << print_key((const char*)(k)->key, (k)->length) << dendl;
 
 struct FtraceObject {

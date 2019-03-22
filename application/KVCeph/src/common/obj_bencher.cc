@@ -52,12 +52,12 @@ static std::string generate_object_prefix(int pid = 0) {
 
 static std::string generate_object_name(int objnum, int pid = 0)
 {
-    return std::string((const char *)&objnum, 4);
- // std::ostringstream oss;
-  //oss << generate_object_prefix(pid) << objnum;
-//  oss << objnum;
-  //oss << generate_object_prefix(pid) << "_object" << objnum;
-//  return oss.str();
+  //uint32_t num = objnum;
+  //num |= (((unsigned int)pid) << 28);
+  //return std::string((const char *)&num, 4);
+  std::ostringstream oss;
+  oss << pid << objnum;
+  return oss.str();
 }
 
 static void sanitize_object_contents (bench_data *data, size_t length) {
@@ -218,7 +218,7 @@ int ObjBencher::aio_bench(
   uint64_t op_size, uint64_t object_size,
   unsigned max_objects,
   bool cleanup, bool hints,
-  const std::string& run_name, bool no_verify) {
+  const int run_name, bool no_verify) {
 
   if (concurrentios <= 0)
     return -EINVAL;
@@ -229,7 +229,7 @@ int ObjBencher::aio_bench(
   utime_t runtime;
 
   // default metadata object is used if user does not specify one
-  const std::string run_name_meta = (run_name.empty() ? BENCH_LASTRUN_METADATA : run_name);
+  const std::string run_name_meta = std::to_string(run_name); //run_name.empty() ? BENCH_LASTRUN_METADATA : run_name);
 
   //get data from previous write run, if available
   if (operation != OP_WRITE) {
@@ -266,16 +266,18 @@ int ObjBencher::aio_bench(
   if (formatter)
     formatter->open_object_section("bench");
 
+
+
   if (OP_WRITE == operation) {
-    r = write_bench(secondsToRun, concurrentios, run_name_meta, max_objects);
+    r = write_bench(secondsToRun, concurrentios, run_name_meta, max_objects, run_name);
     if (r != 0) goto out;
   }
   else if (OP_SEQ_READ == operation) {
-    r = seq_read_bench(secondsToRun, num_objects, concurrentios, prevPid, no_verify);
+    r = seq_read_bench(secondsToRun, num_objects, concurrentios, run_name, no_verify);
     if (r != 0) goto out;
   }
   else if (OP_RAND_READ == operation) {
-    r = rand_read_bench(secondsToRun, num_objects, concurrentios, prevPid, no_verify);
+    r = rand_read_bench(secondsToRun, num_objects, concurrentios, run_name, no_verify);
     if (r != 0) goto out;
   }
 
@@ -291,7 +293,8 @@ int ObjBencher::aio_bench(
     data.start_time = ceph_clock_now();
     out(cout) << "Cleaning up (deleting benchmark objects)" << std::endl;
 
-    r = clean_up(num_objects, prevPid, concurrentios);
+    int run_name = std::stoi(run_name_meta);
+    r = clean_up(num_objects, run_name, concurrentios);
     if (r != 0) goto out;
 
     runtime = ceph_clock_now() - data.start_time;
@@ -380,7 +383,7 @@ int ObjBencher::fetch_bench_metadata(const std::string& metadata_file,
 
 int ObjBencher::write_bench(int secondsToRun,
 			    int concurrentios, const string& run_name_meta,
-			    unsigned max_objects) {
+			    unsigned max_objects, int run_name) {
   if (concurrentios <= 0) 
     return -EINVAL;
   
@@ -424,9 +427,10 @@ int ObjBencher::write_bench(int secondsToRun,
 
   r = completions_init(concurrentios);
 
+
   //set up writes so I can start them together
   for (int i = 0; i<concurrentios; ++i) {
-    name[i] = generate_object_name(i / writes_per_object);
+    name[i] = generate_object_name(i / writes_per_object, run_name);
     contents[i] = new bufferlist();
     snprintf(data.object_contents, data.op_size, "I'm the %16dth op!", i);
     contents[i]->append(data.object_contents, data.op_size);
@@ -486,7 +490,7 @@ int ObjBencher::write_bench(int secondsToRun,
     }
     lock.Unlock();
     //create new contents and name on the heap, and fill them
-    newName = generate_object_name(data.started / writes_per_object);
+    newName = generate_object_name(data.started / writes_per_object, run_name);
     newContents = contents[slot];
     snprintf(newContents->c_str(), data.op_size, "I'm the %16dth op!", data.started);
     // we wrote to buffer, going around internal crc cache, so invalidate it now.
@@ -1142,7 +1146,10 @@ int ObjBencher::clean_up(const std::string& orig_prefix, int concurrentios, cons
       return r;
     }
 
-    r = clean_up(num_objects, prevPid, concurrentios);
+    int run_name;
+        try { run_name= std::stoi(run_name_meta); } catch(...) { run_name = prevPid; };
+
+    r = clean_up(num_objects, run_name, concurrentios);
     if (r != 0) return r;
 
     r = sync_remove(run_name_meta);

@@ -126,6 +126,8 @@ public:
     const entity_inst_t &owner, epoch_t e)
     : qvariant(op), cost(cost), priority(priority), start_time(start_time),
       owner(owner), map_epoch(e) {}
+  // for unit test scripts
+  PGQueueable() {}
 
   const boost::optional<OpRequestRef> maybe_get_op() const {
     const OpRequestRef *op = boost::get<OpRequestRef>(&qvariant);

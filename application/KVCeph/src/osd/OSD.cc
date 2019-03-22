@@ -1679,13 +1679,13 @@ void OSDService::handle_misdirected_op(PG *pg, OpRequestRef op)
 void OSDService::enqueue_back(spg_t pgid, PGQueueable qi)
 {
     //osd->opwq->queue(make_pair(pgid, qi));
-    osd->op_shardedwq.queue(make_pair(pgid, qi));
+    osd->op_wq->queue(make_pair(pgid, qi));
 }
 
 void OSDService::enqueue_front(spg_t pgid, PGQueueable qi)
 {
     //osd->opwq->queue_front(make_pair(pgid, qi));
-    osd->op_shardedwq.queue_front(make_pair(pgid, qi));
+    osd->op_wq->queue_front(make_pair(pgid, qi));
 }
 
 void OSDService::queue_for_peering(PG *pg)
@@ -1697,7 +1697,7 @@ void OSDService::queue_for_snap_trim(PG *pg)
 {
   dout(10) << "queueing " << *pg << " for snaptrim" << dendl;
 
-  osd->op_shardedwq.queue(
+  osd->op_wq->queue(
     make_pair(
       pg->info.pgid,
       PGQueueable(
@@ -1721,137 +1721,111 @@ namespace ceph {
 namespace osd_cmds { 
 
 int heap(CephContext& cct, cmdmap_t& cmdmap, Formatter& f, std::ostream& os);
-
+ 
 }} // namespace ceph::osd_cmds
 
-
-void OSD::prefetch_onode(Message *m, OpRequestRef op) {
-
-  //derr << ">> OSD::prefetch_onode" << dendl;
-  if(m->get_type() == CEPH_MSG_OSD_OP && m->get_orig_source().is_client()) {
+void OSD::prefetch_onodeOSD(OpRequestRef op) {
     MOSDOp *mop = static_cast< MOSDOp*>(op->get_nonconst_req());
     mop->finish_decode();
     // read or write ?
     if (mop->has_flag(CEPH_OSD_FLAG_READ | CEPH_OSD_FLAG_WRITE)) {
       const hobject_t &hobj_head    = mop->get_hobj();
-      const hobject_t hobj_snapdir = hobj_head.get_snapdir();
+      const hobject_t &hobj_snapdir = hobj_head.get_snapdir();
       PG *pg = pg_map[mop->get_spg()];
-
       ghobject_t *ghobj_head = new ghobject_t(hobj_head, ghobject_t::NO_GEN, pg->pg_whoami.shard);
       store->prefetch_onode(pg->coll, ghobj_head);
       delete ghobj_head;
-
       ghobject_t *ghobj_snap = new ghobject_t(hobj_snapdir, ghobject_t::NO_GEN, pg->pg_whoami.shard);
       store->prefetch_onode(pg->coll, ghobj_snap);
       delete ghobj_snap;
-
     }
-  }
-
-  //derr << "<< OSD::prefetch_onode" << dendl;
 }
 
-
 int OSD::mkfs(CephContext *cct, ObjectStore *store, const string &dev,
-	      uuid_d fsid, int whoami) {
+	      uuid_d fsid, int whoami)
+{
   int ret;
-  
+
   ceph::shared_ptr<ObjectStore::Sequencer> osr(
-          new ObjectStore::Sequencer("mkfs"));
+    new ObjectStore::Sequencer("mkfs"));
+  OSDSuperblock sb;
+  bufferlist sbbl;
+  C_SaferCond waiter;
 
-  {
+  // if we are fed a uuid for this osd, use it.
+  store->set_fsid(cct->_conf->osd_uuid);
 
-    OSDSuperblock sb;
-    bufferlist sbbl;
-    C_SaferCond waiter;
-    
-    // if we are fed a uuid for this osd, use it.
-    store->set_fsid(cct->_conf->osd_uuid);
+  ret = store->mkfs();
+  if (ret) {
+    derr << "OSD::mkfs: ObjectStore::mkfs failed with error "
+         << cpp_strerror(ret) << dendl;
+    goto free_store;
+  }
 
-    ret = store->mkfs();
-    if (ret) {
-      derr << "OSD::mkfs: ObjectStore::mkfs failed with error "
-           << cpp_strerror(ret) << dendl;
-      goto free_store;
-    }
-    
-    store->set_cache_shards(1);  // doesn't matter for mkfs!
-    
-    ret = store->mount();
-    if (ret) {
-      derr << "OSD::mkfs: couldn't mount ObjectStore: error "
-           << cpp_strerror(ret) << dendl;
-      goto free_store;
-    }
-    
-    ret = store->read(coll_t::meta(), OSD_SUPERBLOCK_GOBJECT, 0, 0, sbbl);
-    //ret = -1;
-    if (ret >= 0) {
-      
-      /* if we already have superblock, check content of superblock */
-      dout(0) << " have superblock" << dendl;
-      bufferlist::iterator p;
-      p = sbbl.begin();
-      ::decode(sb, p);
-      if (whoami != sb.whoami) {
-        derr << "provided osd id " << whoami << " != superblock's " << sb.whoami
-             << dendl;
-        ret = -EINVAL;
-        goto umount_store;
-      }
-      if (fsid != sb.cluster_fsid) {
-        derr << "provided cluster fsid " << fsid
-             << " != superblock's " << sb.cluster_fsid << dendl;
-        ret = -EINVAL;
-        goto umount_store;
-      }
-    } else {
-      
-      // create superblock
-      sb.cluster_fsid = fsid;
-      sb.osd_fsid = store->get_fsid();
-      sb.whoami = whoami;
-      sb.compat_features = get_osd_initial_compat_set();
+  store->set_cache_shards(1);  // doesn't matter for mkfs!
 
-      bufferlist bl;
-      ::encode(sb, bl);
+  ret = store->mount();
+  if (ret) {
+    derr << "OSD::mkfs: couldn't mount ObjectStore: error "
+         << cpp_strerror(ret) << dendl;
+    goto free_store;
+  }
 
-      ObjectStore::Transaction t;
-      t.create_collection(coll_t::meta(), 0);
-      t.write(coll_t::meta(), OSD_SUPERBLOCK_GOBJECT, 0, bl.length(), bl);
-      ret = store->apply_transaction(osr.get(), std::move(t));
-      
-      if (ret) {
-        
-        derr << "OSD::mkfs: error while writing OSD_SUPERBLOCK_GOBJECT: "
-             << "apply_transaction returned " << cpp_strerror(ret) << dendl;
-        goto umount_store;
-      }
-      
-    }
-
-    
-    if (!osr->flush_commit(&waiter)) {
-      waiter.wait();
-    }
-    
-    ret = write_meta(cct, store, sb.cluster_fsid, sb.osd_fsid, whoami);
-    if (ret) {
-      derr << "OSD::mkfs: failed to write fsid file: error "
-           << cpp_strerror(ret) << dendl;
+  ret = store->read(coll_t::meta(), OSD_SUPERBLOCK_GOBJECT, 0, 0, sbbl);
+  if (ret >= 0) {
+    /* if we already have superblock, check content of superblock */
+    dout(0) << " have superblock" << dendl;
+    bufferlist::iterator p;
+    p = sbbl.begin();
+    ::decode(sb, p);
+    if (whoami != sb.whoami) {
+      derr << "provided osd id " << whoami << " != superblock's " << sb.whoami
+	   << dendl;
+      ret = -EINVAL;
       goto umount_store;
     }
-    
-      umount_store:
-    
-    store->umount();
-    
-      free_store:
-    
-    delete store;
-    
+    if (fsid != sb.cluster_fsid) {
+      derr << "provided cluster fsid " << fsid
+	   << " != superblock's " << sb.cluster_fsid << dendl;
+      ret = -EINVAL;
+      goto umount_store;
+    }
+  } else {
+    // create superblock
+    sb.cluster_fsid = fsid;
+    sb.osd_fsid = store->get_fsid();
+    sb.whoami = whoami;
+    sb.compat_features = get_osd_initial_compat_set();
+
+    bufferlist bl;
+    ::encode(sb, bl);
+
+    ObjectStore::Transaction t;
+    t.create_collection(coll_t::meta(), 0);
+    t.write(coll_t::meta(), OSD_SUPERBLOCK_GOBJECT, 0, bl.length(), bl);
+    ret = store->apply_transaction(osr.get(), std::move(t));
+    if (ret) {
+      derr << "OSD::mkfs: error while writing OSD_SUPERBLOCK_GOBJECT: "
+	   << "apply_transaction returned " << cpp_strerror(ret) << dendl;
+      goto umount_store;
+    }
   }
-  
+
+  if (!osr->flush_commit(&waiter)) {
+    waiter.wait();
+  }
+
+  ret = write_meta(cct, store, sb.cluster_fsid, sb.osd_fsid, whoami);
+  if (ret) {
+    derr << "OSD::mkfs: failed to write fsid file: error "
+         << cpp_strerror(ret) << dendl;
+    goto umount_store;
+  }
+
+umount_store:
+  store->umount();
+free_store:
+  delete store;
   return ret;
 }
 
@@ -1996,12 +1970,7 @@ OSD::OSD(CephContext *cct_, ObjectStore *store_,
   test_ops_hook(NULL),
   op_queue(get_io_queue()),
   op_prio_cutoff(get_io_prio_cut()),
-  op_shardedwq(
-    get_num_op_shards(),
-    this,
-    cct->_conf->osd_op_thread_timeout,
-    cct->_conf->osd_op_thread_suicide_timeout,
-    &osd_op_tp),
+
   peering_wq(
     this,
     cct->_conf->osd_op_thread_timeout,
@@ -2031,7 +2000,19 @@ OSD::OSD(CephContext *cct_, ObjectStore *store_,
     &disk_tp),
   service(this)
 {
-
+  if (cct->_conf->enable_onode_prefetch == "enq") {
+      prefetcher_type = 1;
+  } else if (cct->_conf->enable_onode_prefetch == "deq") {
+      prefetcher_type = 2;
+  } else {
+      prefetcher_type = 0;
+  }
+  op_wq = create_op_wq(
+          cct->_conf->op_scheduler,
+          get_num_op_shards(),
+          cct->_conf->osd_op_thread_timeout,
+          cct->_conf->osd_op_thread_suicide_timeout,
+          &osd_op_tp);
   monc->set_messenger(client_messenger);
   op_tracker.set_complaint_and_threshold(cct->_conf->osd_op_complaint_time,
                                          cct->_conf->osd_op_log_threshold);
@@ -2044,6 +2025,23 @@ OSD::OSD(CephContext *cct_, ObjectStore *store_,
   ss << "osd." << whoami;
   trace_endpoint.copy_name(ss.str());
 #endif
+}
+
+OSD::ShardedOpWQ *OSD::create_op_wq(std::string &scheduler, uint32_t pnum_shards,time_t ti, time_t si, ShardedThreadPool* tp)
+{
+    if (scheduler == "epoll"){
+        derr << "op_wq: event-driven scheduler" << dendl;
+        op_wq = new EpollOpWQ(pnum_shards, this, ti, si, tp);
+    }
+    else if (scheduler == "rr"){
+        derr << "op_wq: roundrobin scheduler" << dendl;
+        op_wq = new RoundRobinOpWQ(pnum_shards, this, ti, si, tp);
+    }
+    else{
+        derr << "op_wq: sharded scheduler" << dendl;
+        op_wq = new ShardedOpWQ(pnum_shards, this, ti, si, tp);
+    }
+    return op_wq;
 }
 
 OSD::~OSD()
@@ -2163,7 +2161,7 @@ will start to track new ops received afterwards.";
     }
   } else if (admin_command == "dump_op_pq_state") {
     f->open_object_section("pq");
-    op_shardedwq.dump(f);
+    op_wq->dump(f);
     f->close_section();
   } else if (admin_command == "dump_blacklist") {
     list<pair<entity_addr_t,utime_t> > bl;
@@ -2440,7 +2438,7 @@ float OSD::get_osd_recovery_sleep()
 int OSD::init()
 {
   
-  int init_ret = op_shardedwq.init();
+  int init_ret = op_wq->init();
   if (init_ret != 0) return init_ret;
 
   CompatSet initial, diff;
@@ -2600,7 +2598,7 @@ int OSD::init()
   clear_temp_objects();
 
   // initialize osdmap references in sharded wq
-  op_shardedwq.prune_pg_waiters(osdmap, whoami);
+  op_wq->prune_pg_waiters(osdmap, whoami);
 
   // load up pgs (as they previously existed)
   load_pgs();
@@ -3363,7 +3361,7 @@ int OSD::shutdown()
 
   // stop sending work to pgs.  this just prevents any new work in _process
   // from racing with on_shutdown and potentially entering the pg after.
-  op_shardedwq.drain();
+  op_wq->drain();
 
   // Shutdown PGs
   {
@@ -3381,12 +3379,12 @@ int OSD::shutdown()
   clear_pg_stat_queue();
 
   // drain op queue again (in case PGs requeued something)
-  op_shardedwq.drain();
+  op_wq->drain();
   {
     finished.clear(); // zap waiters (bleh, this is messy)
   }
 
-  op_shardedwq.clear_pg_slots();
+  op_wq->clear_pg_slots();
 
   // unregister commands
   cct->get_admin_socket()->unregister_command("status");
@@ -3664,13 +3662,14 @@ int OSD::update_crush_device_class()
 
 void OSD::write_superblock(ObjectStore::Transaction& t)
 {
+  dout(10) << "write_superblock " << superblock << dendl;
 
+  //hack: at minimum it's using the baseline feature set
   if (!superblock.compat_features.incompat.contains(CEPH_OSD_FEATURE_INCOMPAT_BASE))
     superblock.compat_features.incompat.insert(CEPH_OSD_FEATURE_INCOMPAT_BASE);
 
   bufferlist bl;
   ::encode(superblock, bl);
-
   t.write(coll_t::meta(), OSD_SUPERBLOCK_GOBJECT, 0, bl.length(), bl);
 }
 
@@ -3959,7 +3958,7 @@ PG *OSD::_create_lock_pg(
     backfill,
     &t);
 
-  op_shardedwq.create_pgshard(pgid);
+  op_wq->create_pgshard(pgid);
 
   dout(7) << "_create_lock_pg " << *pg << dendl;
   return pg;
@@ -5661,7 +5660,23 @@ bool remove_dir(
     &olist,
     &next);
   generic_dout(10) << __func__ << " " << olist << dendl;
-  // default cont to true, this is safe because caller(OSD::RemoveWQ::_process()) 
+
+    {
+        vector<ghobject_t>::iterator i = olist.begin();
+        while (i != olist.end()) {
+            if (i->is_pgmeta())
+                continue;
+
+            if (!mapper->check(i->hobj)) {
+                generic_derr << "collection bug: found " << i->hobj << dendl;
+                olist.erase(i);
+            }
+            ++i;
+        }
+
+    }
+        
+  // default cont to true, this is safe because caller(OSD::RemoveWQ::_process())
   // will recheck the answer before it really goes on.
   bool cont = true;
   for (vector<ghobject_t>::iterator i = olist.begin();
@@ -7131,7 +7146,6 @@ void OSD::ms_fast_dispatch(Message *m)
     m->put();
     return;
   }
-
   OpRequestRef op = op_tracker.create_request<OpRequest, Message*>(m);
   {
 #ifdef WITH_LTTNG
@@ -7150,14 +7164,6 @@ void OSD::ms_fast_dispatch(Message *m)
   assert(op->min_epoch <= op->sent_epoch); // sanity check!
 
   service.maybe_inject_dispatch_delay();
-
-  // ENABLE ONODE PREFETCHING
-  //derr << "ms_fast_dispatch" << dendl;
-  if (cct->_conf->enable_onode_prefetch && store->has_onode_prefetcher()) {
-//    derr << "calling prefetch_onode" << dendl;
-    prefetch_onode(m, op);
-  }
-
 
   if (m->get_connection()->has_features(CEPH_FEATUREMASK_RESEND_ON_SPLIT) ||
       m->get_type() != CEPH_MSG_OSD_OP) {
@@ -8452,7 +8458,7 @@ void OSD::consume_map()
 
   // remove any PGs which we no longer host from the session waiting_for_pg lists
   dout(20) << __func__ << " checking waiting_for_pg" << dendl;
-  op_shardedwq.prune_pg_waiters(osdmap, whoami);
+  op_wq->prune_pg_waiters(osdmap, whoami);
 
   service.maybe_inject_dispatch_delay();
 
@@ -9452,13 +9458,13 @@ void OSD::_remove_pg(PG *pg)
   service.pg_remove_epoch(pg->info.pgid);
 
   // dereference from op_wq
-  op_shardedwq.clear_pg_pointer(pg->info.pgid);
+  op_wq->clear_pg_pointer(pg->info.pgid);
 
   // remove from map
   pg_map.erase(pg->info.pgid);
   pg->put("PGMap"); // since we've taken it out of map
 
-  op_shardedwq.remove_pgshard(pg->info.pgid);
+  op_wq->remove_pgshard(pg->info.pgid);
 }
 
 // =========================================================
@@ -9733,7 +9739,14 @@ void OSD::enqueue_op(spg_t pg, OpRequestRef& op, epoch_t epoch)
   op->osd_trace.keyval("cost", op->get_req()->get_cost());
   op->mark_queued_for_pg();
   logger->tinc(l_osd_op_before_queue_op_lat, latency);
-  op_shardedwq.queue(make_pair(pg, PGQueueable(op, epoch)));
+
+  // prefetch at enqueue time
+
+  if(prefetcher_type == 1 /* enq */) {
+    prefetch_onodeOSD(op);
+  }
+
+  op_wq->queue(make_pair(pg, PGQueueable(op, epoch)));
 }
 
 
@@ -10402,6 +10415,15 @@ void OSD::ShardedOpWQ::_process(uint32_t thread_index, heartbeat_handle_d *hb)
       return;
     }
   }
+  
+  // prefetch at dequeue time
+  if(osd->prefetcher_type == 2 && sdata->pqueue->length() > 0) {
+      pair<spg_t,PGQueueable> t;
+      if (sdata->pqueue->get_nth_op(2, t)) {
+        osd->prefetch_onodeOSD(t.second.maybe_get_op().get());
+      }
+ }
+
   pair<spg_t, PGQueueable> item = sdata->pqueue->dequeue();
 
   //#SCHED Update dequeue time

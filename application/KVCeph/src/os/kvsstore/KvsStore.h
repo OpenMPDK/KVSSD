@@ -37,12 +37,20 @@
 
 enum {
     l_kvsstore_first = 932430,
+    l_prefetch_onode_cache_hit,
+    l_prefetch_onode_cache_slow,
+    l_prefetch_onode_cache_miss, 
     l_kvsstore_read_lat,
     l_kvsstore_queue_to_submit_lat,
     l_kvsstore_submit_to_complete_lat,
     l_kvsstore_onode_read_miss_lat,
-    l_kvsstore_onode_hit,
-    l_kvsstore_onode_miss,
+    //l_kvsstore_onode_hit,
+    //l_kvsstore_onode_miss,
+    l_kvsstore_read_latency,
+    l_kvsstore_tr_latency,
+    l_kvsstore_write_latency,
+    l_kvsstore_delete_latency,
+    l_kvsstore_pending_trx_ios,
     l_kvsstore_last
 };
 
@@ -97,7 +105,7 @@ private:
     } ;
 public:
     KADI db;
-
+    std::atomic<uint64_t> lid_last  = {0};
 private:
     ///
     /// Member variables
@@ -140,6 +148,8 @@ private:
 
     std::mutex reap_lock;
     list<CollectionRef> removed_collections;
+    kvsstore_sb_t kvsb;
+
 
 private:
 
@@ -155,12 +165,15 @@ private:
     int _open_path();
     void _close_path();
     void _flush_cache();
+    int _read_sb();
+    int _write_sb();
 
     int get_predefinedID(const std::string& key);
 
 
     void _osr_drain_all();
     void _osr_unregister_all();
+
 public:
     ///
     /// Constructor
@@ -168,8 +181,9 @@ public:
     ~KvsStore() override;
 
     string get_type() override {
-        return "bluestore";
+        return "kvsstore";
     }
+
 
 public:
     ///
@@ -188,8 +202,8 @@ public:
     int mount() override;
     int umount() override;
 
-    int fsck(bool deep) override { return 0;    }
-    int repair(bool deep) override { return 0;    }
+    int fsck(bool deep) override { return _fsck_with_mount();    }
+    int repair(bool deep) override { return _fsck_with_mount();    }
 
     void set_cache_shards(unsigned num) override;
 
@@ -217,6 +231,8 @@ public:
 
     bool exists(const coll_t& cid, const ghobject_t& oid) override;
     bool exists(CollectionHandle &c_, const ghobject_t& oid) override;
+   
+    void prefetch_onode(const coll_t& cid, const ghobject_t* oid) override;
 
     int set_collection_opts( const coll_t& cid, const pool_opts_t& opts) override;
     int stat(const coll_t& cid, const ghobject_t& oid, struct stat *st, bool allow_eio = false) override;
@@ -308,11 +324,16 @@ public:
             const coll_t& cid,              ///< [in] collection
             const ghobject_t &oid  ///< [in] object
     ) override;
+
     ObjectMap::ObjectMapIterator get_omap_iterator(
             CollectionHandle &c,   ///< [in] collection
             const ghobject_t &oid  ///< [in] object
     ) override;
 
+    ObjectMap::ObjectMapIterator _get_omap_iterator(
+            KvsCollection *c,   ///< [in] collection
+            OnodeRef &o  ///< [in] object
+    );
     void set_fsid(uuid_d u) override {
         fsid = u;
     }
@@ -326,6 +347,7 @@ public:
 
     objectstore_perf_stat_t get_cur_stats() override { return objectstore_perf_stat_t(); }
     const PerfCounters* get_perf_counters() const override { return logger; }
+    PerfCounters* get_counters() { return logger;}
 
     int queue_transactions(Sequencer *osr, vector<Transaction>& tls, TrackedOpRef op = TrackedOpRef(), ThreadPool::TPHandle *handle = NULL) override;
 
@@ -342,8 +364,10 @@ private:
     int _open_collections();
     void _reap_collections();
     void _txc_add_transaction(KvsTransContext *txc, Transaction *t);
+    void _txc_journal_meta(KvsTransContext *txc, uint64_t index);
     int _touch(KvsTransContext *txc,CollectionRef& c,OnodeRef &o);
-    int _write(KvsTransContext *txc,CollectionRef& c,OnodeRef& o,uint64_t offset, size_t len,bufferlist& bl,uint32_t fadvise_flags);
+    int _write(KvsTransContext *txc,CollectionRef& c,OnodeRef& o,uint64_t offset, size_t len,bufferlist* bl,uint32_t fadvise_flags, bool truncate = false);
+    int _update_write_buffer(OnodeRef &o, uint64_t offset, size_t length, bufferlist *towrite, bufferlist &out, bool truncate);
     int _do_write(KvsTransContext *txc, CollectionRef& c,OnodeRef o,uint64_t offset, uint64_t length,bufferlist& bl, uint32_t fadvise_flags);
     void _txc_write_onodes(KvsTransContext *txc);
 
@@ -358,7 +382,14 @@ private:
     int _omap_rmkey_range(KvsTransContext *txc,CollectionRef& c,OnodeRef& o, const string& first, const string& last);
 
     int _setattrs(KvsTransContext *txc,CollectionRef& c, OnodeRef& o,const map<string,bufferptr>& aset);
+    int _fsck();
+    int _fsck_with_mount();
+    int _fiemap(CollectionHandle &c_,const ghobject_t& oid, uint64_t offset,
+            size_t len, map<uint64_t, uint64_t>& destmap);
 
+    int _rename(KvsTransContext *txc, CollectionRef& c,
+                           OnodeRef& oldo, OnodeRef& newo,
+                           const ghobject_t& new_oid);
 
 
     KvsTransContext *_txc_create(KvsOpSequencer *osr);
@@ -374,13 +405,16 @@ private:
     int _zero(KvsTransContext *txc,  CollectionRef& c, OnodeRef& o, uint64_t offset, size_t length);
     int _do_zero(KvsTransContext *txc, CollectionRef& c, OnodeRef& o, uint64_t offset, size_t length);
     int _truncate(KvsTransContext *txc, CollectionRef& c, OnodeRef& o, uint64_t offset);
-    void _do_truncate(KvsTransContext *txc, CollectionRef& c, OnodeRef o, uint64_t offset);
     int _do_remove(KvsTransContext *txc, CollectionRef& c, OnodeRef o);
+    int _do_truncate(KvsTransContext *txc, CollectionRef& c, OnodeRef o, uint64_t offset);
     int _remove(KvsTransContext *txc, CollectionRef& c, OnodeRef &o);
     int _setattr(KvsTransContext *txc, CollectionRef& c, OnodeRef& o, const string& name, bufferptr& val);
     int _rmattr(KvsTransContext *txc,CollectionRef& c,OnodeRef& o,const string& name);
     int _rmattrs(KvsTransContext *txc,CollectionRef& c,OnodeRef& o);
     void _do_omap_clear(KvsTransContext *txc, OnodeRef &o);
+    int _clone(KvsTransContext *txc,CollectionRef& c, OnodeRef& oldo,OnodeRef& newo);
+    int _clone_range(KvsTransContext *txc,CollectionRef& c,OnodeRef& oldo,OnodeRef& newo,
+                                uint64_t srcoff, uint64_t length, uint64_t dstoff);
 
     int _omap_clear(KvsTransContext *txc,CollectionRef& c,OnodeRef& o);
     int _omap_setheader(KvsTransContext *txc, CollectionRef& c, OnodeRef &o, bufferlist& bl);
@@ -391,7 +425,8 @@ private:
                             unsigned bits, CollectionRef *c);
 
     int _split_collection(KvsTransContext *txc, CollectionRef& c, CollectionRef& d, unsigned bits, int rem);
-
+    int _kvs_replay_journal(kvs_journal_key *j);
+    KvsOmapIterator* _get_kvsomapiterator(KvsCollection *c, OnodeRef &o);
 
 public:
     ///
@@ -403,7 +438,15 @@ public:
 
 public:
 
+    void add_pending_write_ios(int num) {
+        if (logger)
+        logger->inc(l_kvsstore_pending_trx_ios, num);
+    }
+
     void txc_aio_finish(kv_io_context *op, KvsTransContext *txc);   // called per each I/O completion
+
+    int iterate_objects_in_device(CephContext *cct,
+                                  int8_t shardid, uint64_t poolid, uint32_t starthash, uint32_t endhash, bool inclusive, const ghobject_t &start, const ghobject_t &end, set<ghobject_t> *lsset);
     ///
     /// OSR SET
 
