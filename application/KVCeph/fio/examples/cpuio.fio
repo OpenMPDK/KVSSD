@@ -1,8 +1,0 @@
-[global]
-ioengine=cpuio
-time_based
-runtime=10
-
-[burn50percent]
-cpuload=50
-
