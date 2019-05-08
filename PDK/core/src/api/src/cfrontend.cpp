@@ -35,8 +35,9 @@
 #include "kvs_utils.h"
 #include "uddenv.h"
 #include "private_types.h"
-#ifndef WITH_SPDK
+#ifdef WITH_EMU
 #include "kvemul.hpp"
+#elif WITH_KDD
 #include "kvkdd.hpp"
 #else
 #include "udd.hpp"
@@ -257,13 +258,16 @@ KvsDriver *_select_driver(kv_device_priv *dev) {
     return new KUDDriver(dev, 0);
   }
 #else
-    if (dev->isemul) {
+  #if defined WITH_EMU
+    
       return new KvEmulator(dev, 0);
       //return new KvEmulator(dev, g_env.iocomplete_fn );
-    } else {
+    
+  #elif defined WITH_KDD
       return new KDDriver(dev, 0); 
       //return new KDDriver(dev, g_env.iocomplete_fn);
-    }
+    
+  #endif
 #endif
     return nullptr;
 }
@@ -660,6 +664,8 @@ kvs_result kvs_iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle h
 
   int ret;
   if(iter_list == NULL)
+    return KVS_ERR_PARAM_INVALID;
+  if(iter_list->it_list == NULL)
     return KVS_ERR_PARAM_INVALID;
   ret = cont_hd->dev->driver->iterator_next(hiter, iter_list, ctx->private1, ctx->private2, 1, 0);
   return (kvs_result)ret;

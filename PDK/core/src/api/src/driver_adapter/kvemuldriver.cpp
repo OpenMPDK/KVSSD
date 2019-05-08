@@ -46,6 +46,19 @@
 #define MAX_POOLSIZE 10240
 #define use_pool
 
+inline void free_if_error(int ret, KvEmulator::kv_emul_context *ctx, std::queue<KvEmulator::kv_emul_context *> &pool, std::mutex& pool_lock) {
+ if (ret != 0) {
+   #if defined use_pool
+      std::unique_lock<std::mutex> lock(pool_lock);
+      memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+      pool.push(ctx);
+    #else 
+      free(ctx);
+    #endif
+  }
+}
+
+
 KvEmulator::KvEmulator(kv_device_priv *dev, kvs_callback_function user_io_complete_):
   KvsDriver(dev, user_io_complete_), devH(0),nsH(0), sqH(0), cqH(0), int_handler(0)
 {
@@ -322,6 +335,8 @@ int32_t KvEmulator::store_tuple(int contid, const kvs_key *key, const kvs_value 
     
   }
   
+  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
+  
   return ret;
 }
 
@@ -399,6 +414,7 @@ int32_t KvEmulator::retrieve_tuple(int contid, const kvs_key *key, kvs_value *va
     ctx = NULL;
 #endif
   }
+  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);
   return ret;
 }
 
@@ -456,6 +472,7 @@ int32_t KvEmulator::delete_tuple(int contid, const kvs_key *key, kvs_delete_opti
 #endif
     
   }
+  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
   return ret;
 }
 
@@ -488,7 +505,7 @@ int32_t KvEmulator::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *key
     ctx = NULL;
 #endif
   }
-    
+  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
   return 0;
 }
 
@@ -543,7 +560,9 @@ int32_t KvEmulator::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_op
   free(ctx);
   ctx = NULL;
 #endif
-  
+
+  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
+
   return ret;
 }
 
@@ -587,7 +606,8 @@ int32_t KvEmulator::close_iterator(int contid, kvs_iterator_handle hiter) {
   free(ctx);
   ctx = NULL;
 #endif
-  
+  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
+
   return 0;
 }
 
@@ -650,7 +670,7 @@ int32_t KvEmulator::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *
     ctx = NULL;
 #endif
   }
-  
+  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
   return ret;
 }
 

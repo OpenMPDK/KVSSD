@@ -44,6 +44,10 @@
 #include <algorithm>
 #include <queue>
 #include <kvs_adi.h>
+#include <kadi.h>
+
+class KDDriver;
+
 
 class KDDriver: public KvsDriver
 {
@@ -53,16 +57,20 @@ class KDDriver: public KvsDriver
   kv_queue_handle     sqH ;
   kv_queue_handle     cqH ;
   int queuedepth;
+  //std::atomic_bool cb_stop = { false };
 
 public:
 
   typedef struct {
+    KDDriver* owner;
+
     kvs_callback_context iocb;
     kvs_callback_function on_complete;
-    KDDriver* owner;
+
     std::mutex lock_sync;
-    std::atomic<int> done_sync;
     std::condition_variable done_cond_sync;
+
+    bool done;
     bool syncio;
   } kv_kdd_context;
 
@@ -87,10 +95,13 @@ public:
   virtual int32_t get_used_size(int32_t *dev_util) override;
   virtual int32_t get_total_size(int64_t *dev_capa) override;
   virtual int32_t get_device_info(kvs_device *dev_info) override;
- 
+  void _kv_callback_thread();
 private:
+  
+  void wait_for_io(kv_kdd_context *ctx);
   int create_queue(int qdepth, uint16_t qtype, kv_queue_handle *handle, int cqid, int is_polling);
   kv_kdd_context* prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, void *private1, void *private2, bool syncio, kvs_callback_function cbfn);
+  int check_opened_iterators(uint32_t bitmask,uint32_t bit_pattern);
   bool ispersist;
   std::string datapath;
 };

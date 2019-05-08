@@ -296,7 +296,7 @@ typedef struct {
     uint32_t queuedepth;          /*!< a maximum queue depth */
   } aio;
 
-  int ssd_type;
+  //int ssd_type;
   struct {
     char core_mask_str[256];
     char cq_thread_mask[256];

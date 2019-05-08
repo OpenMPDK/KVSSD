@@ -35,4 +35,3 @@ make all
 cd PDK/driver/PCIe/kernel_driver/kernel_v<version>/
 sudo ./re_insmod.sh
 
-

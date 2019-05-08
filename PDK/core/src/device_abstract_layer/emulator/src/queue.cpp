@@ -66,7 +66,6 @@ kv_result emul_ioqueue::init_interrupt_handler(kv_device_internal *dev, const kv
 
 
 kv_result emul_ioqueue::enqueue (io_cmd *cmd, bool block ) {
-    FTRACE
     std::unique_lock<std::mutex> lock(list_mutex);
     if (shutdown) return KV_ERR_QUEUE_IN_SHUTDOWN;
     while (queue.full() && !need_shutdown()) {
@@ -79,7 +78,6 @@ kv_result emul_ioqueue::enqueue (io_cmd *cmd, bool block ) {
 }
 
 kv_result  emul_ioqueue::dequeue(io_cmd **cmd, bool block, uint32_t timeout_usec) {
-    FTRACE
     std::unique_lock<std::mutex> lock(list_mutex);
     while (queue.empty()  && !need_shutdown()) {
         if (!block) {
@@ -102,20 +100,18 @@ kv_result  emul_ioqueue::dequeue(io_cmd **cmd, bool block, uint32_t timeout_usec
 }
 
 bool emul_ioqueue::empty() {
-    FTRACE
     std::unique_lock<std::mutex> lock(list_mutex);
     return queue.empty();
 }
 
 size_t emul_ioqueue::size() {
-    FTRACE
     std::unique_lock<std::mutex> lock(list_mutex);
     return queue.size();
 }
 
 kv_result emul_ioqueue::poll_completion(uint32_t timeout_usec, uint32_t *num_events)
 {
-    FTRACE
+    
     if (this->get_type() != COMPLETION_Q_TYPE) return KV_ERR_QUEUE_CQID_INVALID;
     kv_result res;
     int num_completed = 0;
@@ -152,7 +148,7 @@ kv_result emul_ioqueue::poll_completion(uint32_t timeout_usec, uint32_t *num_eve
 
 static void process_submitted_commands(void *que_)
 {
-    FTRACE
+    
     emul_ioqueue *que = (emul_ioqueue *)que_;
     while (!que->need_shutdown()) {
 
@@ -170,12 +166,11 @@ static void process_submitted_commands(void *que_)
         if (out)
             out->enqueue(cmd);
     }
-    FTRACE2("process_submitted_commands - DONE")
 }
 
 // to handle interrupt
 static void process_interrupts(void *que_) {
-FTRACE
+
     emul_ioqueue *que = (emul_ioqueue *)que_;
 
     while (!que->need_shutdown()) {
@@ -199,7 +194,6 @@ FTRACE
         // finally we are done with a command
         delete cmd;
     }
-FTRACE2("process_interrupts - DONE")
 }
 
 kernel_ioqueue::kernel_ioqueue(const kv_queue *queinfo_ ,kv_device_internal *dev): ioqueue(queinfo_), maxdepth(queinfo_->queue_size), curdepth(0) {

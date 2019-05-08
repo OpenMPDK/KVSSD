@@ -133,7 +133,7 @@ typedef int32_t kv_result;
 
 // forward declaration of each handle
 typedef uint8_t kv_iterator_handle;
-
+struct kv_io_context;
 struct _kv_device_handle;
 typedef struct _kv_device_handle* kv_device_handle;
 struct _kv_namespace_handle;
@@ -648,29 +648,28 @@ typedef struct {
 ////////////////////////////////
 // this part must be the same as the public portion of 
 // io_ctx_t
-typedef struct _kv_io_context {
-    cmd_opcode_t opcode;
-    kv_key *key;
+struct kv_io_context{
+    int opcode;
+    const kv_key *key;
     kv_value *value;
     void *private_data;
     kv_result retcode;
 
-    // these are put here for convenience, not buffer is allocated internally
-    // they are all supplied by API, so they are responsibility of API user
-    // to manage their lifecyle properly.
+
     struct {
-        // holds information for kv_exist()
-        // the same buffer from user input, not allocated internally
         uint8_t *buffer;
-        uint32_t buffer_size;
+        uint32_t buffer_size ;
         uint32_t buffer_count;
 
-        // holds output iterator handle after calling kv_open_iterator()
-        // Please call kv_close_iterator() to release it after use.
         kv_iterator_handle hiter;
     } result;
-
-} kv_io_context;
+    struct {
+        int id;
+        bool end;
+        void *buf;
+        int buflength;
+    } hiter;
+};
 
 
 // general data structure for async IO
@@ -681,6 +680,8 @@ typedef struct {
     kv_value *value;
     void *private_data;
     kv_result retcode;
+    
+
 
     struct {
         uint8_t *buffer;
@@ -1153,6 +1154,10 @@ kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_purge
   */
 kv_result kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_postprocess_function *post_fn);
 
+kv_result kv_open_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_iterator_option it_op, const kv_group_condition *it_cond, uint8_t *iterhandle);
+kv_result kv_close_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl);
+kv_result kv_list_iterators_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator *kv_iters, uint32_t *iter_cnt);
+kv_result kv_iterator_next_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_iterator_list *iter_list);
 /**
   kv_close_iterator
 
@@ -1572,6 +1577,8 @@ typedef struct {
     // default is polling
     // for emulator, it can be overriden by configuration file above
     bool_t is_polling;
+
+    int queuedepth;
 
 } kv_device_init_t;
 

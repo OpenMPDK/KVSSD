@@ -48,14 +48,6 @@
 #include <boost/circular_buffer.hpp>
 #include <list>
 
-//#define ENABLE_DEBUG
-#ifdef ENABLE_DEBUG
-#define FTRACE { fprintf(stderr, "> %s\n", __func__); }
-#define FTRACE2(s) { fprintf(stderr, "> %s: %s\n", __func__, s); }
-#else
-#define FTRACE
-#define FTRACE2(s)
-#endif
 namespace kvadi {
 
 class kv_device_internal;
@@ -129,7 +121,7 @@ public:
     }
 
     void terminate() {
-        FTRACE
+        
         {
             std::unique_lock<std::mutex> lock(list_mutex);
             shutdown = true;
@@ -172,7 +164,7 @@ public:
     }
     size_t size() override { return curdepth.load(); }
 
-    kv_result init_interrupt_handler(kv_device_internal *dev,const kv_interrupt_handler int_hdl)
+    kv_result init_interrupt_handler(kv_device_internal *dev, const kv_interrupt_handler int_hdl)
     {
         this->interrupt_handler = int_hdl;
         return KV_SUCCESS;

@@ -940,14 +940,14 @@ EXPORT_SYMBOL_GPL(nvme_submit_sync_cmd);
  * Note.
  * - check it's address 4byte word algined. If not malloc and copy data.
  */
-static bool check_add_for_single_cont_phyaddress(void __user *address, unsigned length)
+static bool check_add_for_single_cont_phyaddress(void __user *address, unsigned length, struct request_queue *q)
 {
 	unsigned offset = 0;
 	unsigned count = 0;
 
 	offset = offset_in_page(address);
 	count = DIV_ROUND_UP(offset + length, PAGE_SIZE);
-	if ((count > 1) || ((unsigned long)address & 3)) {
+	if ((count > 1) || ((unsigned long)address & queue_dma_alignment(q))) {
 		/* addr does not aligned as 4 bytes or addr needs more than one page */
 		return false;
 	}
@@ -1073,7 +1073,7 @@ int __nvme_submit_kv_user_cmd(struct request_queue *q, struct nvme_command *cmd,
     param->kv_data_len = 0;
 
     if (ubuffer && bufflen) {
-        if ((unsigned long)ubuffer & 3) {
+        if ((unsigned long)ubuffer & queue_dma_alignment(q)) {
             need_to_copy = true; 
             len = DIV_ROUND_UP(bufflen, PAGE_SIZE)*PAGE_SIZE;
             kv_data = kmalloc(len, GFP_KERNEL);
@@ -1122,7 +1122,7 @@ int __nvme_submit_kv_user_cmd(struct request_queue *q, struct nvme_command *cmd,
     }
 
     if (meta_buffer && meta_len) {
-        if (check_add_for_single_cont_phyaddress(meta_buffer, meta_len)) {
+        if (check_add_for_single_cont_phyaddress(meta_buffer, meta_len, q)) {
             ret = get_user_pages_fast((unsigned long)meta_buffer, 1, 0, &p_page);
             if (ret != 1) {
                 ret = -ENOMEM;
@@ -1130,7 +1130,7 @@ int __nvme_submit_kv_user_cmd(struct request_queue *q, struct nvme_command *cmd,
             }
             offset = offset_in_page(meta_buffer);
         } else {
-            len = DIV_ROUND_UP(meta_len, 4) * 4;
+            len = DIV_ROUND_UP(meta_len, 256) * 256;
             kv_meta = kmalloc(len, GFP_KERNEL);
             if (!kv_meta) {
                 ret = -ENOMEM;
@@ -1174,12 +1174,15 @@ int __nvme_submit_kv_user_cmd(struct request_queue *q, struct nvme_command *cmd,
 			*result = le32_to_cpu(cqe.result);
 		if (status)
 			*status = le16_to_cpu(cqe.status) >> 1;
-		if (ret) {
+		if (ret && !is_kv_iter_req_cmd(cmd->common.opcode) && !is_kv_iter_read_cmd(cmd->common.opcode)) {
+#if 0
 			pr_err("__nvme_submit_user_cmd failed!!!!!: opcode(%02x)\n", cmd->common.opcode);
+#endif
 		}
     }
-    if (!ret && need_to_copy) {
-		if (is_kv_retrieve_cmd(cmd->common.opcode) || is_kv_iter_read_cmd(cmd->common.opcode)) {
+    if (need_to_copy) {
+		if ((is_kv_retrieve_cmd(cmd->common.opcode) && !ret) ||
+              (is_kv_iter_read_cmd(cmd->common.opcode) && (!ret || (((le16_to_cpu(cqe.status) >>1) & 0x00ff) == 0x0093)))) {
 #if 0
             char *data = kv_data;
             pr_err("recevied data %c:%c:%c:%c: %c:%c:%c:%c.\n",

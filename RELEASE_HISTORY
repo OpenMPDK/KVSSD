@@ -1,6 +1,10 @@
 
 Release History
 
+---   v1.0.0
+   API spec update
+   Bug fix
+
 ---   v0.9.0
    Add support for Ubuntu16.04 kernel driver v4.4.0-141
    Bug fix

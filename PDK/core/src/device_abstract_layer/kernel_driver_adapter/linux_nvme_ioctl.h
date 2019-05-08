@@ -53,20 +53,6 @@ struct nvme_passthru_cmd {
 	__u32	result;
 };
 
-enum nvme_kv_opcode {
-    nvme_cmd_kv_store	= 0x81,
-	nvme_cmd_kv_append	= 0x83,
-	nvme_cmd_kv_retrieve	= 0x90,
-	nvme_cmd_kv_delete	= 0xA1,
-	nvme_cmd_kv_iter_req	= 0xB1,
-	nvme_cmd_kv_iter_read	= 0xB2,
-        nvme_cmd_kv_exist       = 0xB3,
-
-};
-
-#define KVCMD_INLINE_KEY_MAX	(16)
-#define KVCMD_MAX_KEY_SIZE		(255)
-
 struct nvme_passthru_kv_cmd {
 	__u8	opcode;
 	__u8	flags;
