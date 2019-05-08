@@ -1,0 +1,807 @@
+
+//
+// Created by root on 10/12/18.
+//
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#include "os/ObjectStore.h"
+#include "osd/osd_types.h"
+#include "os/kv.h"
+#include "include/compat.h"
+#include "include/stringify.h"
+#include "common/errno.h"
+#include "common/safe_io.h"
+#include "common/Formatter.h"
+#include "kvsstore_types.h"
+#include "kvs_debug.h"
+#include "KvsStore.h"
+
+#define dout_context cct
+#define dout_subsys ceph_subsys_kvs
+
+KvsOpSequencer::KvsOpSequencer(CephContext* cct, KvsStore *store)
+: Sequencer_impl(cct), parent(NULL), store(store) {
+    store->register_osr(this);
+}
+
+
+void KvsOpSequencer::_unregister() {
+    FTRACE
+    if (registered) {
+        store->unregister_osr(this);
+        registered = false;
+    }
+}
+
+KvsOpSequencer::~KvsOpSequencer() {
+    FTRACE
+    assert(q.empty());
+    _unregister();
+}
+
+void KvsOpSequencer::discard() {
+    FTRACE
+// Note that we may have txc's in flight when the parent Sequencer
+// goes away.  Reflect this with zombie==registered==true and let
+// _osr_drain_all clean up later.
+
+    assert(!zombie);
+    zombie = true;
+    parent = nullptr;
+    bool empty;
+    {
+        std::lock_guard<std::mutex> l(qlock);
+        empty = q.empty();
+    }
+    if (empty) {
+        _unregister();
+    }
+}
+
+
+void KvsOpSequencer::drain() {
+    FTRACE
+    std::unique_lock<std::mutex> l(qlock);
+    while (!q.empty())
+        qcond.wait(l);
+}
+
+void KvsOpSequencer::drain_preceding(KvsTransContext *txc) {
+    FTRACE
+    std::unique_lock<std::mutex> l(qlock);
+    while (!q.empty() && &q.front() != txc)
+        qcond.wait(l);
+}
+
+bool KvsOpSequencer::_is_all_kv_submitted() {
+    FTRACE
+    // caller must hold qlock
+    if (q.empty()) {
+        return true;
+    }
+    KvsTransContext *txc = &q.back();
+    if (txc->state >= KvsTransContext::STATE_AIO_WAIT) {
+        return true;
+    }
+    return false;
+}
+
+void KvsOpSequencer::flush() {
+    FTRACE
+    std::unique_lock<std::mutex> l(qlock);
+    while (true) {
+// set flag before the check because the condition
+// may become true outside qlock, and we need to make
+// sure those threads see waiters and signal qcond.
+        ++kv_submitted_waiters;
+        if (_is_all_kv_submitted()) {
+            return;
+        }
+        qcond.wait(l);
+        --kv_submitted_waiters;
+    }
+}
+
+bool KvsOpSequencer::flush_commit(Context *c) {
+    FTRACE
+    std::lock_guard<std::mutex> l(qlock);
+    if (q.empty()) {
+        return true;
+    }
+    KvsTransContext *txc = &q.back();
+    if (txc->state >= KvsTransContext::STATE_IO_DONE) {
+        return true;
+    }
+    txc->oncommits.push_back(c);
+    return false;
+}
+
+KvsCache *KvsCache::create(CephContext* cct, PerfCounters *logger)
+{
+    KvsCache *c = new KvsLRUCache(cct);
+    c->logger = logger;
+    return c;
+}
+
+void KvsCache::trim_all()
+{
+    std::lock_guard<std::recursive_mutex> l(lock);
+    _trim(0, 0);
+}
+
+void KvsCache::trim()
+{
+    // 400 MB
+    static const uint64_t max_onodes = 100000;
+
+    std::lock_guard<std::recursive_mutex> l(lock);
+    _trim(max_onodes, 0);
+}
+
+// LRUCache
+#undef dout_prefix
+#define dout_prefix *_dout << "KvsStore.LRUCache(" << this << ") "
+
+void KvsLRUCache::_touch_onode(OnodeRef& o)
+{
+    auto p = onode_lru.iterator_to(*o);
+    onode_lru.erase(p);
+    onode_lru.push_front(*o);
+}
+
+void KvsLRUCache::_trim(uint64_t onode_max, uint64_t buffer_max)
+{
+    dout(20) << __func__ << " onodes " << onode_lru.size() << " / " << onode_max << dendl;
+
+
+    // onodes
+    int num = onode_lru.size() - onode_max;
+    if (num <= 0)
+        return; // don't even try
+
+    auto p = onode_lru.end();
+    assert(p != onode_lru.begin());
+    --p;
+    int skipped = 0;
+    int max_skipped = 64;
+    while (num > 0) {
+        KvsOnode *o = &*p;
+        int refs = o->nref.load();
+        if (refs > 1) {
+            dout(20) << __func__ << "  " << o->oid << " has " << refs
+                     << " refs, skipping" << dendl;
+            if (++skipped >= max_skipped) {
+                dout(20) << __func__ << " maximum skip pinned reached; stopping with "
+                         << num << " left to trim" << dendl;
+                break;
+            }
+
+            if (p == onode_lru.begin()) {
+                break;
+            } else {
+                p--;
+                num--;
+                continue;
+            }
+        }
+        dout(30) << __func__ << "  rm " << o->oid << dendl;
+        if (p != onode_lru.begin()) {
+            onode_lru.erase(p--);
+        } else {
+            onode_lru.erase(p);
+            assert(num == 1);
+        }
+        o->get();  // paranoia
+        o->c->onode_map.remove(o->oid);
+        o->put();
+        --num;
+    }
+}
+
+// OnodeSpace
+
+#undef dout_prefix
+#define dout_prefix *_dout << "kvsstore.OnodeSpace(" << this << " in " << cache << ") "
+
+OnodeRef KvsOnodeSpace::add(const ghobject_t& oid, OnodeRef o)
+{
+    std::lock_guard<std::recursive_mutex> l(cache->lock);
+    auto p = onode_map.find(oid);
+    if (p != onode_map.end()) {
+        ldout(cache->cct, 30) << __func__ << " " << oid << " " << o
+                              << " raced, returning existing " << p->second
+                              << dendl;
+        return p->second;
+    }
+    ldout(cache->cct, 30) << __func__ << " " << oid << " " << o << dendl;
+    onode_map[oid] = o;
+    cache->_add_onode(o, 1);
+    return o;
+}
+/*
+OnodeRef KvsOnodeSpace::test() {
+    lderr(cache->cct) << "!!!!!!" << dendl;
+    OnodeRef o;
+
+    return o;
+}*/
+
+OnodeRef KvsOnodeSpace::lookup(const ghobject_t& oid)
+{
+    ldout(cache->cct, 20) << __func__ << dendl;
+    OnodeRef o;
+    {
+        std::lock_guard<std::recursive_mutex> l(cache->lock);
+        ceph::unordered_map<ghobject_t,OnodeRef>::iterator p = onode_map.find(oid);
+        if (p == onode_map.end()) {
+            ldout(cache->cct, 20) << __func__ << " " << oid << " miss" << dendl;
+        } else {
+            ldout(cache->cct, 20) << __func__ << " " << oid << " hit " << p->second
+                                  << dendl;
+            cache->_touch_onode(p->second);
+            o = p->second;
+        }
+    }
+
+    return o;
+}
+
+void KvsOnodeSpace::clear()
+{
+    std::lock_guard<std::recursive_mutex> l(cache->lock);
+    ldout(cache->cct, 10) << __func__ << dendl;
+    for (auto &p : onode_map) {
+        cache->_rm_onode(p.second);
+    }
+    onode_map.clear();
+}
+
+bool KvsOnodeSpace::empty()
+{
+    std::lock_guard<std::recursive_mutex> l(cache->lock);
+    return onode_map.empty();
+}
+
+bool KvsOnodeSpace::map_any(std::function<bool(OnodeRef)> f)
+{
+    std::lock_guard<std::recursive_mutex> l(cache->lock);
+    ldout(cache->cct, 20) << __func__ << dendl;
+    for (auto& i : onode_map) {
+        if (f(i.second)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void KvsOnodeSpace::dump(CephContext *cct, int lvl)
+{
+    for (auto& i : onode_map) {
+        ldout(cct, lvl) << i.first << " : " << i.second << dendl;
+    }
+}
+
+#if 0
+void KvsOnodeSpace::rename(
+        OnodeRef& oldo,
+        const ghobject_t& old_oid,
+        const ghobject_t& new_oid,
+        const mempool::kvsstore_cache_other::string& new_okey)
+{
+    std::lock_guard<std::recursive_mutex> l(cache->lock);
+    ldout(cache->cct, 30) << __func__ << " " << old_oid << " -> " << new_oid
+                          << dendl;
+    ceph::unordered_map<ghobject_t,OnodeRef>::iterator po, pn;
+    po = onode_map.find(old_oid);
+    pn = onode_map.find(new_oid);
+    assert(po != pn);
+
+    assert(po != onode_map.end());
+    if (pn != onode_map.end()) {
+        ldout(cache->cct, 30) << __func__ << "  removing target " << pn->second
+                              << dendl;
+        cache->_rm_onode(pn->second);
+        onode_map.erase(pn);
+    }
+    OnodeRef o = po->second;
+
+    // install a non-existent onode at old location
+    oldo.reset(new Onode(o->c, old_oid, o->key));
+    po->second = oldo;
+    cache->_add_onode(po->second, 1);
+
+    // add at new position and fix oid, key
+    onode_map.insert(make_pair(new_oid, o));
+    cache->_touch_onode(o);
+    o->oid = new_oid;
+    o->key = new_okey;
+}
+#endif
+
+
+#undef dout_prefix
+#define dout_prefix *_dout << "kvsstore.onode(" << this << ")." << __func__ << " "
+
+void KvsOnode::flush()
+{
+    if (flushing_count.load()) {
+        lderr(c->store->cct) << __func__ << " cnt:" << flushing_count << dendl;
+        std::unique_lock<std::mutex> l(flush_lock);
+        while (flushing_count.load()) {
+            flush_cond.wait(l);
+        }
+    }
+    lderr(c->store->cct) << __func__ << " done" << dendl;
+}
+
+
+#undef dout_prefix
+#define dout_prefix *_dout << "kvsstore.OmapIteratorImpl "
+
+///
+/// KvsOmapIteratorImpl - not supported yet
+///
+
+KvsOmapIteratorImpl::KvsOmapIteratorImpl(
+        CollectionRef c, OnodeRef o, KvsStore *s)
+        : c(c), o(o), store(s)
+{
+    RWLock::RLocker l(c->lock);
+}
+
+int KvsOmapIteratorImpl::seek_to_first()
+{
+    RWLock::RLocker l(c->lock);
+    return 0;
+}
+
+int KvsOmapIteratorImpl::upper_bound(const string& after)
+{
+    RWLock::RLocker l(c->lock);
+    return 0;
+}
+
+int KvsOmapIteratorImpl::lower_bound(const string& to)
+{
+    RWLock::RLocker l(c->lock);
+    return 0;
+}
+
+bool KvsOmapIteratorImpl::valid()
+{
+    RWLock::RLocker l(c->lock);
+    return false;
+}
+
+int KvsOmapIteratorImpl::next(bool validate)
+{
+    RWLock::RLocker l(c->lock);
+    return -1;
+}
+
+string KvsOmapIteratorImpl::key()
+{
+    RWLock::RLocker l(c->lock);
+
+    return "";
+}
+
+bufferlist KvsOmapIteratorImpl::value()
+{
+    bufferlist output;
+    return output;
+}
+
+
+#undef dout_prefix
+#define dout_prefix *_dout << "kvsstore "
+
+
+///
+/// Transaction Contexts
+///
+
+
+void KvsTransContext::aio_finish(kv_io_context *op) {
+    store->txc_aio_finish(op, this);
+}
+
+///
+/// write I/O request handlers
+///
+
+
+struct __attribute__((__packed__)) kvs_object_key
+{
+    uint8_t          prefix;                        //1B
+    uint8_t          shardid;                       //1B
+    int8_t           poolid;                        //1B
+    uint32_t         bitwisekey;                    //4B
+    char             name[KVSSD_KEYNAME_MAX_SIZE];  //6B
+    uint8_t          snapid;                        //1B
+    uint8_t          genid;                         //1B
+    uint8_t          attrid;                        //1B
+};
+
+
+
+// TODO: use stringify_16B
+inline int construct_collkey(kv_key *kvkey, const char *name, const int namelen)
+{
+    assert(sizeof(kvs_coll_key) == 16);
+    struct kvs_coll_key *collkey = (struct kvs_coll_key *)kvkey->key;
+    collkey->prefix  = GROUP_PREFIX_COLL;
+
+    const int npadding = 15 - namelen;
+    if (npadding <= 0) { return -1;  }
+
+    memcpy(collkey->name, name, namelen);
+    collkey->name[namelen] = '\0';
+
+    return 0;
+}
+
+inline void construct_key(CephContext* cct, int keyprefix, const ghobject_t& oid, uint8_t attr_index, kv_key *key) {
+    int name_off = 0;
+    const auto name     = oid.hobj.oid.name.c_str();
+    const auto name_len = oid.hobj.oid.name.length();
+    const int  padding  = KVSSD_KEYNAME_MAX_SIZE - name_len;
+    const auto hobj_key_len = oid.hobj.get_key().length();
+    uint64_t snapid   =  uint64_t(oid.hobj.snap);
+    uint64_t genid    = oid.generation;
+    if (genid == UINT64_MAX) {
+        // NO GENID
+        genid = UINT8_MAX;
+    } else if (genid == UINT8_MAX) {
+        lderr(cct) << "ERR: generation id has reached the limit" << dendl;
+        assert(0  == "ERR: generation id has reached the limit");
+    }
+    if (snapid == UINT64_MAX-1) {
+        snapid = UINT8_MAX - 1;
+    } else if (snapid == UINT64_MAX) {
+        snapid = UINT8_MAX;
+    } else if (snapid >= UINT8_MAX -1) {
+        lderr(cct) << "ERR: snap id has reached the limit" << snapid << dendl;
+        assert(0  == "ERR: snap id has reached the limit");
+    }
+
+    if (padding < 0) {
+        lderr(cct) << "WRN: name is too long " << name << dendl;
+        name_off  = (-padding);
+    }
+
+    if (hobj_key_len > 0 ||
+        name_len > KVSSD_KEYNAME_MAX_SIZE ||
+        snapid >= 256 || genid > 255) {
+        lderr(cct) << "ERR: key size is too long and cannot fit in 16B" << dendl;
+        lderr(cct) << "hobj_key_len (== 0): " << hobj_key_len << "name_len ( < " << KVSSD_KEYNAME_MAX_SIZE <<"): " << name_len
+                   << "snapid(<=255):" << snapid << ", genid (<=255):" << genid << dendl;
+        lderr(cct) << "name: " << name << dendl;
+        assert(0  == "ERR: key size is too long and cannot fit in 16B");
+    }
+
+    //lderr(cct) << "creating a key " << dendl;
+    struct kvs_object_key* kvskey = (struct kvs_object_key*)key->key;
+    kvskey->prefix = keyprefix;
+    kvskey->shardid = int8_t(oid.shard_id);
+    kvskey->poolid  = (int8_t)oid.hobj.pool;
+    kvskey->bitwisekey = oid.hobj.get_bitwise_key_u32();
+    memcpy(kvskey->name, name + name_off, name_len - name_off);
+    if (padding > 0) memset(kvskey->name + name_len, '\0', padding);
+    kvskey->snapid = (uint8_t)(uint64_t(oid.hobj.snap));
+    kvskey->genid = (uint8_t)(uint64_t)oid.generation;
+    kvskey->attrid = attr_index;
+
+    assert(sizeof(kvs_object_key) == 16);
+    //lderr(cct) << "done creating a key " << dendl;
+}
+
+
+
+
+///
+/// Write operations
+///
+
+
+#undef dout_prefix
+#define dout_prefix *_dout << "[kvs-ioctx] "
+
+
+inline kv_value *to_kv_value(bufferlist &bl) {
+    unsigned int length = bl.length();
+
+    /*
+    if (length < 64) length = 64;
+    //if (length > 256 && length < 1024) length = 1024;
+    if ((length & ((1 << 5) - 1)) != 0) {
+        length = (((length - 1) / 32 + 1) << 5);
+    }*/
+
+    kv_value *value = KvsMemPool::Alloc_value(length);
+    memcpy(value->value, bl.c_str(), bl.length());
+    return value;
+}
+
+void KvsIoContext::add_coll(const coll_t &cid, bufferlist &bl)
+{
+    FTRACE
+    kv_key *key;
+    kv_value *value;
+    const char *cidkey_str = cid.c_str();
+    const int   cidkey_len = (int)strlen(cidkey_str);
+    if (cidkey_len > 14) {
+        derr << __func__ << "collection name is too long (>14B) " << cidkey_str << dendl;
+        return;
+    }
+
+    key   = KvsMemPool::Alloc_key();
+    construct_collkey(key, cidkey_str, cidkey_len);
+    if (KVSSD_BYPASS) {
+        value = 0;
+    }
+    else {
+        value = to_kv_value(bl);
+    }
+
+    if (key == 0) { derr << __func__ << "key = " << key  << dendl; exit(1); }
+    this->add(key, value);
+    //derr << this << ", pending ops = " << this->num_pending.load() << dendl;
+}
+
+void KvsIoContext::rm_coll(const coll_t &cid)
+{
+    FTRACE
+    kv_key *key;
+
+    const char *cidkey_str = cid.c_str();
+    const int   cidkey_len = (int)strlen(cidkey_str);
+
+    if (cidkey_len != 4) {
+        derr << __func__ << "collection name is too long (>=13B)" << dendl;
+        return;
+    }
+
+    key   = KvsMemPool::Alloc_key();
+    construct_collkey(key, cidkey_str, cidkey_len);
+
+    if (key == 0) { derr << __func__ << "key = " << key  << dendl; exit(1); }
+    this->del(key);
+    //derr << this << ", pending ops = " << this->num_pending.load() << dendl;
+}
+
+void KvsIoContext::add_userdata(const ghobject_t& oid, bufferlist &bl)
+{
+    FTRACE
+    kv_key *key;
+    kv_value *value;
+
+    key = KvsMemPool::Alloc_key();
+    construct_key(cct, GROUP_PREFIX_DATA, oid, 0, key);
+
+    if (KVSSD_BYPASS) {
+        value = 0;
+    }
+    else {
+        value = to_kv_value(bl);
+    }
+
+    if (key == 0) { derr << __func__ << "key = " << key  << dendl; exit(1); }
+    this->add(key, value);
+    //derr << this << ", pending ops = " << this->num_pending.load() << dendl;
+}
+
+void KvsIoContext::add_onode(const ghobject_t &oid, uint8_t index, bufferlist &bl)
+{
+    FTRACE
+    kv_key *key;
+    kv_value *value;
+
+    key = KvsMemPool::Alloc_key();
+    construct_key(cct,GROUP_PREFIX_ONODE, oid, 0, key);
+
+    derr << " add onode length = " << bl.length() << dendl;
+
+    if (KVSSD_BYPASS) {
+        value = 0;
+    }
+    else {
+        value = to_kv_value(bl);
+    }
+
+    if (key == 0) { derr << __func__ << "key = " << key  << dendl; exit(1); }
+    this->add(key, value); 
+}
+
+void KvsIoContext::rm_onode(const ghobject_t& oid)
+{
+    FTRACE
+    kv_key *key;
+
+    key = KvsMemPool::Alloc_key();
+    construct_key(cct,GROUP_PREFIX_ONODE, oid, 0, key);
+
+    derr << " rm onode length = " << dendl;
+
+    if (key == 0) { derr << __func__ << "key = " << key  << dendl; exit(1); }
+    this->del(key);
+    //derr << this << ", pending ops = " << this->num_pending.load() << dendl;
+}
+
+
+
+void KvsIoContext::add_omap(const ghobject_t& oid, uint8_t index, bufferlist &bl)
+{
+    FTRACE
+    kv_key *key;
+    kv_value *value;
+
+    key = KvsMemPool::Alloc_key();
+    construct_key(cct, GROUP_PREFIX_OMAP, oid, index, key);
+
+    if (KVSSD_BYPASS) {
+        value = 0;
+    }
+    else {
+        value = to_kv_value(bl);
+    }
+
+    if (key == 0) { derr << __func__ << "key = " << key  << dendl; exit(1); }
+    this->add(key, value);
+    //derr << this << ", pending ops = " << this->num_pending.load() << dendl;
+}
+
+
+void KvsIoContext::rm_omap (const ghobject_t& oid, uint8_t index)
+{
+    FTRACE
+    kv_key *key;
+
+    key = KvsMemPool::Alloc_key();
+    construct_key(cct, GROUP_PREFIX_OMAP, oid, index, key);
+
+    if (key == 0) { derr << __func__ << "key = " << key  << dendl; exit(1); }
+    this->del(key);
+    //derr << this << ", pending ops = " << this->num_pending.load() << dendl;
+}
+
+///
+/// Read operations
+///
+
+void KvsReadContext::read_coll(const char *name, const int namelen)
+{
+    FTRACE
+    if (KVSSD_BYPASS) {
+        this->key   = KvsMemPool::Alloc_key();
+        construct_collkey(key, name, namelen);
+
+        this->value =0;
+        this->retcode = KV_SUCCESS;
+    }
+    else {
+        if (namelen != 4) {
+            derr << __func__ << "collection name is too long (>=13B)" << dendl;
+            this->retcode = -1;
+            return;
+        }
+
+        this->key   = KvsMemPool::Alloc_key();
+        this->value = KvsMemPool::Alloc_value(4096);
+        construct_collkey(key, name, namelen);
+    }
+}
+
+
+
+void KvsReadContext::read_data(const ghobject_t &oid)
+{
+    FTRACE
+    if (KVSSD_BYPASS) {
+        this->retcode = KV_ERR_KEY_NOT_EXIST;
+    }
+    else {
+        this->key = KvsMemPool::Alloc_key();
+        this->value = KvsMemPool::Alloc_value(8192);
+        construct_key(cct, GROUP_PREFIX_DATA, oid, 0, key );
+
+    }
+}
+
+void KvsReadContext::read_onode(const ghobject_t &oid)
+{
+    FTRACE
+    if (KVSSD_BYPASS) {
+        this->key   =KvsMemPool::Alloc_key();;
+        this->value =0;
+        this->retcode = KV_ERR_KEY_NOT_EXIST;
+        construct_key(this->cct, GROUP_PREFIX_ONODE, oid, 0, this->key);
+    }
+    else {
+        this->key   = KvsMemPool::Alloc_key();
+        this->value = KvsMemPool::Alloc_value(8192);
+        construct_key(this->cct, GROUP_PREFIX_ONODE, oid, 0, this->key);
+    }
+}
+
+
+kv_result KvsReadContext::read_wait(bufferlist &bl) {
+    FTRACE
+    std::unique_lock<std::mutex> l(lock);
+    // see _aio_thread for waker logic
+    while (num_running.load() > 0) {
+        dout(10) << __func__ << " " << this
+                 << " waiting for " << num_running.load() << " aios to complete"
+                 << dendl;
+        cond.wait(l);
+    }
+
+    if (retcode == KV_SUCCESS && value != 0) {
+        bl.append((const char *)value->value, value->length);
+    }
+
+    return retcode;
+}
+
+void KvsReadContext::try_read_wake() {
+    FTRACE
+    if (num_running == 1) {
+
+        // we might have some pending IOs submitted after the check
+        // as there is no lock protection for aio_submit.
+        // Hence we might have false conditional trigger.
+        // aio_wait has to handle that hence do not care here.
+        std::lock_guard<std::mutex> l(lock);
+        cond.notify_all();
+        --num_running;
+        assert(num_running >= 0);
+    } else {
+        --num_running;
+    }
+}
+
+KvsReadContext::~KvsReadContext() {
+    if (key) {
+        KvsMemPool::Release_key(key); key = 0;
+    }
+
+    if (value) {
+        KvsMemPool::Release_value(value); value = 0;
+    }
+}
+/*
+char * kvs_encode(const char *data, const uint8_t length, char *buffer, const char* end)
+{
+    char *newpos = buffer+length;
+    if (newpos >= end) ceph_abort();
+    fprintf(stderr, "encoding dl data = %p, length = %d from %p \n", data, length, buffer);
+    memcpy(buffer, data, length);;
+    return newpos;
+}
+
+inline char *kvs_decode(char *data, int length, char *buffer)
+{
+    memcpy(data, buffer, length);
+    return (buffer+length);
+}
+
+
+void kvsstore_cnode_t::encode(void *buffer, uint32_t &length) const
+{
+    ceph_le32 b;
+    b = bits;
+
+    kvs_encode((const char*)&b, 4, (char*)buffer, (char*)buffer + 4096);
+    length = 64;
+}
+
+void kvsstore_cnode_t::decode(void *buffer) {
+    ceph_le32 b;
+    kvs_decode((char*)&b, 4, (char*)buffer);
+    bits = b;
+}
+*/

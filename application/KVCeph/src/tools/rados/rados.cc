@@ -101,10 +101,10 @@ void usage(ostream& out)
 "   bench <seconds> write|seq|rand [-t concurrent_operations] [--no-cleanup] [--run-name run_name] [--no-hints]\n"
 "                                    default is 16 concurrent IOs and 4 MB ops\n"
 "                                    default is to clean up after write benchmark\n"
-"                                    default run-name is 'benchmark_last_metadata'\n"
+"                                    run-name is an integer [0..15], uniquely identifying a client\n"
 "   cleanup [--run-name run_name] [--prefix prefix]\n"
 "                                    clean up a previous benchmark operation\n"
-"                                    default run-name is 'benchmark_last_metadata'\n"
+"                                    run-name is an integer [0..15], uniquely identifying a client\n"
 "   load-gen [options]               generate load on the cluster\n"
 "   listomapkeys <obj-name>          list the keys in the object map\n"
 "   listomapvals <obj-name>          list the keys and vals in the object map \n"
@@ -1645,7 +1645,7 @@ static int rados_tool_common(const std::map < std::string, std::string > &opts,
   bool show_time = false;
   bool wildcard = false;
 
-  std::string run_name;
+  int run_name;
   std::string prefix;
   bool forcefull = false;
   Formatter *formatter = NULL;
@@ -1691,7 +1691,9 @@ static int rados_tool_common(const std::map < std::string, std::string > &opts,
   }
   i = opts.find("run-name");
   if (i != opts.end()) {
-    run_name = i->second;
+    if (rados_sistrtoll(i, &run_name)) {
+      return -EINVAL;
+    }
   }
 
   i = opts.find("force-full");
@@ -3026,7 +3028,7 @@ static int rados_tool_common(const std::map < std::string, std::string > &opts,
     if (wildcard)
       io_ctx.set_namespace(all_nspaces);
     RadosBencher bencher(g_ceph_context, rados, io_ctx);
-    ret = bencher.clean_up(prefix, concurrent_ios, run_name);
+    ret = bencher.clean_up(prefix, concurrent_ios, std::to_string(run_name));
     if (ret != 0)
       cerr << "error during cleanup: " << cpp_strerror(ret) << std::endl;
   }

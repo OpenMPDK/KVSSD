@@ -1,0 +1,33 @@
+Journaling
+
+ * Journal entry key
+	prefix: GROUP_PREFIX_JOURNAL
+	value : index
+
+ * Transaction
+    add bufferlist bl1
+
+ * Operations
+   - omap  : txc->ioc.add_omap  ->  bl1.add(bl)
+   - onode : txc->ioc.add_onode ->  bl1.add(b2)
+
+ * After write_nodes
+   - flush_nodes_sync
+
+ * Create sync read() for prefetcher
+
+Large key support
+ * Superblock: last unique key  (stored on umount)
+ * Onode: locally unique key
+ * Increase the key size : 37 + n bytes
+
+
+Mount
+ * Load all journal entries
+ * find the max onode's internal key (Konode)
+ * superblock's last key <  Konode -> recovery
+ *                       >= Konode -> no recovery
+
+Recovery
+ * go through the journal entries
+ * check if both

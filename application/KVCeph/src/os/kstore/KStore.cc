@@ -1516,53 +1516,53 @@ int KStore::_collection_list(
          << " temp=" << (int)temp << dendl;
     it->lower_bound(k);
   }
-  if (end.hobj.is_max()) {
-    pend = temp ? temp_end_key : end_key;
-  } else {
-    get_object_key(cct, end, &end_key);
-    if (end.hobj.is_temp()) {
-      if (temp)
-    pend = end_key;
-      else
-    goto out;
+    if (end.hobj.is_max()) {
+        pend = temp ? temp_end_key : end_key;
     } else {
-      pend = temp ? temp_end_key : end_key;
+        get_object_key(cct, end, &end_key);
+        if (end.hobj.is_temp()) {
+            if (temp)
+                pend = end_key;
+            else
+                goto out;
+        } else {
+            pend = temp ? temp_end_key : end_key;
+        }
     }
-  }
   dout(20) << __func__ << " pend " << pretty_binary_string(pend) << dendl;
-  while (true) {
-    if (!it->valid() || it->key() >= pend) {
-      if (!it->valid())
-    dout(20) << __func__ << " iterator not valid (end of db?)" << dendl;
-      else
-    dout(20) << __func__ << " key " << pretty_binary_string(it->key())
-         << " > " << end << dendl;
-      if (temp) {
-    if (end.hobj.is_temp()) {
-      break;
+    while (true) {
+        if (!it->valid() || it->key() >= pend) {
+            if (!it->valid())
+                dout(20) << __func__ << " iterator not valid (end of db?)" << dendl;
+            else
+                dout(20) << __func__ << " key " << pretty_binary_string(it->key())
+                         << " > " << end << dendl;
+            if (temp) {
+                if (end.hobj.is_temp()) {
+                    break;
+                }
+                dout(30) << __func__ << " switch to non-temp namespace" << dendl;
+                temp = false;
+                it->upper_bound(start_key);
+                pend = end_key;
+                dout(30) << __func__ << " pend " << pretty_binary_string(pend) << dendl;
+                continue;
+            }
+            break;
+        }
+        dout(20) << __func__ << " key " << pretty_binary_string(it->key()) << dendl;
+        ghobject_t oid;
+        int r = get_key_object(it->key(), &oid);
+        assert(r == 0);
+        if (ls->size() >= (unsigned)max) {
+            dout(20) << __func__ << " reached max " << max << dendl;
+            *pnext = oid;
+            set_next = true;
+            break;
+        }
+        ls->push_back(oid);
+        it->next();
     }
-    dout(30) << __func__ << " switch to non-temp namespace" << dendl;
-    temp = false;
-    it->upper_bound(start_key);
-    pend = end_key;
-    dout(30) << __func__ << " pend " << pretty_binary_string(pend) << dendl;
-    continue;
-      }
-      break;
-    }
-    dout(20) << __func__ << " key " << pretty_binary_string(it->key()) << dendl;
-    ghobject_t oid;
-    int r = get_key_object(it->key(), &oid);
-    assert(r == 0);
-    if (ls->size() >= (unsigned)max) {
-      dout(20) << __func__ << " reached max " << max << dendl;
-      *pnext = oid;
-      set_next = true;
-      break;
-    }
-    ls->push_back(oid);
-    it->next();
-  }
 out:
   if (!set_next) {
     *pnext = ghobject_t::get_max();

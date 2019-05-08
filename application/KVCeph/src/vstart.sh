@@ -510,6 +510,7 @@ prepare_conf() {
 	kvsdbg_server=$kvsdbg_server
 	kvsdbg_port=$kvsdbg_port
         kvsstore_dev_path="/dev/nvme0n1"
+        op_scheduler="sharded"
         osd pg bits = 3
         osd pgp bits = 5  ; (invalid, but ceph should cope!)
         osd pool default size = $OSD_POOL_DEFAULT_SIZE
@@ -598,6 +599,7 @@ $DAEMONOPTS
         osd scrub load threshold = 2000.0
         osd debug op order = true
         osd debug misdirected ops = true
+        enable_onode_prefetch = disabled
         filestore wbthrottle xfs ios start flusher = 10
         filestore wbthrottle xfs ios hard limit = 20
         filestore wbthrottle xfs inodes hard limit = 30

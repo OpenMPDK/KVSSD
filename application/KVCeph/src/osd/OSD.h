@@ -71,9 +71,6 @@ using namespace std;
 
 #define CEPH_OSD_PROTOCOL    10 /* cluster internal */
 
-#define ADS_SCHED_SHARDED
-//#define ADS_SCHED_RR
-//#define ADS_SCHED_EPOLL
 
 enum {
   l_osd_first = 10000,
@@ -1772,16 +1769,16 @@ private:
     }
 
     /// wake any pg waiters after a PG is created/instantiated
-    void wake_pg_waiters(spg_t pgid);
+    virtual void wake_pg_waiters(spg_t pgid);
 
     /// prune ops (and possiblye pg_slots) for pgs that shouldn't be here
-    void prune_pg_waiters(OSDMapRef osdmap, int whoami);
+    virtual void prune_pg_waiters(OSDMapRef osdmap, int whoami);
 
     /// clear cached PGRef on pg deletion
-    void clear_pg_pointer(spg_t pgid);
+    virtual void clear_pg_pointer(spg_t pgid);
 
     /// clear pg_slots on shutdown
-    void clear_pg_slots();
+    virtual void clear_pg_slots();
 
     /// try to do some work
     void _process(uint32_t thread_index, heartbeat_handle_d *hb) override;
@@ -1851,14 +1848,9 @@ private:
       Mutex::Locker l(sdata->sdata_op_ordering_lock);
       return sdata->pqueue->empty();
     }
-  } 
-#ifdef ADS_SCHED_SHARDED
-  op_shardedwq;
-#else
-  ;
-#endif
-#ifdef ADS_SCHED_RR
-    //ShardedThreadPool::ShardedWQ<pair<spg_t,PGQueueable>> *opwq;
+  };
+
+
 
   class RoundRobinOpWQ: public ShardedOpWQ {
    public:
@@ -2173,16 +2165,16 @@ private:
           }
 
           /// wake any pg waiters after a PG is created/instantiated
-          void wake_pg_waiters(spg_t pgid);
+          void wake_pg_waiters(spg_t pgid) override;
 
           /// prune ops (and possiblye pg_slots) for pgs that shouldn't be here
-          void prune_pg_waiters(OSDMapRef osdmap, int whoami);
+          void prune_pg_waiters(OSDMapRef osdmap, int whoami) override;
 
           /// clear cached PGRef on pg deletion
-          void clear_pg_pointer(spg_t pgid);
+          void clear_pg_pointer(spg_t pgid) override;
 
           /// clear pg_slots on shutdown
-          void clear_pg_slots();
+          void clear_pg_slots() override;
 
           /// try to do some work
           void _process(uint32_t thread_index, heartbeat_handle_d *hb) override;
@@ -2301,9 +2293,7 @@ private:
               return true;
           }
 
-  } op_shardedwq;
-#endif
-#ifdef ADS_SCHED_EPOLL
+  };
 
   class EpollOpWQ: public ShardedOpWQ {
   public:
@@ -2457,7 +2447,6 @@ private:
           max_pgs_per_osd = (o->cct->_conf->get_val<uint64_t>("mon_max_pg_per_osd") *
                              o->cct->_conf->get_val<double>("osd_max_pg_per_osd_hard_ratio"));
 
-
           // pre-create pool PG indexes
           pool_pgindex_array_size = MON_MAX_POOL_NUM;
           pool_pgindex_array = (pool_pgindex_t*) calloc(pool_pgindex_array_size, sizeof(pool_pgindex_t));
@@ -2567,16 +2556,16 @@ private:
       }
 
       /// wake any pg waiters after a PG is created/instantiated
-      void wake_pg_waiters(spg_t pgid);
+      void wake_pg_waiters(spg_t pgid) override;
 
       /// prune ops (and possiblye pg_slots) for pgs that shouldn't be here
-      void prune_pg_waiters(OSDMapRef osdmap, int whoami);
+      void prune_pg_waiters(OSDMapRef osdmap, int whoami) override;
 
       /// clear cached PGRef on pg deletion
-      void clear_pg_pointer(spg_t pgid);
+      void clear_pg_pointer(spg_t pgid) override;
 
       /// clear pg_slots on shutdown
-      void clear_pg_slots();
+      void clear_pg_slots() override;
 
       /// try to do some work
       void _process(uint32_t thread_index, heartbeat_handle_d *hb) override;
@@ -2695,8 +2684,12 @@ private:
           return true;
       }
 
-  } op_shardedwq;
-#endif
+  };
+
+  ShardedOpWQ *op_wq;
+  ShardedOpWQ *create_op_wq(std::string &scheduler, uint32_t pnum_shards,time_t ti, time_t si, ShardedThreadPool* tp);
+
+
   void enqueue_op(spg_t pg, OpRequestRef& op, epoch_t epoch);
   void dequeue_op(
     PGRef pg, OpRequestRef op,
@@ -2905,18 +2898,8 @@ protected:
   // this must be called with pg->lock held on any pg addition to pg_map
   void wake_pg_waiters(PGRef pg) {
     assert(pg->is_locked());
-    op_shardedwq.wake_pg_waiters(pg->info.pgid);
-    /*std::string sched = cct->_conf->op_scheduler;
-  //op_shardedwq.wake_pg_waiters(pg->info.pgid);
-    if (sched == "epoll"){
-      op_epollwq.wake_pg_waiters(pg->info.pgid);
-    }
-    else if (sched == "rr"){
-      op_rrwq.wake_pg_waiters(pg->info.pgid);
-    }
-    else{
-      op_shardedwq.wake_pg_waiters(pg->info.pgid);
-    }*/
+    op_wq->wake_pg_waiters(pg->info.pgid);
+    
   }
   epoch_t last_pg_create_epoch;
 
@@ -3285,6 +3268,7 @@ private:
   ~OSD() override;
 
   void prefetch_onode(Message *m, OpRequestRef op);
+  void prefetch_onodeOSD(OpRequestRef op);  
 
   // static bits
   static int mkfs(CephContext *cct, ObjectStore *store,
@@ -3344,6 +3328,9 @@ public:
 public:
   OSDService service;
   friend class OSDService;
+
+  /// onode prefetcher
+  int prefetcher_type;
 };
 
 

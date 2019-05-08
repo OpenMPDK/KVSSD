@@ -82,7 +82,7 @@ struct epoll_event *sched_events;
 #define dout_context osd->cct
 #undef dout_prefix
 #define dout_prefix *_dout << "osd." << osd->whoami << " op_wq "
-#ifdef ADS_SCHED_EPOLL 
+
 
 int OSD::EpollOpWQ::init() {
     // Start the epoll and eventfd mechanism here
@@ -661,12 +661,12 @@ void OSD::EpollOpWQ::_enqueue_front(pair<spg_t, PGQueueable> item)
     sdata->sdata_cond.SignalOne();
     */
 }
-#endif
+
 
 /// ==============================================
 /// Round Robin Scheduler
 /// ==============================================
-#ifdef ADS_SCHED_RR
+
 
 /// wake any pg waiters after a PG is created/instantiated
 void OSD::RoundRobinOpWQ::wake_pg_waiters(spg_t pgid)
@@ -675,19 +675,16 @@ void OSD::RoundRobinOpWQ::wake_pg_waiters(spg_t pgid)
     if (sdata == nullptr) {
         return;
     }
-
     std::unique_lock<std::mutex> lock(sdata->sdata_op_ordering_lock);
     if (sdata->pg) {
         sdata->waiting_for_pg = false;
     }
     lock.unlock();
-
     /// when queue is not empty
     if (sdata->pending_reqs.load()) {
         std::unique_lock<std::mutex> lock(sdata->sdata_lock);
         sdata->sdata_cond.notify_one();
     }
-
 }
 
 /// prune ops (and possiblye pg_slots) for pgs that shouldn't be here
@@ -1181,4 +1178,4 @@ OSD::RoundRobinOpWQ::PGDataRef OSD::RoundRobinOpWQ::get_next_pgqueue(uint32_t& c
 
 }
 
-#endif
+

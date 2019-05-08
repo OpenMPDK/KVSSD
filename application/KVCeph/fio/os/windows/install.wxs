@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+	<?if $(env.FIO_ARCH) = x86 ?>
+		<?define ProgramDirectory = ProgramFilesFolder ?>
+	<?else?>
+		<?define ProgramDirectory = ProgramFiles64Folder ?>
+	<?endif?>
+
+	<Product Id="*"
+	  Codepage="1252" Language="1033"
+	  Manufacturer="fio" Name="fio"
+	  UpgradeCode="2338A332-5511-43CF-B9BD-5C60496CCFCC" Version="2.18">
+		<Package
+		  Description="Flexible IO Tester"
+		  InstallerVersion="301" Keywords="Installer,MSI,Database"
+		  Languages="1033" Manufacturer="fio"
+		  InstallScope="perMachine" InstallPrivileges="elevated" Compressed="yes"/>
+
+		<Media Id="1" Cabinet="Product.cab" EmbedCab="yes" CompressionLevel="high"/>
+
+		<Directory Id="TARGETDIR" Name="SourceDir">
+			<Directory Id="$(var.ProgramDirectory)">
+				<Directory Id="INSTALLDIR">
+					<Directory Id="fio" Name="fio">
+						<Component>
+							<File Source="..\..\fio.exe"/>
+							<Environment Action="set" Part="last" Id="PATH" Name="PATH" Value="[INSTALLDIR]fio\" System="yes"/>
+						</Component>
+						<Component>
+							<File Id="README" Name="README.txt" Source="..\..\README"/>
+						</Component>
+						<Component>
+							<File Id="REPORTING_BUGS" Name="REPORTING-BUGS.txt" Source="..\..\REPORTING-BUGS"/>
+						</Component>
+						<Component>
+							<File Id="HOWTO" Name="HOWTO.txt" Source="..\..\HOWTO"/>
+						</Component>
+						<Component>
+							<File Id="COPYING" Name="COPYING.txt" Source="..\..\COPYING"/>
+						</Component>
+						<Component>
+							<File Id="MORAL_LICENSE" Name="MORAL-LICENSE.txt" Source="..\..\MORAL-LICENSE"/>
+						</Component>
+						<Directory Id="examples" Name="examples"/>
+					</Directory>
+				</Directory>
+			</Directory>
+	</Directory>
+
+	<Feature Id="AlwaysInstall" Absent="disallow" ConfigurableDirectory="INSTALLDIR" Display="hidden" Level="1" Title="Flexible IO Tester">
+		<ComponentRef Id="fio.exe"/>
+		<ComponentRef Id="HOWTO"/>
+		<ComponentRef Id="README"/>
+		<ComponentRef Id="REPORTING_BUGS"/>
+		<ComponentRef Id="COPYING"/>
+		<ComponentRef Id="MORAL_LICENSE"/>
+		<ComponentGroupRef Id="examples"/>
+	</Feature>
+
+	<Property Id="ARPURLINFOABOUT" Value="http://git.kernel.dk/cgit/fio/" />
+	<Property Id='ARPCONTACT'>fio@vger.kernel.org</Property>
+	<Property Id='ARPHELPLINK'>http://www.spinics.net/lists/fio/</Property>
+	<Property Id='ARPURLUPDATEINFO'>http://bluestop.org/fio/</Property>
+
+	<WixVariable Id="WixUILicenseRtf" Value="eula.rtf" />
+
+	<UIRef Id="WixUI_Minimal"/>
+
+	<MajorUpgrade AllowDowngrades="no" DowngradeErrorMessage="A newer version of the application is already installed."
+                  AllowSameVersionUpgrades="yes"/>
+</Product>
+</Wix>

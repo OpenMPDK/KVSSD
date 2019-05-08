@@ -21,6 +21,9 @@
 #include "common/WorkQueue.h"
 #include "os/ObjectStore.h"
 #include "os/fs/FS.h"
+// for dout //
+
+
 
 typedef unsigned __int128 uint128_t;
 
@@ -28,8 +31,30 @@ const uint8_t GROUP_PREFIX_ONODE = 0;
 const uint8_t GROUP_PREFIX_OMAP  = 1;
 const uint8_t GROUP_PREFIX_DATA  = 2;
 const uint8_t GROUP_PREFIX_COLL  = 3;
+const uint8_t GROUP_PREFIX_SUPER = 4;
+const uint8_t GROUP_PREFIX_JOURNAL = 5;
 
-const unsigned int KVSSD_KEYNAME_MAX_SIZE = 6;
+/// superblock
+struct kvsstore_sb_t {
+    uint64_t lid_last;
+    uint64_t is_uptodate;
+
+    explicit kvsstore_sb_t() {}
+
+    DENC(kvsstore_sb_t, v, p) {
+        DENC_START(1, 1, p);
+            denc(v.lid_last, p);
+            denc(v.is_uptodate, p);
+        DENC_FINISH(p);
+    }
+    void dump(Formatter *f) const{
+        f->dump_unsigned("lid_last", lid_last);
+        f->dump_unsigned("is_uptodate", is_uptodate);
+    }
+    static void generate_test_instances(list<kvsstore_sb_t*>& o){}
+
+};
+WRITE_CLASS_DENC(kvsstore_sb_t)
 
 /// collection metadata
 struct kvsstore_cnode_t {
@@ -51,10 +76,9 @@ WRITE_CLASS_DENC(kvsstore_cnode_t)
 
 /// onode: per-object metadata
 struct kvsstore_onode_t {
+    uint64_t lid = 0;
     uint64_t size = 0;                   ///< object size
-    uint64_t lastid = 0;
-    map<mempool::kvsstore_cache_other::string, int> attr_names;
-    map<int, bufferptr> attrs;        ///< attrs
+    map<mempool::kvsstore_cache_other::string,  bufferptr> attrs;        ///< attrs
     uint8_t flags = 0;
 
     enum {
@@ -93,26 +117,12 @@ struct kvsstore_onode_t {
         clear_flag(FLAG_OMAP);
     }
 
-    int get_attr_id(const char *name, bool create = true) {
-        int attrid = -1;
-        auto it = attr_names.find(name);
-        if (it != attr_names.end()) {
-            attrid = it->second;
-        }
-        else if (create)
-        {
-            attrid = lastid++;
-            attr_names[name] = attrid;
-        }
-        return attrid;
-    }
 
 
     DENC(kvsstore_onode_t, v, p) {
         DENC_START(1, 1, p);
+            denc_varint(v.lid, p);
             denc_varint(v.size, p);
-            denc_varint(v.lastid, p);
-            denc(v.attr_names, p);
             denc(v.attrs, p);
             denc(v.flags, p);
         DENC_FINISH(p);
@@ -122,6 +132,8 @@ struct kvsstore_onode_t {
     static void generate_test_instances(list<kvsstore_onode_t*>& o) {}
 };
 WRITE_CLASS_DENC(kvsstore_onode_t)
+
+
 
 
 #endif //CEPH_KVSSTORE_ONDISK_H

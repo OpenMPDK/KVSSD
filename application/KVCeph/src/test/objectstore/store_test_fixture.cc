@@ -8,6 +8,7 @@
 #if defined(HAVE_LIBAIO)
 #include "os/bluestore/BlueStore.h"
 #endif
+#include "os/kvsstore/KvsStore.h"
 #include "store_test_fixture.h"
 
 static void rm_r(const string& path) {
@@ -49,7 +50,13 @@ void StoreTestFixture::SetUp() {
     s->set_cache_shards(5);
   }
 #endif
+  if (type == "kvsstore"){
+	KvsStore *s = static_cast<KvsStore*>(store.get());
+	s->set_cache_shards(50);
+}
+    cerr << __func__ << ": mkfs" << std::endl;
   ASSERT_EQ(0, store->mkfs());
+    cerr << __func__ << ": mount" << std::endl;
   ASSERT_EQ(0, store->mount());
 }
 

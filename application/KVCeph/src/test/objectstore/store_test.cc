@@ -379,6 +379,7 @@ TEST_P(StoreTest, IORemount) {
   }
 }
 
+
 TEST_P(StoreTest, UnprintableCharsName) {
   ObjectStore::Sequencer osr("test");
   coll_t cid;
@@ -629,6 +630,7 @@ TEST_P(StoreTest, SimpleColPreHashTest) {
     g_ceph_context->_conf->set_val("filestore_merge_threshold", oss.str().c_str());
   }
 }
+
 
 TEST_P(StoreTest, SmallBlockWrites) {
   ObjectStore::Sequencer osr("test");
@@ -2254,6 +2256,7 @@ TEST_P(StoreTest, MiscFragmentTests) {
   }
 
 }
+
 
 TEST_P(StoreTest, ZeroLengthWrite) {
   ObjectStore::Sequencer osr("test");
