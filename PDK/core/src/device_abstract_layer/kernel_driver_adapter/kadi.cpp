@@ -27,7 +27,6 @@
 #include "kadi_debug.h"
 
 //#define DUMP_ISSUE_CMD 1
-
 //#define EPOLL_DEV 1
 
 #ifdef EPOLL_DEV
@@ -155,7 +154,6 @@ int KADI::close()
         for (aio_cmd_ctx *p: free_cmdctxs) {
             free((void*)p);
         }
-
 
         ioctl(fd, NVME_IOCTL_DEL_AIOCTX, &aioctx);
         ::close((int)aioctx.eventfd);
@@ -351,7 +349,7 @@ kv_result KADI::iter_list(kv_iterator *iter_list, uint32_t *count)
         uint8_t status = (*(uint8_t *)(logbuf + offset + 1));
         iter_list[open_count].status = status;
         iter_list[open_count].handle_id = (*(uint8_t *)(logbuf + offset + 0));
-        iter_list[open_count].type = (*(uint8_t *)(logbuf + offset + 2));
+        iter_list[open_count].type = (*(uint8_t *)(logbuf + offset + 2)) -1;    // to match with API descripion
         iter_list[open_count].keyspace_id = (*(uint8_t *)(logbuf + offset + 3));
         iter_list[open_count].prefix = (*(uint32_t *)(logbuf + offset + 4));
         iter_list[open_count].bitmask = (*(uint32_t *)(logbuf + offset + 8));
@@ -404,7 +402,37 @@ redo:
     return true;
 }
 
-kv_result KADI::kv_store(kv_key *key, kv_value *value, const kv_postprocess_function *cb)
+uint32_t KADI::get_dev_waf()
+{
+    const int MAX_LOG_PAGE_SIZE = 512;
+    const uint32_t log_page_id = 0xC0;
+
+    char logbuf[MAX_LOG_PAGE_SIZE];
+    struct nvme_passthru_cmd cmd;
+    uint32_t buffer_size = MAX_LOG_PAGE_SIZE;
+
+    memset(logbuf, 0, MAX_LOG_PAGE_SIZE);
+    memset(&cmd, 0, sizeof(struct nvme_passthru_cmd));
+
+    cmd.opcode = 0x2; //nvme_admin_get_log_page;
+    cmd.nsid = nsid;
+    cmd.addr = (uint64_t)logbuf;
+    cmd.data_len = buffer_size;
+
+    cmd.cdw10 = (__u32)(((buffer_size >> 2) - 1) << 16) | ((__u32)log_page_id & 0x000000ff);
+
+    int ret = ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd);
+    if (ret != 0) {
+        return KV_ERR_SYS_IO;
+    }
+
+    uint32_t waf = *(uint32_t*)logbuf;
+
+    return waf;
+
+}
+
+kv_result KADI::kv_store(kv_key *key, kv_value *value, const kv_postprocess_function *cb, int option)
 {
     aio_cmd_ctx *ioctx = get_cmd_ctx(cb);
     memset((void *)&ioctx->cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
@@ -428,6 +456,7 @@ kv_result KADI::kv_store(kv_key *key, kv_value *value, const kv_postprocess_func
     {
         memcpy((void *)ioctx->cmd.key, (void *)key->key, key->length);
     }
+    ioctx->cmd.cdw4 = option;
     ioctx->cmd.cdw5 = value->offset;
     ioctx->cmd.key_length = key->length;
     ioctx->cmd.cdw11 = key->length - 1;
@@ -609,12 +638,9 @@ bool KADI::exist(void *key, int length, const kv_postprocess_function *cb)
 #endif
     if (cb == 0) {
         ret = ioctl(fd, NVME_IOCTL_IO_KV_CMD, &ioctx->cmd);
-        
     } else {
-        ret = ioctl(fd, NVME_IOCTL_IO_KV_CMD, &ioctx->cmd);
         // async 
         ret = ioctl(fd, NVME_IOCTL_AIO_CMD, &ioctx->cmd);
-
     }
     return (ret == 0) ? true : false;
 }
@@ -772,6 +798,7 @@ kv_result KADI::fill_ioresult(const aio_cmd_ctx &ioctx, const struct nvme_aioeve
             ioresult.hiter.buflength = (event.result & 0xffff);
             ioresult.hiter.end = true;
             ioresult.retcode = 0;
+	    return 0;
         }
         break;
     }
@@ -808,6 +835,7 @@ kv_result KADI::fill_ioresult(const aio_cmd_ctx &ioctx, const struct nvme_aioeve
             ioresult.hiter.buf = ioctx.buf;
             ioresult.hiter.buflength = (event.result & 0xffff);
         }
+        ioresult.hiter.end = false;
         break;
     };
 

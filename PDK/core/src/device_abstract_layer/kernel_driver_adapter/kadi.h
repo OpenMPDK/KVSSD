@@ -248,7 +248,8 @@ private:
 
 public:
 
-    kv_result kv_store(kv_key *key, kv_value *value, const kv_postprocess_function* cb);
+    uint32_t  get_dev_waf();
+    kv_result kv_store(kv_key *key, kv_value *value, const kv_postprocess_function* cb, int option = 0);
     kv_result kv_retrieve(kv_key *key, kv_value *value, const kv_postprocess_function* cb);
     kv_result kv_retrieve_sync(kv_key *key, kv_value *value);
     kv_result kv_delete(kv_key *key, const kv_postprocess_function* cb, int check_exist = 0);

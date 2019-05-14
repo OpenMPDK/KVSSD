@@ -187,6 +187,19 @@ kv_result kv_get_device_info(const kv_device_handle dev_hdl, kv_device *devinfo)
     return KV_SUCCESS;
 }
 
+// pull Write Amplification Factor
+kv_result kv_get_device_waf(const kv_device_handle dev_hdl, uint32_t *waf) {
+
+    KADI *dev =  get_kadi_from_hdl(dev_hdl);
+    if (dev == NULL) { 
+	 return KV_ERR_DEV_NOT_EXIST; 
+    }
+
+    *waf = dev->get_dev_waf();
+
+    return 0;
+
+}
 
 kv_result kv_get_device_stat(const kv_device_handle dev_hdl, kv_device_stat *dev_st) {
     FTRACE
@@ -205,7 +218,7 @@ kv_result kv_get_device_stat(const kv_device_handle dev_hdl, kv_device_stat *dev
 
     dev_st->namespace_count = 1;
     dev_st->queue_count = 1;
-    dev_st->utilization = (uint16_t)utilization * 10000;
+    dev_st->utilization = (uint16_t)(utilization * 10000);
     dev_st->waf = 0;
     dev_st->extended_info = 0;
     
@@ -430,22 +443,17 @@ kv_result kv_iterator_next_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_
     KADI  *dev = (KADI  *) que_hdl->dev;
     kv_result ret = dev->iter_read(&iter_ctx);
 
-    if (ret == KV_SUCCESS && iter_ctx.byteswritten > 0)
-    {
-        iter_list->num_entries = *((uint32_t *)iter_ctx.buf);
-        iter_list->size = iter_ctx.byteswritten;
-        iter_list->end  = (iter_ctx.end)? TRUE:FALSE;
+    unsigned int key_count = (iter_ctx.byteswritten == 0) ? 0 : *((uint32_t *)iter_ctx.buf);
+    iter_list->num_entries = key_count;
+    iter_list->size = iter_ctx.byteswritten;
+    if (ret == KV_SUCCESS) {
+      iter_list->end  = (iter_ctx.end)? TRUE:FALSE;
     }
     else if (ret == 0x393) {
-        if ( iter_ctx.byteswritten > 0)  {
-             iter_list->num_entries = *((uint32_t *)iter_ctx.buf);
-        } else 
-            iter_list->num_entries = 0;
-        
-        iter_list->size = iter_ctx.byteswritten;
-        iter_list->end = TRUE;
-        ret = KV_SUCCESS;
+      ret = KV_SUCCESS;
+      iter_list->end = TRUE;
     }
+
     return ret;
 }
 kv_result kv_list_iterators(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator *kv_iters, uint32_t *iter_cnt, kv_postprocess_function  *post_fn) {
@@ -537,7 +545,7 @@ kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv
         return KV_ERR_PARAM_INVALID;
     }
     KADI *dev = (KADI *) que_hdl->dev;
-    return dev->kv_store((kv_key*)key, (kv_value*)value, post_fn);
+    return dev->kv_store((kv_key*)key, (kv_value*)value, post_fn, (int)option);
 }
 
 

@@ -38,7 +38,6 @@
 #include <atomic>
 #include <queue>
 #include <kvs_api.h>
-#include <random>
 
 std::atomic<int> submitted(0);
 std::atomic<int> completed(0);
@@ -140,7 +139,7 @@ void complete(kvs_callback_context* ioctx) {
     if(ioctx->result_buffer)
       free(ioctx->result_buffer);
   default:
-    //fprintf(stderr, "io_complete: op = %d, key = %s, vlen = %d, actual vlen = %d, result = %s\n", ioctx->opcode, (char*)ioctx->key->key, ioctx->value->length, ioctx->value->actual_value_size, kvs_errstr(ioctx->result));
+    //fprintf(stderr, "io_complete: op = %d, key = %s, vlen = %d, actual vlen = %d, result = %s\n", ioctx->opcode, (char*)ioctx->key->key, ioctx->value.length, ioctx->value.actual_value_size, kvs_errstr(ioctx->result));
     std::queue<char*> * keypool = (std::queue<char*> *)ioctx->private1;
     std::queue<char*> * valuepool = (std::queue<char*> *)ioctx->private2;
     pthread_mutex_lock(&lock);
@@ -157,8 +156,6 @@ void complete(kvs_callback_context* ioctx) {
     pthread_mutex_unlock(&lock);
 
     completed++;
-
-    if(completed.load() % 10000 == 0) fprintf(stdout, "%d\n", completed.load());
     cur_qdepth--; 
     break;
   }
@@ -434,7 +431,6 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, kvs
       }
       
       sprintf(key, "%0*ld", klen - 1, seq++);
-       
       sprintf(value, "value%ld", seq);
       kvs_store_option option;
       memset(&option, 0, sizeof(kvs_store_option));
@@ -751,8 +747,11 @@ int main(int argc, char *argv[]) {
 
   kvs_get_device_utilization(dev, &dev_util);
 
+  float waf = 0.0;
+
+  kvs_get_device_waf(dev, &waf);
   kvs_get_device_capacity(dev, &dev_capa);
-  fprintf(stdout, "Before: Total size is %ld bytes, used is %d\n", dev_capa, dev_util);
+  fprintf(stdout, "Before: Total size is %ld bytes, used is %d, waf is %.2f\n", dev_capa, dev_util, waf);
 
   kvs_get_device_info(dev, dev_info);
   fprintf(stdout, "Total size: %.2f GB\nMax value size: %d\nMax key size: %d\nOptimal value size: %d\n",

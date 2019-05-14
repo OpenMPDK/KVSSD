@@ -115,6 +115,8 @@ public:
     static kv_result kv_get_device_info(const kv_device_handle dev_hdl, kv_device *devinfo);
     // get device stats
     static kv_result kv_get_device_stat(const kv_device_handle dev_hdl, kv_device_stat *devstat);
+    // get device waf
+    static kv_result kv_get_device_waf(const kv_device_handle dev_hdl, float *waf);
     // sanitize a device
     static kv_result kv_sanitize(kv_queue_handle que_hdl, kv_device_handle dev_hdl, kv_sanitize_option option, kv_sanitize_pattern *pattern, kv_postprocess_function *post_fn);
 

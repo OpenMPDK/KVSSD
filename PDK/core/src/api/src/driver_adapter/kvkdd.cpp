@@ -186,6 +186,8 @@ int reformat_iterbuffer(kvs_iterator_list *iter_list)
     buffdata_len -= keydata_len_with_padding;
     data_buff += keydata_len_with_padding;
   }
+  iter_list->size = current_ptr - (char *)iter_list->it_list;
+
   return ret;
 }
 
@@ -401,17 +403,21 @@ void kdd_on_io_complete(kv_io_context *context){
   if(iocb->opcode == IOCB_ASYNC_GET_CMD) {
     iocb->value->actual_value_size = context->value->actual_value_size;
     iocb->value->length = context->value->length;
+    if(iocb->value->length < iocb->value->actual_value_size)  //actual length bigger than buffer length user inputted
+      iocb->result = KVS_ERR_BUFFER_SMALL;
   }
   else if (iocb->opcode == IOCB_ASYNC_ITER_NEXT_CMD && context->retcode == 0) {
 
     kvs_iterator_list* list = (kvs_iterator_list*) iocb->result_buffer;
     list->end = (context->hiter.end)?TRUE:FALSE;
-    
+
     list->it_list = context->hiter.buf;
     list->size =  context->hiter.buflength;
-    if (context->hiter.buf) {
+    if (context->hiter.buf && list->size > 0) {
       list->num_entries = *((unsigned int *)context->hiter.buf);
       reformat_iterbuffer(list);
+    } else {
+      list->num_entries = 0;
     }
     
   } else if (iocb->opcode == IOCB_ASYNC_CHECK_KEY_EXIST_CMD) {
@@ -708,7 +714,7 @@ int32_t KDDriver::open_iterator(int contid, kvs_iterator_option option /*uint8_t
 				uint32_t bit_pattern, kvs_iterator_handle *iter_hd) {
   int ret = 0;
 
-  if(option.iter_type) {
+  if(option.iter_type != KVS_ITERATOR_KEY) {
     fprintf(stderr, "Kernel driver does not support iterator for key-value retrieve\n");
     exit(1);
   }
@@ -794,11 +800,6 @@ int32_t KDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *it
     }
   }
   return ret;
-}
-
-float KDDriver::get_waf(){
-  WRITE_WARNING("KDD: get waf is not supported in kernel driver\n");
-  return 0;
 }
 
 int32_t KDDriver::get_device_info(kvs_device *dev_info) {
@@ -901,4 +902,12 @@ KDDriver::kv_kdd_context* KDDriver::prep_io_context(int opcode, int contid, cons
   ctx->syncio = syncio;
   
   return ctx;
+}
+
+float  KDDriver::get_waf(){
+
+  uint32_t tmp_waf;
+  kv_get_device_waf(devH, &tmp_waf);
+
+  return (float) tmp_waf/10.0;
 }

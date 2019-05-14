@@ -261,7 +261,7 @@ kvs_result kvs_iterator_next_async(kvs_container_handle cont_hd, kvs_iterator_ha
  * \return \ref float : WAF 
  * \ingroup KV_API 
  */
-//float kvs_get_waf(struct kv_device_api *dev);
+kvs_result kvs_get_device_waf(kvs_device_handle dev_hd, float *waf);
 
 /* ! Get device info
  * \param: dev_hd device handle

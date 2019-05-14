@@ -494,6 +494,12 @@ kvs_result kvs_get_tuple_info (kvs_container_handle cont_hd, const kvs_key *key,
   kvs_value kvsvalue = { value, vlen , 0, 0 /*offset */};
 
   int ret = kvs_retrieve_tuple(cont_hd, key, &kvsvalue, &ret_ctx);
+  if(ret == KVS_ERR_BUFFER_SMALL) {
+    // for kvs_get_tuple_info only get value length, don't care value content
+    fprintf(stderr, "kvs_retrieve_tuple(): KVS_ERR_BUFFER_SMALL (Key: %s with buffer_len = %d, actual vlen = %d)\n", (char *) key->key, kvsvalue.length, kvsvalue.actual_value_size);
+    ret = KVS_SUCCESS;
+  } 
+
   if(ret != KVS_SUCCESS) {
     fprintf(stderr, "get_tuple_info failed: key= %s error= 0x%x - %s\n", (char *) key->key, ret, kvs_errstr(ret));
   } else {
@@ -684,8 +690,11 @@ kvs_result kvs_iterator_next_async(kvs_container_handle cont_hd, kvs_iterator_ha
   return (kvs_result)ret;
 }
 
-float kvs_get_waf(kvs_device_handle dev) {
-  return dev->driver->get_waf();
+kvs_result kvs_get_device_waf(kvs_device_handle dev, float *waf) {
+  
+  *waf = dev->driver->get_waf();
+
+  return KVS_SUCCESS;
 }
 
 kvs_result kvs_get_device_info(kvs_device_handle dev_hd, kvs_device *dev_info) {

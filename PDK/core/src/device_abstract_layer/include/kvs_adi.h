@@ -586,6 +586,8 @@ kv_result kv_get_device_info(const kv_device_handle dev_hdl, kv_device *devinfo)
   */
 kv_result kv_get_device_stat(const kv_device_handle dev_hdl, kv_device_stat *dev_st);
 
+kv_result kv_get_device_waf(const kv_device_handle dev_hdl, uint32_t *waf);
+
 
 ////////////////////////////////////////////////
 // the following are Samsung ADI specific operation structure

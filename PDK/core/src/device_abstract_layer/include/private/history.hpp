@@ -257,7 +257,8 @@ public:
     }
 
 public:
-    uint32_t calc_latency(double insertp, double readp, double updatep, double deletep, int valuesize) {
+    int64_t calc_latency(double insertp, double readp, double updatep, double deletep, int valuesize) {
+
         const double iops = (model_iops(valuesize, insertp, readp, updatep) * 1000);
         //fprintf(stderr, "ip = %f, rp = %f, latency = %f\n", insertp, readp, 1000000000l / iops);
         return 1000000000ULL / iops;
