@@ -131,8 +131,6 @@ struct _kv_iterator_handle {
     bool_t end;
 };
 
-#define KVSSD_EMULATOR_PATH "/dev/kvemul"
-
 typedef enum {
     KV_DEV_TYPE_NONE = 0,
     KV_DEV_TYPE_EMULATOR = 1,

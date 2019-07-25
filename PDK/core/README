@@ -1,4 +1,4 @@
-Release version 0.8.0
+Release version 1.2.0
 
 This package provides a generic interface for user to communicate with Samsung's Key Value SSD through different types of device drivers (user space, and kernel space), and a Samsung Key Value SSD emulator. 
 

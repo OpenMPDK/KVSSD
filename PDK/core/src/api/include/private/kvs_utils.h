@@ -264,11 +264,22 @@ static inline int32_t validate_request(const kvs_key *key, const kvs_value *valu
       WRITE_WARNING("key size is out of range, key size = %d\n", key->length);
       return KVS_ERR_KEY_LENGTH_INVALID;
     }
+    if(key->key == NULL){
+      WRITE_WARNING("key buffer inputted is NULL\n");
+      return KVS_ERR_PARAM_INVALID;
+    }
   }
   if(value) {
     if(value->length < KVS_MIN_VALUE_LENGTH || value->length > KVS_MAX_VALUE_LENGTH) {
       WRITE_WARNING("value size is out of range, value size = %d\n", value->length);
       return KVS_ERR_VALUE_LENGTH_INVALID;
+    }
+    if(value->offset % KVS_ALIGNMENT_UNIT != 0) {
+      return KVS_ERR_VALUE_OFFSET_INVALID;
+    }
+    if(value->value == NULL && value->length > 0){
+      WRITE_WARNING("value buffer inputted is NULL\n");
+      return KVS_ERR_PARAM_INVALID;
     }
   }
   return 0;

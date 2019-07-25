@@ -39,6 +39,9 @@
 #include <queue>
 #include <kvs_api.h>
 
+#define SUCCESS 0
+#define FAILED 1
+
 static int use_udd = 0;
 
 struct iterator_info{
@@ -134,15 +137,13 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_iterator_option g_
 #define ITERATOR_OP 4
 #define KEY_EXIST_OP 5
 
-int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
+// Samsung device support KVS_ITERATOR_KEY iterator type only
+int perform_iterator(kvs_container_handle cont_hd,
+                      kvs_iterator_type iter_type=KVS_ITERATOR_KEY)
 {
   struct iterator_info *iter_info = (struct iterator_info *)malloc(sizeof(struct iterator_info));
+  iter_info->g_iter_mode.iter_type = iter_type;
 
-  if(iter_kv == 0)
-    iter_info->g_iter_mode.iter_type = KVS_ITERATOR_KEY;
-  else
-    iter_info->g_iter_mode.iter_type = KVS_ITERATOR_KEY_VALUE;
-  
   int ret;
   static int total_entries = 0;
 
@@ -161,16 +162,13 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
   iter_ctx_open.private1 = NULL;
   iter_ctx_open.private2 = NULL;
 
-  if(iter_kv == 0)
-    iter_ctx_open.option.iter_type = KVS_ITERATOR_KEY;
-  else
-    iter_ctx_open.option.iter_type = KVS_ITERATOR_KEY_VALUE;
+  iter_ctx_open.option.iter_type = iter_type;
   
   ret = kvs_open_iterator(cont_hd, &iter_ctx_open, &iter_info->iter_handle);
   if(ret != KVS_SUCCESS) {
     fprintf(stderr, "iterator open fails with error 0x%x - %s\n", ret, kvs_errstr(ret));
     free(iter_info);
-    exit(1);
+    return FAILED;
   }
     
   /* Do iteration */
@@ -196,7 +194,8 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
     if(ret != KVS_SUCCESS) {
       fprintf(stderr, "iterator next fails with error 0x%x - %s\n", ret, kvs_errstr(ret));
       free(iter_info);
-      exit(1);
+      kvs_free(buffer);
+      return FAILED;
     }
         
     total_entries += iter_info->iter_list.num_entries;
@@ -225,14 +224,17 @@ int perform_iterator(kvs_container_handle cont_hd, int iter_kv)
 
   ret = kvs_close_iterator(cont_hd, iter_info->iter_handle, &iter_ctx_close);
   if(ret != KVS_SUCCESS) {
-    fprintf(stderr, "Failed to close iterator\n");
-    exit(1);
+    fprintf(stderr, "Failed to close iterator with error 0x%x - %s\n", ret,
+      kvs_errstr(ret));
+    kvs_free(buffer);
+    free(iter_info);
+    return FAILED;
   }
   
   if(buffer) kvs_free(buffer);
   if(iter_info) free(iter_info);
 
-  return 0;
+  return SUCCESS;
 }
 
 int perform_read(int id, kvs_container_handle cont_hd, int count, kvs_key_t klen, uint32_t vlen) {
@@ -241,7 +243,7 @@ int perform_read(int id, kvs_container_handle cont_hd, int count, kvs_key_t klen
   char *value = (char*)kvs_malloc(vlen, 4096);
   if(key == NULL || value == NULL) {
     fprintf(stderr, "failed to allocate\n");
-    exit(1);
+    return FAILED;
   }
 
   int start_key = id * count;
@@ -269,7 +271,7 @@ int perform_read(int id, kvs_container_handle cont_hd, int count, kvs_key_t klen
   if(key) kvs_free(key);
   if(value) kvs_free(value);
   
-  return 0;
+  return SUCCESS;
 }
 
 
@@ -279,7 +281,7 @@ int perform_insertion(int id, kvs_container_handle cont_hd, int count, kvs_key_t
   char *value = (char*)kvs_malloc(vlen, 4096);
   if(key == NULL || value == NULL) {
     fprintf(stderr, "failed to allocate\n");
-    exit(1);
+    return FAILED;
   }
 
   int start_key = id * count;
@@ -299,7 +301,9 @@ int perform_insertion(int id, kvs_container_handle cont_hd, int count, kvs_key_t
     int ret = kvs_store_tuple(cont_hd, &kvskey, &kvsvalue, &put_ctx);    
     if(ret != KVS_SUCCESS ) {
       fprintf(stderr, "store tuple failed with error 0x%x - %s\n", ret, kvs_errstr(ret));
-      exit(1);
+      kvs_free(key);
+      kvs_free(value);
+      return FAILED;
     } else {
       //fprintf(stdout, "thread %d store key %s with value %s done \n", id, key, value);
     }
@@ -311,7 +315,7 @@ int perform_insertion(int id, kvs_container_handle cont_hd, int count, kvs_key_t
   if(key) kvs_free(key);
   if(value) kvs_free(value);
 
-  return 0;
+  return SUCCESS;
 }
 
 int perform_delete(int id, kvs_container_handle cont_hd, int count, kvs_key_t klen, uint32_t vlen) {
@@ -320,7 +324,7 @@ int perform_delete(int id, kvs_container_handle cont_hd, int count, kvs_key_t kl
   
   if(key == NULL) {
     fprintf(stderr, "failed to allocate\n");
-    exit(1);
+    return FAILED;
   }
 
   int start_key = id * count;  
@@ -332,14 +336,15 @@ int perform_delete(int id, kvs_container_handle cont_hd, int count, kvs_key_t kl
     int ret = kvs_delete_tuple(cont_hd, &kvskey, &del_ctx);
     if(ret != KVS_SUCCESS) {
       fprintf(stderr, "delete tuple failed with error 0x%x - %s\n", ret, kvs_errstr(ret));
-      exit(1);
+      kvs_free(key);
+      return FAILED;
     } else {
       fprintf(stderr, "delete key %s done \n", key);
     }
   }
 
   if(key) kvs_free(key);
-  return 0;
+  return SUCCESS;
 }
 
 int perform_key_exist(int id, kvs_container_handle cont_hd, int count, kvs_key_t klen, uint32_t vlen) {
@@ -347,7 +352,7 @@ int perform_key_exist(int id, kvs_container_handle cont_hd, int count, kvs_key_t
   char *key  = (char*)kvs_malloc(klen, 4096);
   if(key == NULL) {
     fprintf(stderr, "failed to allocate\n");
-    exit(1);
+    return FAILED;
   }
   uint8_t status = 0;
   int start_key = id * count;
@@ -360,14 +365,15 @@ int perform_key_exist(int id, kvs_container_handle cont_hd, int count, kvs_key_t
     int ret = kvs_exist_tuples(cont_hd, 1, &kvskey, 1, &status, &exist_ctx);
     if(ret != KVS_SUCCESS && ret != KVS_ERR_KEY_NOT_EXIST)  {
       fprintf(stderr, "exist tuple failed with error 0x%x - %s\n", ret, kvs_errstr(ret));
-      exit(1);
+      kvs_free(key);
+      return FAILED;
     } else {
       fprintf(stderr, "check key %s exist? %s\n", key, status == 0? "FALSE":"TRUE");
     }
   }
 
   if(key) kvs_free(key);
-  return 0;
+  return SUCCESS;
 }
 
 
@@ -387,7 +393,7 @@ void do_io(int id, kvs_container_handle cont_hd, int count, kvs_key_t klen, uint
     break;
   case ITERATOR_OP:
     //perform_insertion(id, cont_hd, count, klen, vlen);
-    perform_iterator(cont_hd, 0);
+    perform_iterator(cont_hd);
     //Iterator a key-value pair only works in emulator
     //perform_iterator(cont_handle, 1);
     break;
@@ -397,7 +403,7 @@ void do_io(int id, kvs_container_handle cont_hd, int count, kvs_key_t klen, uint
     break;
   default:
     fprintf(stderr, "Please specify a correct op_type for testing\n");
-    exit(1);
+    return;
 
   }
 }
@@ -440,23 +446,22 @@ int main(int argc, char *argv[]) {
       break;
     case 'h':
       usage(argv[0]);
-      exit(0);
-      break;
+      return SUCCESS;
     default:
       usage(argv[0]);
-      exit(0);
+      return SUCCESS;
     }
   }
 
   if(dev_path == NULL) {
     fprintf(stderr, "Please specify KV SSD device path\n");
     usage(argv[0]);
-    exit(0);
+    return SUCCESS;
   }
 
   if(op_type == ITERATOR_OP && t > 1) {
     fprintf(stdout, "Iterator only supports single thread \n");
-    exit(1);
+    return FAILED;
   }
   
   kvs_init_options options;
@@ -498,7 +503,7 @@ int main(int argc, char *argv[]) {
   ret = kvs_open_device(dev_path, &dev);
   if(ret != KVS_SUCCESS) {
     fprintf(stderr, "Device open failed\n");
-    exit(1);
+    return FAILED;
   }
 
   kvs_container_context ctx;
@@ -528,7 +533,11 @@ int main(int argc, char *argv[]) {
     pthread_attr_setaffinity_np(attr, sizeof(cpu_set_t), &cpus);
 
     ret = pthread_create(&tid[i], attr, iothread, &args[i]);
-    if (ret != 0) { fprintf(stderr, "thread exit\n"); exit(1); }
+    if (ret != 0) { 
+      fprintf(stderr, "thread exit\n");
+      free(attr);
+      return FAILED;
+    }
     pthread_attr_destroy(attr);
     free(attr);
   }
@@ -549,5 +558,5 @@ int main(int argc, char *argv[]) {
   kvs_delete_container(dev, "test");
   kvs_exit_env();
   
-  return 0;
+  return SUCCESS;
 }

@@ -772,7 +772,7 @@ static struct aio_user_ctx *get_aio_user_ctx(void __user *addr, unsigned len, bo
 
     } else {
         mapped_pages = get_user_pages_fast((unsigned long)addr, num_page,
-                0, user_ctx->pages);
+                1, user_ctx->pages);
         if (mapped_pages != num_page) {
             user_ctx->nents = mapped_pages;
             goto exit;
@@ -1457,11 +1457,8 @@ static int nvme_user_cmd(struct nvme_ctrl *ctrl, struct nvme_ns *ns,
 		return -EACCES;
 	if (copy_from_user(&cmd, ucmd, sizeof(cmd)))
 		return -EFAULT;
-#if 1
-	if (is_kv_cmd(cmd.opcode))
-		return nvme_user_kv_cmd(ctrl, ns, (struct nvme_passthru_kv_cmd __user *)ucmd, false);
-#endif
-	memset(&c, 0, sizeof(c));
+
+    memset(&c, 0, sizeof(c));
 	c.common.opcode = cmd.opcode;
 	c.common.flags = cmd.flags;
 	c.common.nsid = cpu_to_le32(cmd.nsid);
@@ -1476,7 +1473,10 @@ static int nvme_user_cmd(struct nvme_ctrl *ctrl, struct nvme_ns *ns,
 
 	if (cmd.timeout_ms)
 		timeout = msecs_to_jiffies(cmd.timeout_ms);
-
+#if 1
+    if (ns == NULL && cmd.opcode == nvme_admin_format_nvm)
+        timeout = (120 * HZ);
+#endif
 	status = nvme_submit_user_cmd(ns ? ns->queue : ctrl->admin_q, &c,
 			(void __user *)(uintptr_t)cmd.addr, cmd.data_len,
 			&cmd.result, timeout);

@@ -102,6 +102,8 @@ private:
   int create_queue(int qdepth, uint16_t qtype, kv_queue_handle *handle, int cqid, int is_polling);
   kv_kdd_context* prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, void *private1, void *private2, bool syncio, kvs_callback_function cbfn);
   int check_opened_iterators(uint32_t bitmask,uint32_t bit_pattern);
+  int32_t trans_iter_type(uint8_t dev_it_type, uint8_t* kvs_it_type);
+
   bool ispersist;
   std::string datapath;
 };

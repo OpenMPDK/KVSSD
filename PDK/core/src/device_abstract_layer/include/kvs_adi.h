@@ -127,6 +127,9 @@ typedef int32_t kv_result;
 
 #define    KV_ERR_ITERATE_REQUEST_FAIL          KVS_ERR_ITERATE_REQUEST_FAIL    ///< fail to process the iterate request
 
+///< device driver does not support.
+#define    KV_ERR_DD_UNSUPPORTED        KVS_ERR_DD_UNSUPPORTED
+
 /** 
  * \mainpage A libary for Samsung Key-Value Storage ADI
  */
@@ -230,7 +233,7 @@ typedef struct _kv_interrupt_handler* kv_interrupt_handler;
 /**
  * The default namespace can be accessed without an actual handle.
  */
-#define KV_NAMESPACE_DEFAULT 1 // default namespace 
+#define KV_NAMESPACE_DEFAULT 0 // default namespace
 /**
  *  [SAMSUNG]
  */

@@ -159,7 +159,7 @@ kv_result kv_emulator::kv_retrieve(const kv_key *key, uint8_t option, kv_value *
         auto it = m_map.find((kv_key*)key);
         if (it != m_map.end()) {
             uint32_t dlen = it->second.length();
-            if (value->offset >= dlen) {
+            if (value->offset != 0 && value->offset >= dlen) {
                 return KV_ERR_VALUE_OFFSET_INVALID;
             }
             uint32_t copylen = std::min(dlen - value->offset, value->length);
@@ -293,7 +293,7 @@ kv_result kv_emulator::kv_open_iterator(const kv_iterator_option opt, const kv_g
         if (m_iterator_list[i].prefix == cond->bit_pattern 
             && m_iterator_list[i].bitmask == cond->bitmask
             && m_iterator_list[i].status == 1) {
-            *iter_hdl = 0;
+            *iter_hdl = i+1;
             return KVS_ERR_ITERATOR_OPEN;
         }
     }
@@ -358,9 +358,6 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_handle_id, k
     key.key = iter_hdl->current_key;
     key.length = iter_hdl->keylength;
 
-    // 4 leading bytes to match
-    uint32_t to_match = iter_hdl->it_cond.bitmask & iter_hdl->it_cond.bit_pattern;
-
     // treat bitmask of 0 as iterating all keys
     bool iterate_all = (iter_hdl->it_cond.bitmask == 0);
 
@@ -386,7 +383,7 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_handle_id, k
             memcpy(&prefix, it->first->key, 4);
 
             // if no more match, which means we reached the end of matching list
-            if (((prefix & iter_hdl->it_cond.bitmask) & iter_hdl->it_cond.bit_pattern) != to_match) {
+            if ((prefix & iter_hdl->it_cond.bitmask) != iter_hdl->it_cond.bit_pattern) {
                 iter_list->end = TRUE;
                 end = TRUE;
                 break;
@@ -415,14 +412,14 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_handle_id, k
         //std::cerr << "found key  " << set0 << std::endl;
         // only output key len when key size is not fixed
         if (!iter_hdl->has_fixed_keylen) {
-            memcpy(buffer + buffer_pos, &klength,        sizeof(uint32_t));
+            memcpy(buffer + buffer_pos, &klength, sizeof(uint32_t));
             buffer_pos += sizeof(uint32_t);
         }
         memcpy(buffer + buffer_pos, it->first->key, klength);
         buffer_pos += klength;
 
         if (include_value) {
-            memcpy(buffer + buffer_pos, &vlength,        sizeof(kv_value_t));
+            memcpy(buffer + buffer_pos, &vlength, sizeof(kv_value_t));
             buffer_pos += sizeof(kv_value_t);
 
             memcpy(buffer + buffer_pos, it->second.data(), vlength);
@@ -436,10 +433,9 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_handle_id, k
             it++;
         }
     }
-
-    // EOF
     // printf("emulator internal iterator: XXX got entries %d\n", counter);
     iter_list->num_entries = counter;
+    iter_list->size = buffer_pos;
     if (end != TRUE) {
         m_iterator_list[iter_handle_id - 1].is_eof = 0;
     } else {
@@ -479,9 +475,6 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_handle_id, kv_ke
         return KV_SUCCESS;
     }
 
-    // 4 leading bytes to match
-    uint32_t to_match = iter_hdl->it_cond.bitmask & iter_hdl->it_cond.bit_pattern;
-
     uint32_t prefix = 0;
     auto it = m_map.lower_bound(&key1);
 
@@ -498,7 +491,7 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_handle_id, kv_ke
     memcpy(&prefix, it->first->key, 4);
 
     // if no more match, which means we reached the end of matching list
-    if (((prefix & iter_hdl->it_cond.bitmask) & iter_hdl->it_cond.bit_pattern) != to_match) {
+    if ((prefix & iter_hdl->it_cond.bitmask) != iter_hdl->it_cond.bit_pattern) {
         iter_hdl->end = TRUE;
         return KV_SUCCESS;
     }

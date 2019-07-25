@@ -9,7 +9,7 @@ Driectory structure
 ===================
 kernel_driver
       | - README
-      | - kernel_v3.10 (linux vanilla kernel 3.10 based)
+      | - kernel_v3.10_depreciated (linux vanilla kernel 3.10 based - was depreciated : not support anymore)
       | - kernel_v3.10.0-327-centos_7_2 (centos 7.2 based)
       | - kernel_v3.10.0-693-centos_7_4 (centos 7.4 based)
       | - kernel_v4.4.0-98-ubuntu-16_04 (ubuntu 16.04 based)

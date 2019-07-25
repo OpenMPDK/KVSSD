@@ -24,11 +24,12 @@
 #define KVCMD_INLINE_KEY_MAX	(16)
 #define KVCMD_MAX_KEY_SIZE		(255)
 #define KVCMD_MIN_KEY_SIZE		(255)
+#define ITER_LIST_ITER_TYPE_OFFSET (1)
 //#define DUMP_ISSUE_CMD
 #define KV_SPACE
 //#define ITER_CLEANUP
 //#define OLD_KV_FORMAT
-
+#define BLOCK_SIZE 512
 
 #define ITER_BUFSIZE 32768
 
@@ -45,7 +46,8 @@ enum nvme_kv_store_option {
     STORE_OPTION_NOTHING = 0,
     STORE_OPTION_COMP = 1,
     STORE_OPTION_IDEMPOTENT = 2,
-    STORE_OPTION_BGCOMP = 4
+    STORE_OPTION_BGCOMP = 4,
+    STORE_OPTION_UPDATE_ONLY = 8,
 };
 
 enum nvme_kv_retrieve_option {
@@ -69,6 +71,8 @@ enum nvme_kv_iter_req_option {
 };
 
 enum nvme_kv_opcode {
+    nvme_cmd_admin_get_log_page	= 0x02,
+    nvme_cmd_admin_identify	= 0x06,
     nvme_cmd_kv_store	= 0x81,
     nvme_cmd_kv_append	= 0x83,
     nvme_cmd_kv_retrieve	= 0x90,
@@ -249,15 +253,16 @@ private:
 public:
 
     uint32_t  get_dev_waf();
-    kv_result kv_store(kv_key *key, kv_value *value, const kv_postprocess_function* cb, int option = 0);
+    kv_result kv_store(kv_key *key, kv_value *value, nvme_kv_store_option option, const kv_postprocess_function* cb);
     kv_result kv_retrieve(kv_key *key, kv_value *value, const kv_postprocess_function* cb);
     kv_result kv_retrieve_sync(kv_key *key, kv_value *value);
     kv_result kv_delete(kv_key *key, const kv_postprocess_function* cb, int check_exist = 0);
-    kv_result iter_open(kv_iter_context *iter_handle);
+    kv_result iter_open(kv_iter_context *iter_handle, nvme_kv_iter_req_option option);
     kv_result iter_close(kv_iter_context *iter_handle);
     kv_result iter_read(kv_iter_context *iter_handle);
     kv_result iter_read_async(kv_iter_context *iter_handle, const kv_postprocess_function *cb);
-    kv_result iter_readall(kv_iter_context *iter_ctx, std::list<std::pair<void*, int> > &buflist);
+    kv_result iter_readall(kv_iter_context *iter_ctx, nvme_kv_iter_req_option option,
+                             std::list<std::pair<void*, int> > &buflist);
     kv_result iter_list(kv_iterator *iter_list, uint32_t *count);
     kv_result poll_completion(uint32_t &num_events, uint32_t timeout_us);
     bool exist(kv_key *key, const kv_postprocess_function *cb = 0);

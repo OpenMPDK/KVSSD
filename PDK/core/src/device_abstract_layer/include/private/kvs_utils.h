@@ -44,6 +44,7 @@
 #include <mutex>
 #include <dirent.h>
 #include <unistd.h>
+#include "kvs_adi.h"
 
 inline void yprintf(std::ostream &stream, const char* fmt, ...)
 {
@@ -214,5 +215,22 @@ static inline void trim(std::string &s) {
     rtrim(s);
 }
 
+// validate key and value
+static inline kv_result validate_key_value(const kv_key *key, const kv_value *value) {
+    if (key->key == NULL) {
+        return KV_ERR_KEY_INVALID;
+    }
+    if (key->length > SAMSUNG_KV_MAX_KEY_LEN || key->length < SAMSUNG_KV_MIN_KEY_LEN) {
+        return KV_ERR_KEY_LENGTH_INVALID;
+    }
+
+    if (value != NULL) {
+        if (value->length < SAMSUNG_KV_MIN_VALUE_LEN || value->length > SAMSUNG_KV_MAX_VALUE_LEN) {
+            return KV_ERR_VALUE_LENGTH_INVALID;
+        }
+    }
+
+    return KV_SUCCESS;
+}
 
 #endif /* INCLUDE_KVS_UTILS_H_ */

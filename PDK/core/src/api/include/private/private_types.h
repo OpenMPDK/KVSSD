@@ -52,7 +52,8 @@
 extern "C" {
 #endif
 
-  
+const int MAX_DEV_PATH_LEN = 256;
+
 class kv_device_priv {
 public:
   kv_device_priv() {
@@ -145,6 +146,7 @@ public:
 struct _kvs_device_handle {
   kv_device_priv * dev;
   KvsDriver* driver;
+  char* dev_path;
 };
 
 struct _kvs_container_handle {

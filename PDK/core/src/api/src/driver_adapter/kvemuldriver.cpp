@@ -46,16 +46,35 @@
 #define MAX_POOLSIZE 10240
 #define use_pool
 
-inline void free_if_error(int ret, KvEmulator::kv_emul_context *ctx, std::queue<KvEmulator::kv_emul_context *> &pool, std::mutex& pool_lock) {
- if (ret != 0) {
-   #if defined use_pool
-      std::unique_lock<std::mutex> lock(pool_lock);
-      memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-      pool.push(ctx);
-    #else 
-      free(ctx);
-    #endif
+inline void malloc_context(KvEmulator::kv_emul_context **ctx,
+  std::condition_variable* ctx_pool_notfull,
+  std::queue<KvEmulator::kv_emul_context *> &pool, std::mutex& pool_lock){
+#if defined use_pool
+  std::unique_lock<std::mutex> lock(pool_lock);
+  while (pool.empty()) {
+      ctx_pool_notfull->wait(lock);
   }
+  *ctx = pool.front();
+  pool.pop();
+  lock.unlock();
+#else
+  *ctx = (kv_emul_context *)calloc(1, sizeof(kv_emul_context));
+#endif
+}
+
+inline void free_context(KvEmulator::kv_emul_context *ctx,
+  std::condition_variable* ctx_pool_notfull,
+  std::queue<KvEmulator::kv_emul_context *> &pool, std::mutex& pool_lock) {
+#if defined use_pool
+  std::unique_lock<std::mutex> lock(pool_lock);
+  memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
+  pool.push(ctx);
+  ctx_pool_notfull->notify_one();
+  lock.unlock();
+#else 
+  free(ctx);
+  ctx = NULL;
+#endif
 }
 
 
@@ -111,27 +130,9 @@ void on_io_complete(kv_io_context *context){
 	ctx->on_complete(iocb);
       }
     }
-
-#if defined use_pool
-    if(!ctx->syncio) {
-      std::unique_lock<std::mutex> lock(owner->lock);
-      if(ctx->key) {
-	owner->kv_key_pool.push(ctx->key);
-      }
-      if(ctx->value) {
-	owner->kv_value_pool.push(ctx->value);
-      }
-      
-      memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-      owner->kv_ctx_pool.push(ctx);
-      lock.unlock();
+    if(!ctx->syncio) { 
+      free_context(ctx, &owner->ctx_pool_notfull, owner->kv_ctx_pool, owner->lock);
     }
-#else
-    if(!ctx->syncio) {
-      free(ctx);
-      ctx = NULL;
-    }
-#endif
   }
 }
 
@@ -169,8 +170,6 @@ int32_t KvEmulator::init(const char* devpath, const char* configfile, int queued
 #endif
   
   for (int i = 0; i < MAX_POOLSIZE; i++) {
-    this->kv_key_pool.push(new kv_key());
-    this->kv_value_pool.push(new kv_value());
     this->kv_ctx_pool.push(new kv_emul_context());
   }
 
@@ -196,18 +195,8 @@ int32_t KvEmulator::init(const char* devpath, const char* configfile, int queued
 }
 
 KvEmulator::kv_emul_context* KvEmulator::prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, void *private1, void *private2, bool syncio, kvs_callback_function cbfn){
-
-#if defined use_pool
-  std::unique_lock<std::mutex> lock(this->lock);
-  kv_emul_context *ctx = this->kv_ctx_pool.front();
-  this->kv_ctx_pool.pop();
-  lock.unlock();
-#else
-  kv_emul_context *ctx = (kv_emul_context *)calloc(1, sizeof(kv_emul_context));
-#endif
-  
-  //kv_emul_context *ctx = (kv_emul_context *)calloc(1, sizeof(kv_emul_context));
-  
+  kv_emul_context *ctx = NULL;
+  malloc_context(&ctx, &this->ctx_pool_notfull, this->kv_ctx_pool, this->lock);
   ctx->on_complete = cbfn;
   ctx->iocb.opcode = opcode;
   //ctx->iocb.contid = contid;
@@ -281,62 +270,19 @@ int32_t KvEmulator::store_tuple(int contid, const kvs_key *key, const kvs_value 
     }
   }
   
-#if defined use_pool
-  std::unique_lock<std::mutex> lock(this->lock);
-  kv_key *key_adi = this->kv_key_pool.front();
-  this->kv_key_pool.pop();
-  kv_value *value_adi = this->kv_value_pool.front();
-  this->kv_value_pool.pop();
-  lock.unlock();
-
-  ctx->key = key_adi;
-  ctx->value = value_adi;
-  
-  key_adi->key = key->key;
-  key_adi->length = (kv_key_t)key->length;
-  value_adi->value = value->value;
-  value_adi->length = (kv_value_t)value->length;
-  value_adi->offset = 0;
- 
-  int ret = kv_store(this->sqH, this->nsH, key_adi, value_adi, option_adi, &f);
-#else
   ctx->key = (kv_key*)key;
   ctx->value = (kv_value*)value;
-  
   int ret = kv_store(this->sqH, this->nsH, (kv_key*)key, (kv_value*)value, option_adi, &f);
-#endif
-  
-  if(syncio && ret == 0) {
+
+  if(syncio) {
     std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
     while(ctx->done_sync == 0)
       ctx->done_cond_sync.wait(lock_s);
     lock_s.unlock();    
-    if (syncio )ret = ctx->iocb.result;
+    ret = ctx->iocb.result;
 
-#if defined use_pool
-    /*
-    std::unique_lock<std::mutex> lock(this->lock);
-    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-    this->kv_ctx_pool.push(ctx);
-    lock.unlock();
-    */
-    std::unique_lock<std::mutex> lock(this->lock);    
-    this->kv_key_pool.push(key_adi);
-    this->kv_value_pool.push(value_adi);
-    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-    this->kv_ctx_pool.push(ctx);
-    
-    //free(ctx);
-    //ctx = NULL;
-#else
-    free(ctx);
-    ctx = NULL;
-#endif
-    
+    free_context(ctx, &this->ctx_pool_notfull, this->kv_ctx_pool, this->lock);
   }
-  
-  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
-  
   return ret;
 }
 
@@ -358,63 +304,20 @@ int32_t KvEmulator::retrieve_tuple(int contid, const kvs_key *key, kvs_value *va
     else
       option_adi = KV_RETRIEVE_OPT_DECOMPRESS_DELETE;
   }
-  
-#if defined use_pool
-  std::unique_lock<std::mutex> lock(this->lock);
-  kv_key *key_adi = this->kv_key_pool.front();
-  this->kv_key_pool.pop();
-  kv_value *value_adi = this->kv_value_pool.front();
-  this->kv_value_pool.pop();
-  lock.unlock();
-  
-  ctx->key = key_adi;
-  ctx->value = value_adi;
-    
-  key_adi->key = key->key;
-  key_adi->length = key->length;
-  value_adi->value = value->value;
-  value_adi->length = (kv_value_t)value->length;
-  value_adi->offset = 0;
 
-  int ret = kv_retrieve(this->sqH, this->nsH, key_adi, option_adi, value_adi, &f);
-#else
   ctx->key = (kv_key*)key;
   ctx->value = (kv_value*)value;
   int ret = kv_retrieve(this->sqH, this->nsH, (kv_key*)key, option_adi, (kv_value*)value, &f);
-#endif
-  
-  if(syncio && ret == 0) {
+  if(syncio) {
     std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
     while(ctx->done_sync == 0)
       ctx->done_cond_sync.wait(lock_s);
     lock_s.unlock();
-    if (syncio) {
-      ret = ctx->iocb.result;
-      value->actual_value_size = ctx->iocb.value->actual_value_size;
-    }
+    ret = ctx->iocb.result;
+    value->actual_value_size = ctx->iocb.value->actual_value_size;
     
-#if defined use_pool
-    /*
-    std::unique_lock<std::mutex> lock(this->lock);
-    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-    this->kv_ctx_pool.push(ctx);
-    lock.unlock();
-    */
-
-    std::unique_lock<std::mutex> lock(this->lock);
-    this->kv_key_pool.push(key_adi);
-    this->kv_value_pool.push(value_adi);
-    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-    this->kv_ctx_pool.push(ctx);
-    
-    //free(ctx);
-    //ctx = NULL;
-#else
-    free(ctx);
-    ctx = NULL;
-#endif
+    free_context(ctx, &this->ctx_pool_notfull, this->kv_ctx_pool, this->lock);
   }
-  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);
   return ret;
 }
 
@@ -428,51 +331,18 @@ int32_t KvEmulator::delete_tuple(int contid, const kvs_key *key, kvs_delete_opti
   else
     option_adi = KV_DELETE_OPT_ERROR;
   
-#if defined use_pool
-  std::unique_lock<std::mutex> lock(this->lock);
-  kv_key *key_adi = this->kv_key_pool.front();
-  this->kv_key_pool.pop();
-  lock.unlock();
-  ctx->key = key_adi;
-  ctx->value = NULL;
-  
-  key_adi->key = key->key;
-  key_adi->length = key->length;
-
-  int ret =  kv_delete(this->sqH, this->nsH, key_adi, option_adi, &f);
-#else
   ctx->key = (kv_key*)key;
   ctx->value = NULL;
   int ret =  kv_delete(this->sqH, this->nsH, (kv_key*)key, option_adi, &f);
-#endif
-  
-  if(syncio && ret == 0) {
+  if(syncio) {
     std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
     while(ctx->done_sync == 0)
       ctx->done_cond_sync.wait(lock_s);
     lock_s.unlock();
     if (syncio )ret = ctx->iocb.result;
 
-#if defined use_pool
-    /*
-    std::unique_lock<std::mutex> lock(this->lock);
-    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-    this->kv_ctx_pool.push(ctx);
-    lock.unlock();
-    */
-    std::unique_lock<std::mutex> lock(this->lock);
-    this->kv_key_pool.push(key_adi);
-    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-    this->kv_ctx_pool.push(ctx);
-    //free(ctx);
-    //ctx = NULL;
-#else
-    free(ctx);
-    ctx = NULL;
-#endif
-    
+    free_context(ctx, &this->ctx_pool_notfull, this->kv_ctx_pool, this->lock);
   }
-  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
   return ret;
 }
 
@@ -489,24 +359,16 @@ int32_t KvEmulator::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *key
   
   int ret = kv_exist(this->sqH, this->nsH, (kv_key*)keys, key_cnt, buffer_size, result_buffer, &f);
 
-  if(syncio && ret == 0) {
+  if(syncio) {
     std::unique_lock<std::mutex> lock_s(ctx->lock_sync);
     while(ctx->done_sync == 0)
       ctx->done_cond_sync.wait(lock_s);
     lock_s.unlock();
     if (syncio )ret = ctx->iocb.result;
     
-#if defined use_pool
-    std::unique_lock<std::mutex> lock(this->lock);
-    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-    this->kv_ctx_pool.push(ctx);
-#else
-    free(ctx);
-    ctx = NULL;
-#endif
+    free_context(ctx, &this->ctx_pool_notfull, this->kv_ctx_pool, this->lock);
   }
-  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
-  return 0;
+  return ret;
 }
 
 int32_t KvEmulator::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_option option, uint32_t bitmask,
@@ -530,6 +392,7 @@ int32_t KvEmulator::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_op
 
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_open_iterator failed with error:  0x%X\n", ret);
+    free_context(ctx, &this->ctx_pool_notfull, this->kv_ctx_pool, this->lock);
     return ret;
   }
 
@@ -546,23 +409,7 @@ int32_t KvEmulator::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_op
   }
 
   ret = ctx->iocb.result;
-  //*iter_hd = iterh;
-#if defined use_pool
-  
-  std::unique_lock<std::mutex> lock(this->lock);
-  memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-  this->kv_ctx_pool.push(ctx);
-  lock.unlock();
-  
-  //free(ctx);
-  //ctx = NULL;
-#else
-  free(ctx);
-  ctx = NULL;
-#endif
-
-  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
-
+  free_context(ctx, &this->ctx_pool_notfull, this->kv_ctx_pool, this->lock);
   return ret;
 }
 
@@ -576,7 +423,8 @@ int32_t KvEmulator::close_iterator(int contid, kvs_iterator_handle hiter) {
   ret = kv_close_iterator(this->sqH, this->nsH, hiter/*iterh_adib*/, &f);
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_open_iterator failed with error:  0x%X\n", ret);
-    exit(1);
+    free_context(ctx, &this->ctx_pool_notfull, this->kv_ctx_pool, this->lock);
+    return ret;
   }
 
   if(!this->int_handler) { // polling
@@ -591,22 +439,7 @@ int32_t KvEmulator::close_iterator(int contid, kvs_iterator_handle hiter) {
     lock_s.unlock();
   }
 
-  //if(hiter) free(hiter);
-  
-#if defined use_pool
-  
-  std::unique_lock<std::mutex> lock(this->lock);
-  memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-  this->kv_ctx_pool.push(ctx);
-  lock.unlock();
-  
-  //free(ctx);
-  //ctx = NULL;
-#else
-  free(ctx);
-  ctx = NULL;
-#endif
-  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
+  free_context(ctx, &this->ctx_pool_notfull, this->kv_ctx_pool, this->lock);
 
   return 0;
 }
@@ -646,6 +479,7 @@ int32_t KvEmulator::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *
   ret = kv_iterator_next(this->sqH, this->nsH, hiter/*iterh_adi*/, (kv_iterator_list *)iter_list, &f);
   if(ret != KV_SUCCESS) {
     fprintf(stderr, "kv_iterator_next failed with error:  0x%X\n", ret);
+    free_context(ctx, &this->ctx_pool_notfull, this->kv_ctx_pool, this->lock);
     return ret;
   }
 
@@ -655,23 +489,10 @@ int32_t KvEmulator::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *
       ctx->done_cond_sync.wait(lock_s);
     lock_s.unlock();
     ret = ctx->iocb.result;
-
-#if defined use_pool
     
-    std::unique_lock<std::mutex> lock(ctx->lock_sync);
-    memset(ctx, 0, sizeof(KvEmulator::kv_emul_context));
-    this->kv_ctx_pool.push(ctx);
-    lock.unlock();
-    
-    //free(ctx);
-    //ctx = NULL;
-#else
-    free(ctx);
-    ctx = NULL;
-#endif
+    free_context(ctx, &this->ctx_pool_notfull, this->kv_ctx_pool, this->lock);
   }
-  free_if_error(ret, ctx, this->kv_ctx_pool, this->lock);;
-  return ret;
+  return ret; 
 }
 
 float KvEmulator::get_waf(){
@@ -731,19 +552,6 @@ int32_t KvEmulator::process_completions(int max)
 
 
 KvEmulator::~KvEmulator() {
-
-  while(!this->kv_key_pool.empty()) {
-    auto p = this->kv_key_pool.front();
-    this->kv_key_pool.pop();
-    delete p;
-  }
-
-  while(!this->kv_value_pool.empty()) {
-    auto p = this->kv_value_pool.front();
-    this->kv_value_pool.pop();
-    delete p;
-  }
-  
   while(!this->kv_ctx_pool.empty()) {
     auto p = this->kv_ctx_pool.front();
     this->kv_ctx_pool.pop();

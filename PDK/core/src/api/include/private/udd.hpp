@@ -96,7 +96,7 @@ private:
   std::string datapath;
 
   kv_udd_context* prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, void *private1, void *private2, bool syncio, kvs_callback_function cbfn);
-  
+  int32_t trans_iter_type(uint8_t dev_it_type, uint8_t* kvs_it_type);
 };
 
 #endif

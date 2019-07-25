@@ -82,7 +82,6 @@ void udd_iterate_cb(kv_iterate *it, unsigned int result, unsigned int status) {
     // first 4 bytes are for key counts
     uint32_t num_key = *((unsigned int*)it->kv.value.value);
     ctx->iter_list->num_entries = num_key;
-  
     char *data_buff = (char *)it->kv.value.value;
     unsigned int buffer_size = it->kv.value.length;
     char *current_ptr = data_buff;
@@ -131,7 +130,10 @@ void udd_iterate_cb(kv_iterate *it, unsigned int result, unsigned int status) {
   }
   
   ctx->iter_list->it_list = it->kv.value.value;
-  ctx->iter_list->size = it->kv.value.length;
+  if(it->kv.value.length > KV_IT_READ_BUFFER_META_LEN)
+    ctx->iter_list->size = it->kv.value.length - KV_IT_READ_BUFFER_META_LEN;
+  else
+    ctx->iter_list->size = it->kv.value.length;
   if(ctx->on_complete && iocb) ctx->on_complete(iocb);    
   
   if (ctx) {
@@ -160,6 +162,9 @@ void udd_write_cb(kv_pair *kv, unsigned int result, unsigned int status) {
     else if (status == KV_SUCCESS)
       status = 1;
     *iocb->result_buffer = status;
+  } else if (iocb->opcode == IOCB_ASYNC_GET_CMD) {
+    if (status == KV_SUCCESS && kv->value.actual_value_size > kv->value.length)
+      iocb->result = KVS_ERR_BUFFER_SMALL;
   } else {
     if(status == KV_SUCCESS) {
       iocb->result = KVS_SUCCESS;
@@ -262,7 +267,7 @@ int32_t KUDDriver::init(const char* devpath, bool syncio, uint64_t sq_core, uint
   CPU_SET(0, &cpuset); // CPU 0
   sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
 
-  memcpy(trid, devpath, 1024);
+  strcpy(trid, devpath); //copy dev path
   handle = kv_nvme_open(devpath);
   if(handle == 0) {
     fprintf(stderr, "Failed to open device: %s", "KVS_ERR_DEV_INIT");
@@ -309,6 +314,29 @@ KUDDriver::kv_udd_context* KUDDriver::prep_io_context(int opcode, int contid, co
   
   return ctx;
   
+}
+
+//translate iterator type from device to api
+int32_t KUDDriver::trans_iter_type(uint8_t dev_it_type, uint8_t* kvs_it_type){ 
+  if(kvs_it_type == NULL)
+  return KVS_ERR_PARAM_INVALID;
+ 
+  int ret = KVS_SUCCESS;
+  switch(dev_it_type){
+    case KV_KEY_ITERATE:
+      *kvs_it_type = KVS_ITERATOR_KEY;
+      break;
+    case KV_KEY_ITERATE_WITH_RETRIEVE:
+      *kvs_it_type = KVS_ITERATOR_KEY_VALUE;
+      break;
+    case KV_KEY_ITERATE_WITH_DELETE:
+      *kvs_it_type = KVS_ITERATOR_WITH_DELETE;
+      break;
+    default:
+      ret = KVS_ERR_OPTION_INVALID;
+      break;
+  }
+  return ret;
 }
 
 /* MAIN ENTRY POINT */
@@ -408,11 +436,30 @@ int32_t KUDDriver::store_tuple(int contid, const kvs_key *key, const kvs_value *
   } else {
     while (ret) {
       ret = kv_nvme_write_async(handle, DEFAULT_IO_QUEUE_ID, kv);
-      if(ret) {
-	usleep(1);
+      if(ret == KV_ERR_DD_NO_AVAILABLE_RESOURCE || ret == KV_ERR_DD_NO_AVAILABLE_QUEUE) {
+        usleep(1);
       }
       else {
-	break;
+        if(ret == KV_SUCCESS) {
+          ret = KVS_SUCCESS;
+        } else if(ret == KV_ERR_INVALID_VALUE_SIZE) {
+          ret = KVS_ERR_VALUE_LENGTH_INVALID;
+        } else if (ret == KV_ERR_INVALID_KEY_SIZE) {
+          ret = KVS_ERR_KEY_LENGTH_INVALID;
+        } else if (ret == KV_ERR_DD_INVALID_PARAM) {
+          ret = KVS_ERR_PARAM_INVALID;
+        } else if (ret == KV_ERR_DD_INVALID_QUEUE_TYPE) {
+          ret = KVS_ERR_DD_INVALID_QUEUE_TYPE;
+        } else {
+          fprintf(stderr, "[%s] error. key=%s option=%d value.length=%d value.offset=%d status code = 0x%x\n", __FUNCTION__, (char*)key->key, kv->param.io_option.store_option,kv->value.length, kv->value.offset, ret);
+          ret = KVS_ERR_SYS_IO;
+        }
+        if (ret != KV_SUCCESS) {
+          this->kv_pair_pool.push(kv);
+          free(ctx);
+          ctx = NULL;
+        }
+        break;
       }
     }
   }
@@ -465,6 +512,8 @@ int32_t KUDDriver::retrieve_tuple(int contid, const kvs_key *key, kvs_value *val
 
     if(ret == KV_SUCCESS) {
       ret = KVS_SUCCESS;
+      if (kv->value.actual_value_size > kv->value.length)
+        ret = KVS_ERR_BUFFER_SMALL;
     } else if(ret == KV_ERR_INVALID_VALUE_SIZE || ret == KV_ERR_MAXIMUM_VALUE_SIZE_LIMIT_EXCEEDED) {
       ret = KVS_ERR_VALUE_LENGTH_INVALID;
     } else if (ret == KV_ERR_INVALID_VALUE_OFFSET) {
@@ -488,17 +537,37 @@ int32_t KUDDriver::retrieve_tuple(int contid, const kvs_key *key, kvs_value *val
     } else if (ret == KV_ERR_BUFFER) {
       ret = KVS_ERR_BUFFER_SMALL;
     } else {
-      fprintf(stderr, "[%s] error. key=%s option=%d value.length=%d value.offset=%d status code = 0x%x\n", __FUNCTION__, (char*)key->key, kv->param.io_option.store_option,kv->value.length, kv->value.offset, ret);
+      fprintf(stderr, "[%s] error. key=%s option=%d value.length=%d value.offset=%d status code = 0x%x\n", __FUNCTION__, (char*)key->key, kv->param.io_option.retrieve_option,kv->value.length, kv->value.offset, ret);
       ret = KVS_ERR_SYS_IO;
     }
     
   } else {
     while (ret) {
       ret = kv_nvme_read_async(handle, DEFAULT_IO_QUEUE_ID, kv);
-      if(ret) {
-	usleep(1);
-      } else {
-	break;
+      if(ret == KV_ERR_DD_NO_AVAILABLE_RESOURCE || ret == KV_ERR_DD_NO_AVAILABLE_QUEUE) {
+        usleep(1);
+      }
+      else {
+        if(ret == KV_SUCCESS) {
+          ret = KVS_SUCCESS;
+        } else if(ret == KV_ERR_INVALID_VALUE_SIZE) {
+          ret = KVS_ERR_VALUE_LENGTH_INVALID;
+        } else if (ret == KV_ERR_INVALID_KEY_SIZE) {
+          ret = KVS_ERR_KEY_LENGTH_INVALID;
+        } else if (ret == KV_ERR_DD_INVALID_PARAM) {
+          ret = KVS_ERR_PARAM_INVALID;
+        } else if (ret == KV_ERR_DD_INVALID_QUEUE_TYPE) {
+          ret = KVS_ERR_DD_INVALID_QUEUE_TYPE;
+        } else {
+          fprintf(stderr, "[%s] error. key=%s option=%d value.length=%d value.offset=%d status code = 0x%x\n", __FUNCTION__, (char*)key->key, kv->param.io_option.retrieve_option,kv->value.length, kv->value.offset, ret);
+          ret = KVS_ERR_SYS_IO;
+        }
+        if (ret != KV_SUCCESS) {
+          this->kv_pair_pool.push(kv);
+          free(ctx);
+          ctx = NULL;
+        }
+        break;
       }
     }
   }
@@ -565,17 +634,37 @@ int32_t KUDDriver::delete_tuple(int contid, const kvs_key *key, kvs_delete_optio
     } else if (ret == KV_ERR_BUFFER) {
       ret = KVS_ERR_BUFFER_SMALL;
     } else {
-      fprintf(stderr, "[%s] error. key=%s option=%d value.length=%d value.offset=%d status code = 0x%x\n", __FUNCTION__, (char*)key->key, kv->param.io_option.store_option,kv->value.length, kv->value.offset, ret);
+      fprintf(stderr, "[%s] error. key=%s option=%d status code = 0x%x\n", __FUNCTION__, (char*)key->key, kv->param.io_option.delete_option, ret);
       ret = KVS_ERR_SYS_IO;
     }
     
   } else {
     while(ret){
       ret = kv_nvme_delete_async(handle, DEFAULT_IO_QUEUE_ID, kv);
-      if(ret){
-	usleep(1);
-      } else {
-	break;
+      if(ret == KV_ERR_DD_NO_AVAILABLE_RESOURCE || ret == KV_ERR_DD_NO_AVAILABLE_QUEUE) {
+        usleep(1);
+      }
+      else {
+        if(ret == KV_SUCCESS) {
+          ret = KVS_SUCCESS;
+        } else if (ret == KV_ERR_DD_UNSUPPORTED_CMD){
+          ret = KVS_ERR_OPTION_INVALID;
+        } else if (ret == KV_ERR_INVALID_KEY_SIZE) {
+          ret = KVS_ERR_KEY_LENGTH_INVALID;
+        } else if (ret == KV_ERR_DD_INVALID_PARAM) {
+          ret = KVS_ERR_PARAM_INVALID;
+        } else if (ret == KV_ERR_DD_INVALID_QUEUE_TYPE) {
+          ret = KVS_ERR_DD_INVALID_QUEUE_TYPE;
+        } else {
+          fprintf(stderr, "[%s] error. key=%s option=%d status code = 0x%x\n", __FUNCTION__, (char*)key->key, kv->param.io_option.delete_option, ret);
+          ret = KVS_ERR_SYS_IO;
+        }
+        if (ret != KV_SUCCESS) {
+          this->kv_pair_pool.push(kv);
+          free(ctx);
+          ctx = NULL;
+        }
+        break;
       }
     }	
   }
@@ -585,7 +674,7 @@ int32_t KUDDriver::delete_tuple(int contid, const kvs_key *key, kvs_delete_optio
 
 int32_t KUDDriver::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, void *private1, void *private2, bool syncio, kvs_callback_function cbfn ) {
 
-  int ret;
+  int ret = 1;
   auto ctx = prep_io_context(IOCB_ASYNC_CHECK_KEY_EXIST_CMD, contid, keys, NULL, private1, private2, syncio, cbfn);
   ctx->iocb.result_buffer = result_buffer;
   
@@ -634,7 +723,7 @@ int32_t KUDDriver::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys
     } else if (ret == KV_ERR_BUFFER) {
        *result_buffer = ret = KVS_ERR_BUFFER_SMALL;
     } else {
-      fprintf(stderr, "[%s] error. key=%s option=%d value.length=%d value.offset=%d status code = 0x%x\n", __FUNCTION__, (char*)keys->key, kv->param.io_option.store_option,kv->value.length, kv->value.offset, ret);
+       fprintf(stderr, "[%s] error. key=%s option=%d status code = 0x%x\n", __FUNCTION__, (char*)keys->key, kv->param.io_option.exist_option, ret);
        *result_buffer = ret = KVS_ERR_SYS_IO;
     }
     
@@ -642,13 +731,34 @@ int32_t KUDDriver::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys
     free(ctx);
     ctx = NULL;    
   } else {
-    ret = kv_nvme_exist_async(handle, DEFAULT_IO_QUEUE_ID, kv);
-    if(ret == KV_ERR_NOT_EXIST_KEY) {
-      *result_buffer = KVS_ERR_KEY_NOT_EXIST;
-      ret = KVS_SUCCESS;
-    }
-    else
-      *result_buffer = ret;
+    while(ret){
+      ret = kv_nvme_exist_async(handle, DEFAULT_IO_QUEUE_ID, kv);
+      if(ret == KV_ERR_DD_NO_AVAILABLE_RESOURCE || ret == KV_ERR_DD_NO_AVAILABLE_QUEUE) {
+        usleep(1);
+      }
+      else {
+        if(ret == KV_SUCCESS) {
+          ret = KVS_SUCCESS;
+        } else if (ret == KV_ERR_DD_UNSUPPORTED_CMD){
+          ret = KVS_ERR_OPTION_INVALID;
+        } else if (ret == KV_ERR_INVALID_KEY_SIZE) {
+          ret = KVS_ERR_KEY_LENGTH_INVALID;
+        } else if (ret == KV_ERR_DD_INVALID_PARAM) {
+          ret = KVS_ERR_PARAM_INVALID;
+        } else if (ret == KV_ERR_DD_INVALID_QUEUE_TYPE) {
+          ret = KVS_ERR_DD_INVALID_QUEUE_TYPE;
+        } else {
+          fprintf(stderr, "[%s] error. key=%s option=%d status code = 0x%x\n", __FUNCTION__, (char*)keys->key, kv->param.io_option.exist_option, ret);
+          ret = KVS_ERR_SYS_IO;
+        }
+        if (ret != KV_SUCCESS) {
+          this->kv_pair_pool.push(kv);
+          free(ctx);
+          ctx = NULL;
+        }
+        break;
+      }
+    }	
   }
 
   return ret;
@@ -661,11 +771,21 @@ int32_t KUDDriver::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_opt
 
   uint8_t option_udd;
 
-  if(option.iter_type == KVS_ITERATOR_KEY)
+  switch(option.iter_type) {
+  case KVS_ITERATOR_KEY:
     option_udd = KV_KEY_ITERATE;
-  else
+    break;
+  case KVS_ITERATOR_KEY_VALUE:
     option_udd = KV_KEY_ITERATE_WITH_RETRIEVE;
-  
+    break;
+  case KVS_ITERATOR_WITH_DELETE:
+    option_udd = KV_KEY_ITERATE_WITH_DELETE;
+    break;
+  default:
+    fprintf(stderr, "ERROR: Wrong iterator option\n");
+    return KVS_ERR_OPTION_INVALID;
+  }
+
   int nr_iterate_handle = KV_MAX_ITERATE_HANDLE;
   int opened = 0;
   kv_iterate_handle_info info[KV_MAX_ITERATE_HANDLE];
@@ -691,40 +811,42 @@ int32_t KUDDriver::open_iterator(int contid,  /*uint8_t option*/kvs_iterator_opt
   uint32_t iterator = KV_INVALID_ITERATE_HANDLE;
   iterator = kv_nvme_iterate_open(handle, KV_KEYSPACE_IODATA, bitmask, bit_pattern, /*(option == KVS_ITERATOR_OPT_KEY ? KV_KEY_ITERATE : KV_KEY_ITERATE_WITH_RETRIEVE)*/option_udd);
 
-  if(iterator != KV_INVALID_ITERATE_HANDLE){
+  if(iterator > KV_INVALID_ITERATE_HANDLE && iterator <= KV_MAX_ITERATE_HANDLE){
+    fprintf(stdout, "Iterate_Open Success: iterator id=0x%x\n", iterator);
+    *iter_hd = iterator;
+    ret = 0;
+  }
+  else{
     if(iterator == KV_ERR_ITERATE_HANDLE_ALREADY_OPENED)
       ret = KVS_ERR_ITERATOR_OPEN;
     else if (iterator == KV_ERR_ITERATE_NO_AVAILABLE_HANDLE)
       ret = KVS_ERR_ITERATOR_MAX;
-    else {
-      fprintf(stdout, "Iterate_Open Success: iterator id=0x%x\n", iterator);
-      ret = 0;
-    }
-    //kvs_iterator_handle iterh = (kvs_iterator_handle)malloc(sizeof(struct _kvs_iterator_handle));
-    //iterh->iterator = iterator;
-    //*iter_hd = iterh;
-    *iter_hd = iterator;
-  } else
-    ret = KVS_ERR_ITERATE_REQUEST_FAIL;
-  
+    else 
+      ret = KVS_ERR_ITERATE_REQUEST_FAIL;
+    fprintf(stdout, "Iterate_Open failed: error code=0x%x\n", ret);
+  }
+
   return ret;
 }
 
 int32_t KUDDriver::close_iterator(int contid, kvs_iterator_handle hiter) {
 
-  int ret = 0;
+  int ret = KVS_ERR_PARAM_INVALID;
   //if(hiter->iterator > 0)
-  if(hiter > 0)
+  if(hiter > 0) {
     ret = kv_nvme_iterate_close(handle, hiter/*->iterator*/);
-
-  if(ret != KV_SUCCESS) {
-    if(ret == KV_ERR_ITERATE_FAIL_TO_PROCESS_REQUEST) {
-      ret = KVS_ERR_ITERATOR_NOT_EXIST;
-    } else
-      ret = KVS_ERR_SYS_IO;
+    if(ret != KV_SUCCESS) {
+      if(ret == KV_ERR_ITERATE_FAIL_TO_PROCESS_REQUEST) {
+        ret = KVS_ERR_ITERATOR_NOT_EXIST;
+      }else if(ret == KV_ERR_DD_INVALID_PARAM){
+        ret = KVS_ERR_PARAM_INVALID;
+      } else {
+        ret = KVS_ERR_SYS_IO;
+      }
+    }
   }
+
   //if(hiter) free(hiter);
-  
   return ret;
 }
 
@@ -751,10 +873,20 @@ int32_t KUDDriver::list_iterators(int contid, kvs_iterator_info *kvs_iters, uint
   //kv_iterate_handle_info info[KV_MAX_ITERATE_HANDLE];
   
   int ret = kv_nvme_iterate_info(handle, (kv_iterate_handle_info*)kvs_iters, count);
-
+  if(ret == KV_SUCCESS){
+    for(uint32_t idx = 0; idx < count; idx++){
+      if(kvs_iters[idx].status == 0)
+        continue;
+      ret = trans_iter_type(kvs_iters[idx].type, &kvs_iters[idx].type);
+      if(ret != KVS_SUCCESS){
+        if(ret == KVS_ERR_OPTION_INVALID)
+          ret = KVS_ERR_ITERATOR_COND_INVALID;
+        break;
+      }
+    }
+  }
   if(ret == KV_ERR_DD_INVALID_PARAM)
     ret = KVS_ERR_PARAM_INVALID;
-  
   return ret;
 }
 
@@ -862,7 +994,7 @@ int32_t KUDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *i
     memcpy((char*)it->kv.value.value, (char*)it->kv.value.value + 4,  it->kv.value.length - 4);
     */
     iter_list->it_list = it->kv.value.value;
-    iter_list->size = it->kv.value.length;
+    iter_list->size = it->kv.value.length - KV_IT_READ_BUFFER_META_LEN;
     
     if (it) {
       kv_free(it);
@@ -875,10 +1007,33 @@ int32_t KUDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *i
   } else { // async
     while(ret) {
       ret = kv_nvme_iterate_read_async(handle, DEFAULT_IO_QUEUE_ID, it);
-      if(ret) {
-	usleep(1);
-      } else {
-	break;
+      if(ret == KV_ERR_DD_NO_AVAILABLE_RESOURCE || ret == KV_ERR_DD_NO_AVAILABLE_QUEUE) {
+        usleep(1);
+      }
+      else {
+        if(ret == KV_SUCCESS) {
+          ret = KVS_SUCCESS;
+        } else if (ret == KV_ERR_DD_UNSUPPORTED_CMD){
+          ret = KVS_ERR_OPTION_INVALID;
+        } else if (ret == KV_ERR_DD_INVALID_PARAM) {
+          ret = KVS_ERR_PARAM_INVALID;
+        } else if (ret == KV_ERR_DD_INVALID_QUEUE_TYPE) {
+          ret = KVS_ERR_DD_INVALID_QUEUE_TYPE;
+        } else {
+          fprintf(stderr, "[%s] error. status code = 0x%x\n", __FUNCTION__, ret);
+          ret = KVS_ERR_SYS_IO;
+        }
+        if (ret != KV_SUCCESS) {
+          if (it) {
+            kv_free(it);
+            it = NULL;
+          }
+          if(ctx) {
+            free(ctx);
+            ctx = NULL;
+          }
+        }
+        break;
       }
     }
   }

@@ -47,6 +47,8 @@
 #include <list>
 //#include <regex>
 #include <string>
+#include <unistd.h>
+
 
 struct {
   bool initialized = false;
@@ -69,8 +71,42 @@ struct {
 
 std::map<int, std::string> errortable;
 
-kvs_result kvs_exit_env() {
+/*!Check wether the iterator bitmask is valid 
+ * \desc:  bitmask should be set from the first bit of a key and it is not 
+ *            allowed setting bitmask froma middle position of a key. Hence, 
+  *           Setting bitmask / prefix as 0xFF/0x0F is allowed while 0x0F/0x0F
+ *             is not allowed.
+ * \return bool : if input is valid bitmask return true, else return false
+ */
+inline bool _is_valid_bitmask(uint32_t bitmask){
+  const uint32_t BITMASK_LEN = 32;
+  //scan prefix bits whose value is 1; scan order: from high bits to low bits
+  uint32_t cnt = 0;
+  uint32_t bit_idx = 0;
+  while(cnt < BITMASK_LEN){
+    bit_idx = BITMASK_LEN - cnt - 1;
+    if(!(bitmask & (1<<bit_idx)))
+      break;
+    cnt++;
+  }
 
+  //scan remain bits, if has bits whose value is 1, return false, else return true;
+  if(cnt == BITMASK_LEN)
+    return true;
+
+  cnt++;
+  while(cnt < BITMASK_LEN){
+    bit_idx = BITMASK_LEN - cnt - 1;
+    if(bitmask & (1<<bit_idx))
+      return false;
+    cnt++;
+  }
+
+  return true;
+};
+
+kvs_result kvs_exit_env() {
+  g_env.initialized = false;
   std::list<kvs_device_handle > clone(g_env.open_devices.begin(),
 				      g_env.open_devices.end());
   
@@ -143,13 +179,11 @@ int initialize_udd_options(kvs_init_options* options){
 #endif
 
 kvs_result kvs_init_env(kvs_init_options* options) {
-  
   if (g_env.initialized)
     return KVS_SUCCESS;
 
   if (options) {
     g_env.queuedepth = options->aio.queuedepth > 0 ? options->aio.queuedepth : 256;
-    strcpy(g_env.configfile, options->emul_config_file);
     // initialize memory
     if (options->memory.use_dpdk == 1) {
 #if defined WITH_SPDK
@@ -161,6 +195,21 @@ kvs_result kvs_init_env(kvs_init_options* options) {
       exit(0);
 #endif
     } else {
+#if defined WITH_EMU
+      if(options->emul_config_file == NULL){
+        WRITE_WARNING("Emulator configure file can not be NULL\n");
+        return KVS_ERR_OPTION_INVALID;
+      }
+      if(access(options->emul_config_file, F_OK)){
+        WRITE_WARNING("Emulator configure file does not exist\n");
+        return KVS_ERR_OPTION_INVALID;
+      }
+      if(access(options->emul_config_file, R_OK)){
+        WRITE_WARNING("Emulator configure file can not be readed\n");
+        return KVS_ERR_OPTION_INVALID;
+      }
+      strcpy(g_env.configfile, options->emul_config_file);
+#endif
       // emulator or kdd
       //fprintf(stdout, "Using KV Emulator or Kernel\n");
       //g_env.is_polling = options->aio.is_polling;
@@ -217,32 +266,22 @@ kv_device_priv *_find_local_device_from_path(const std::string &devpath,
     exit(1);
   }
     */
-#else
-  static const char *emulpath = "/dev/kvemul";
-  if (devpath == emulpath) {
-    //if(std::regex_search(devpath, matches, emu_pattern)){
-    static int emulnsid = 0;
-    kv_device_priv *emul = new kv_device_priv();
-    sprintf(emul->node, "%s", devpath.c_str());
-    emul->nsid = emulnsid++;
-    emul->isemul = true;
-    emul->iskerneldev = false;
-    return emul;
-  } else {
-    kv_device_priv *kdd = new kv_device_priv();
-    static int kddnsid = 0;
-    kdd->nsid = kddnsid++;
-    kdd->isemul = false;
-    kdd->isspdkdev = false;
-    kdd->iskerneldev = true;
-    return kdd;
-  }
-  
-  for (const auto &t : g_env.list_devices) {
-    if (devpath == t.second->node) {
-      dev = t.second;
-    }
-  }
+#elif defined WITH_EMU
+  static int emulnsid = 0;
+  kv_device_priv *emul = new kv_device_priv();
+  sprintf(emul->node, "%s", devpath.c_str());
+  emul->nsid = emulnsid++;
+  emul->isemul = true;
+  emul->iskerneldev = false;
+  return emul;
+#elif defined WITH_KDD
+  kv_device_priv *kdd = new kv_device_priv();
+  static int kddnsid = 0;
+  kdd->nsid = kddnsid++;
+  kdd->isemul = false;
+  kdd->isspdkdev = false;
+  kdd->iskerneldev = true;
+  return kdd;
 #endif
   return dev;
 }
@@ -312,6 +351,13 @@ void build_error_table() {
   errortable[0x024]="KVS_ERR_VALUE_UPDATE_NOT_ALLOWED";
   errortable[0x025]="KVS_ERR_VENDOR";
   errortable[0x026]="KVS_ERR_PERMISSION";
+  errortable[0x027]="KVS_ERR_ENV_NOT_INITIALIZED";
+  errortable[0x028]="KVS_ERR_DEV_NOT_OPENED";
+  errortable[0x029]="KVS_ERR_DEV_ALREADY_OPENED";
+  errortable[0x02A]="KVS_ERR_DEV_PATH_TOO_LONG";
+  errortable[0x02B]="KVS_ERR_ITERATOR_NUM_OUT_RANGE";
+  errortable[0x02C]="KVS_ERR_DD_UNSUPPORTED";
+  errortable[0x02D]="KVS_ERR_ITERATOR_BUFFER_SIZE";
   errortable[0x200]="KVS_ERR_CACHE_INVALID_PARAM";
   errortable[0x201]="KVS_ERR_CACHE_NO_CACHED_KEY";
   errortable[0x202]="KVS_ERR_DD_INVALID_QUEUE_TYPE";
@@ -350,21 +396,68 @@ const char *kvs_errstr(int32_t errorno) {
   return errortable[errorno].c_str();
 }
 
+bool _device_opened(kvs_device_handle dev_hd){
+  auto t  = find(g_env.open_devices.begin(), g_env.open_devices.end(), dev_hd);
+  if (t == g_env.open_devices.end()){
+    return false;
+  }
+  return true;
+}
+
+bool _device_opened(const char* dev_path){
+  std::string dev(dev_path);
+  for (const auto &t: g_env.open_devices) {
+    if(t->dev_path == dev){
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _container_opened(kvs_device_handle dev_hd, const char* name){
+  for (const auto &t: dev_hd->driver->open_containers) {
+    if(strcmp(t->name, name) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+inline kvs_result _check_container_handle(kvs_container_handle cont_hd) {
+  if((cont_hd == NULL) || (cont_hd->dev == NULL) 
+      || (cont_hd->dev->driver == NULL))
+    return KVS_ERR_PARAM_INVALID;
+
+  if (!_device_opened(cont_hd->dev)) {
+    return KVS_ERR_DEV_NOT_OPENED;
+  }
+  if (!_container_opened(cont_hd->dev, cont_hd->name)) {
+    return KVS_ERR_CONT_CLOSE;
+  }
+  return KVS_SUCCESS;
+}
+
 kvs_result kvs_open_device(const char *dev_path, kvs_device_handle *dev_hd) {
   int ret = 0;
 
-  if(dev_path == NULL)
+  if((dev_path == NULL) || (dev_hd == NULL))
   {
-    fprintf(stderr, "Please specify a valid device path\n");
+    //fprintf(stderr, "Please specify a valid device path\n");
     return KVS_ERR_PARAM_INVALID;
   }
-  
+  int dev_path_len = strnlen(dev_path, MAX_DEV_PATH_LEN);
+  if(dev_path_len == 0)
+    return KVS_ERR_DEV_NOT_EXIST;
+  if(dev_path_len > MAX_DEV_PATH_LEN - 1)
+    return KVS_ERR_DEV_PATH_TOO_LONG;
+  if(_device_opened(dev_path))
+    return KVS_ERR_DEV_ALREADY_OPENED;
+
   build_error_table();
-  
   if (!g_env.initialized) {
     WRITE_WARNING(
 		  "the library is not properly configured: please run kvs_init_env() first\n");
-    return (kvs_result)ret;
+    return KVS_ERR_ENV_NOT_INITIALIZED;
   }
 	
   kvs_device_handle user_dev = (kvs_device_handle)malloc(sizeof(struct _kvs_device_handle));
@@ -394,29 +487,29 @@ kvs_result kvs_open_device(const char *dev_path, kvs_device_handle *dev_hd) {
   if(dev->isemul || dev->iskerneldev)
     ret = user_dev->driver->init(dev_path, g_env.configfile, g_env.queuedepth, g_env.is_polling);
 #endif
-  
+  user_dev->dev_path = (char*)malloc(strlen(dev_path)+1);
+  strcpy(user_dev->dev_path, dev_path);
   g_env.open_devices.push_back(user_dev);
-
   *dev_hd = user_dev;
 
   return (kvs_result)ret;
 }
 
 kvs_result kvs_close_device(kvs_device_handle user_dev) {
-  if(!user_dev)
+  if(user_dev == NULL) {
     return KVS_ERR_PARAM_INVALID;
-      
-  auto t  = find(g_env.open_devices.begin(), g_env.open_devices.end(), user_dev);
-  if (t == g_env.open_devices.end())
-    return KVS_ERR_DEV_NOT_EXIST;
-  
+  }
+  if (!_device_opened(user_dev)) {
+    return KVS_ERR_DEV_NOT_OPENED;
+  }
+    
   delete user_dev->driver;
   delete user_dev->dev;
   g_env.open_devices.remove(user_dev);
+  free(user_dev->dev_path);
   free(user_dev);
   return KVS_SUCCESS;
 }
-
 
 kvs_result kvs_create_container (kvs_device_handle dev_hd, const char *name, uint64_t size, const kvs_container_context *ctx) {
   /*
@@ -449,7 +542,19 @@ kvs_result kvs_delete_container (kvs_device_handle dev_hd, const char *cont_name
   return KVS_SUCCESS;
 }
 
-kvs_result kvs_open_container (kvs_device_handle dev_hd, const char* name, kvs_container_handle *cont_hd) {
+kvs_result kvs_open_container(kvs_device_handle dev_hd, const char* name, kvs_container_handle *cont_hd) {
+  if((dev_hd == NULL) || (name == NULL) || (cont_hd == NULL)) {
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if(*name == '\0'){
+    return KVS_ERR_CONT_NAME;
+  }
+  if (!_device_opened(dev_hd)) {
+    return KVS_ERR_DEV_NOT_OPENED;
+  } 
+  if (_container_opened(dev_hd,name)) {
+    return KVS_ERR_CONT_OPEN;
+  }
   kvs_container_handle cont_handle = (kvs_container_handle)malloc(sizeof(struct _kvs_container_handle));
   cont_handle->dev = dev_hd;
   strcpy(cont_handle->name, name);
@@ -462,13 +567,16 @@ kvs_result kvs_open_container (kvs_device_handle dev_hd, const char* name, kvs_c
 }
 
 kvs_result kvs_close_container (kvs_container_handle cont_hd){
+  kvs_result ret = _check_container_handle(cont_hd);
+  if (ret!=KVS_SUCCESS) {
+    return ret;
+  }
 
   cont_hd->dev->driver->open_containers.remove(cont_hd);
   if(cont_hd)
     free(cont_hd);
   
   return KVS_SUCCESS;
-
 }
 
 kvs_result kvs_get_container_info (kvs_container_handle cont_hd, kvs_container *cont) {
@@ -478,6 +586,10 @@ kvs_result kvs_get_container_info (kvs_container_handle cont_hd, kvs_container *
 }
 
 kvs_result kvs_get_tuple_info (kvs_container_handle cont_hd, const kvs_key *key, kvs_tuple_info *info) {
+  int ret = _check_container_handle(cont_hd);
+  if (ret!=KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
 
   if(key == NULL || info == NULL) {
     return KVS_ERR_PARAM_INVALID;
@@ -493,10 +605,10 @@ kvs_result kvs_get_tuple_info (kvs_container_handle cont_hd, const kvs_key *key,
   const kvs_retrieve_context ret_ctx = {option, 0, 0};
   kvs_value kvsvalue = { value, vlen , 0, 0 /*offset */};
 
-  int ret = kvs_retrieve_tuple(cont_hd, key, &kvsvalue, &ret_ctx);
+  ret = kvs_retrieve_tuple(cont_hd, key, &kvsvalue, &ret_ctx);
   if(ret == KVS_ERR_BUFFER_SMALL) {
     // for kvs_get_tuple_info only get value length, don't care value content
-    fprintf(stderr, "kvs_retrieve_tuple(): KVS_ERR_BUFFER_SMALL (Key: %s with buffer_len = %d, actual vlen = %d)\n", (char *) key->key, kvsvalue.length, kvsvalue.actual_value_size);
+    // fprintf(stderr, "kvs_retrieve_tuple(): KVS_ERR_BUFFER_SMALL (Key: %s with buffer_len = %d, actual vlen = %d)\n", (char *) key->key, kvsvalue.length, kvsvalue.actual_value_size);
     ret = KVS_SUCCESS;
   } 
 
@@ -515,11 +627,14 @@ kvs_result kvs_get_tuple_info (kvs_container_handle cont_hd, const kvs_key *key,
 
 kvs_result kvs_store_tuple(kvs_container_handle cont_hd, const kvs_key *key,
 		const kvs_value *value, const kvs_store_context *ctx) {
+  int ret = _check_container_handle(cont_hd);
+  if (ret!=KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
 
-  int ret;
-
-  if(key == NULL || value == NULL )
+  if((key == NULL) || (value == NULL) || (ctx == NULL)) {
     return KVS_ERR_PARAM_INVALID;
+  }
 
   ret = validate_request(key, value);
   if(ret)
@@ -534,7 +649,7 @@ kvs_result kvs_store_tuple_async(kvs_container_handle cont_hd, const kvs_key *ke
 				 const kvs_value *value, const kvs_store_context *ctx,
 				 kvs_callback_function cbfn) {
   int ret;
-  if(key == NULL || value == NULL)
+  if(key == NULL || value == NULL || ctx == NULL)
     return KVS_ERR_PARAM_INVALID;
 
   ret = validate_request(key, value);
@@ -549,14 +664,19 @@ kvs_result kvs_store_tuple_async(kvs_container_handle cont_hd, const kvs_key *ke
 
 kvs_result kvs_retrieve_tuple(kvs_container_handle cont_hd, const kvs_key *key,
 			      kvs_value *value, const kvs_retrieve_context *ctx) {
-
-  int ret;
-  if(key == NULL || value == NULL)
+  int ret = _check_container_handle(cont_hd);
+  if (ret!=KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
+  if((key == NULL) || (value == NULL) || (ctx == NULL)) {
     return KVS_ERR_PARAM_INVALID;
+  }
   ret = validate_request(key, value);
   if(ret)
     return (kvs_result)ret;
-  
+  if (value->length % KVS_ALIGNMENT_UNIT)
+      return KVS_ERR_VALUE_LENGTH_MISALIGNED;
+
   ret = cont_hd->dev->driver->retrieve_tuple(0, key, value, ctx->option,
 					     ctx->private1, ctx->private2, 1, 0);
   return (kvs_result)ret;
@@ -566,29 +686,32 @@ kvs_result kvs_retrieve_tuple_async(kvs_container_handle cont_hd, const kvs_key 
 				    kvs_value *value, const kvs_retrieve_context *ctx,
 				    kvs_callback_function cbfn) {
   int ret;
-  if(key == NULL || value == NULL)
+  if(key == NULL || value == NULL || ctx == NULL)
     return KVS_ERR_PARAM_INVALID;
-
   ret = validate_request(key, value);
   if(ret)
     return (kvs_result)ret;
-  
+  if (value->length % KVS_ALIGNMENT_UNIT)
+      return KVS_ERR_VALUE_LENGTH_MISALIGNED;
+
   ret = cont_hd->dev->driver->retrieve_tuple(0, key, value, ctx->option,
 					      ctx->private1, ctx->private2, 0, cbfn);
   return (kvs_result)ret;
 }
 
-
 kvs_result kvs_delete_tuple(kvs_container_handle cont_hd, const kvs_key *key,
 		const kvs_delete_context *ctx) {
-
-  int ret;
-  if(key == NULL)
+  int ret = _check_container_handle(cont_hd);
+  if (ret!=KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
+  if((key == NULL) || (ctx == NULL))
     return KVS_ERR_PARAM_INVALID;
+
   ret = validate_request(key, 0);
   if(ret)
     return (kvs_result)ret;
-  
+
   ret = cont_hd->dev->driver->delete_tuple(0, key, ctx->option, ctx->private1,
 					    ctx->private2, 1, 0);
   return (kvs_result)ret;
@@ -596,8 +719,11 @@ kvs_result kvs_delete_tuple(kvs_container_handle cont_hd, const kvs_key *key,
 
 kvs_result kvs_delete_tuple_async(kvs_container_handle cont_hd, const kvs_key* key,
 				  const kvs_delete_context* ctx, kvs_callback_function cbfn) {
-  int ret;
-  if(key == NULL)
+  int ret = _check_container_handle(cont_hd);
+  if (ret!=KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
+  if((key == NULL) || (ctx == NULL) || (cbfn == NULL))
     return KVS_ERR_PARAM_INVALID;
 
   ret = validate_request(key, 0);
@@ -609,9 +735,15 @@ kvs_result kvs_delete_tuple_async(kvs_container_handle cont_hd, const kvs_key* k
 }
 
 kvs_result kvs_exist_tuples(kvs_container_handle cont_hd, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, const kvs_exist_context *ctx) {
-  int ret;
-  if(keys == NULL || result_buffer == NULL)
+  int ret = _check_container_handle(cont_hd);
+  if (ret!=KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
+  if((keys == NULL) || (result_buffer == NULL) || (ctx == NULL) || (key_cnt <= 0)) {
     return KVS_ERR_PARAM_INVALID;
+  }
+  if(buffer_size <= 0)
+      return KVS_ERR_BUFFER_SMALL;
 
   ret = validate_request(keys, 0);
   if(ret) return (kvs_result)ret;
@@ -623,8 +755,11 @@ kvs_result kvs_exist_tuples(kvs_container_handle cont_hd, uint32_t key_cnt, cons
 
 kvs_result kvs_exist_tuples_async(kvs_container_handle cont_hd, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, const kvs_exist_context *ctx, kvs_callback_function cbfn) {
   int ret;
-  if(keys == NULL || result_buffer == NULL)
+  if(keys == NULL || result_buffer == NULL || (key_cnt <= 0) || ctx == NULL)
     return KVS_ERR_PARAM_INVALID;
+  if(buffer_size <= 0)
+    return KVS_ERR_BUFFER_SMALL;
+
   ret = validate_request(keys, 0);
   if(ret) return (kvs_result)ret;
   
@@ -635,7 +770,16 @@ kvs_result kvs_exist_tuples_async(kvs_container_handle cont_hd, uint32_t key_cnt
 
 kvs_result kvs_open_iterator(kvs_container_handle cont_hd, const kvs_iterator_context *ctx,
 			  kvs_iterator_handle *iter_hd) {
-  int ret;
+  int ret = _check_container_handle(cont_hd);
+  if (ret != KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
+  if(ctx == NULL || iter_hd == NULL) {
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if(!_is_valid_bitmask(ctx->bitmask))
+    return KVS_ERR_ITERATOR_COND_INVALID;
+
   ret = cont_hd->dev->driver->open_iterator(0, ctx->option, ctx->bitmask,
 					     ctx->bit_pattern, iter_hd);
   return (kvs_result)ret;
@@ -643,23 +787,38 @@ kvs_result kvs_open_iterator(kvs_container_handle cont_hd, const kvs_iterator_co
 
 kvs_result kvs_close_iterator(kvs_container_handle cont_hd, kvs_iterator_handle hiter,
 			   const kvs_iterator_context *ctx) {
-  int ret;
+  int ret = _check_container_handle(cont_hd);
+  if (ret != KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
+  if(ctx == NULL){
+    return KVS_ERR_PARAM_INVALID;
+  }
+
   ret =  cont_hd->dev->driver->close_iterator(0, hiter);
   return (kvs_result)ret;
 }
 
 
 kvs_result kvs_close_iterator_all(kvs_container_handle cont_hd) {
+  int ret = _check_container_handle(cont_hd);
+  if (ret != KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
 
-  int ret;
   ret = cont_hd->dev->driver->close_iterator_all(0);
   return (kvs_result)ret;
 }
 
 kvs_result kvs_list_iterators(kvs_container_handle cont_hd, kvs_iterator_info *kvs_iters, int count) {
-  int ret;
+  int ret = _check_container_handle(cont_hd);
+  if (ret != KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
   if(kvs_iters == NULL)
     return KVS_ERR_PARAM_INVALID;
+  if(count < 1 || count > KVS_MAX_ITERATE_HANDLE)
+    return KVS_ERR_ITERATOR_NUM_OUT_RANGE;
 
   ret = cont_hd->dev->driver->list_iterators(0, kvs_iters, count);
   return (kvs_result)ret;
@@ -667,12 +826,16 @@ kvs_result kvs_list_iterators(kvs_container_handle cont_hd, kvs_iterator_info *k
 
 kvs_result kvs_iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle hiter,
 			  kvs_iterator_list *iter_list, const kvs_iterator_context *ctx) {
+  int ret = _check_container_handle(cont_hd);
+  if (ret != KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
+  if(iter_list == NULL || iter_list->it_list == NULL || ctx == NULL)
+    return KVS_ERR_PARAM_INVALID;
+  if(iter_list->size!=KVS_ITERATOR_BUFFER_SIZE){
+    return KVS_ERR_ITERATOR_BUFFER_SIZE;
+  }
 
-  int ret;
-  if(iter_list == NULL)
-    return KVS_ERR_PARAM_INVALID;
-  if(iter_list->it_list == NULL)
-    return KVS_ERR_PARAM_INVALID;
   ret = cont_hd->dev->driver->iterator_next(hiter, iter_list, ctx->private1, ctx->private2, 1, 0);
   return (kvs_result)ret;
 }
@@ -680,32 +843,43 @@ kvs_result kvs_iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle h
 kvs_result kvs_iterator_next_async(kvs_container_handle cont_hd, kvs_iterator_handle hiter,
 				   kvs_iterator_list *iter_list, const kvs_iterator_context *ctx,
 				   kvs_callback_function cbfn) {
-  int ret;
-  if(iter_list == NULL)
+  int ret = _check_container_handle(cont_hd);
+  if (ret != KVS_SUCCESS) {
+    return (kvs_result)ret;
+  }
+  if(iter_list == NULL || iter_list->it_list == NULL|| ctx == NULL)
     return KVS_ERR_PARAM_INVALID;
-  if(iter_list->it_list == NULL)
-    return KVS_ERR_PARAM_INVALID; 
-  
+  if(iter_list->size!=KVS_ITERATOR_BUFFER_SIZE){
+    return KVS_ERR_ITERATOR_BUFFER_SIZE;
+  }
+
   ret = cont_hd->dev->driver->iterator_next(hiter, iter_list, ctx->private1, ctx->private2, 0, cbfn);
   return (kvs_result)ret;
 }
 
-kvs_result kvs_get_device_waf(kvs_device_handle dev, float *waf) {
-  
-  *waf = dev->driver->get_waf();
+kvs_result kvs_get_device_waf(kvs_device_handle dev_hd, float *waf) {
+  if(dev_hd == NULL || waf == NULL) {
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if (!_device_opened(dev_hd)) {
+    return KVS_ERR_DEV_NOT_OPENED;
+  }
+
+  *waf = dev_hd->driver->get_waf();
 
   return KVS_SUCCESS;
 }
 
 kvs_result kvs_get_device_info(kvs_device_handle dev_hd, kvs_device *dev_info) {
-
   int ret;
-
-  auto t = find(g_env.open_devices.begin(), g_env.open_devices.end(), dev_hd);
-  if(t == g_env.open_devices.end()) {
-    ret = KVS_ERR_DEV_NOT_EXIST;
+  if((dev_hd == NULL) || (dev_info == NULL)) {
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if (!_device_opened(dev_hd)) {
+    ret = KVS_ERR_DEV_NOT_OPENED;
   } else {  
     ret = dev_hd->driver->get_total_size(&dev_info->capacity);
+    dev_info->unalloc_capacity = 0;
     dev_info->max_value_len = KVS_MAX_VALUE_LENGTH;
     dev_info->max_key_len = KVS_MAX_KEY_LENGTH;
     dev_info->optimal_value_len = KVS_OPTIMAL_VALUE_LENGTH;
@@ -715,9 +889,11 @@ kvs_result kvs_get_device_info(kvs_device_handle dev_hd, kvs_device *dev_info) {
 
 kvs_result kvs_get_device_utilization(kvs_device_handle dev_hd, int32_t *dev_util) {
   int ret;
-  auto t = find(g_env.open_devices.begin(), g_env.open_devices.end(), dev_hd);
-  if(t == g_env.open_devices.end()) {
-    ret = KVS_ERR_DEV_NOT_EXIST;
+  if((dev_hd == NULL) || (dev_util == NULL)) {
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if (!_device_opened(dev_hd)) {
+    ret = KVS_ERR_DEV_NOT_OPENED;
   } else
     ret = dev_hd->driver->get_used_size(dev_util);
   
@@ -726,35 +902,67 @@ kvs_result kvs_get_device_utilization(kvs_device_handle dev_hd, int32_t *dev_uti
 
 kvs_result kvs_get_device_capacity(kvs_device_handle dev_hd, int64_t *dev_capa) {
   int ret;
-  auto t = find(g_env.open_devices.begin(), g_env.open_devices.end(), dev_hd);
-  if(t == g_env.open_devices.end()) {
-    ret = KVS_ERR_DEV_NOT_EXIST;
+  if((dev_hd == NULL) || (dev_capa == NULL)) {
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if (!_device_opened(dev_hd)) {
+    ret = KVS_ERR_DEV_NOT_OPENED;
   } else
     ret = dev_hd->driver->get_total_size(dev_capa);
   return (kvs_result)ret;
 }
 
 kvs_result kvs_get_min_key_length (kvs_device_handle dev_hd, int32_t *min_key_length){
+  if((dev_hd == NULL) || (min_key_length == NULL)) {
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if(!_device_opened(dev_hd)){
+    return KVS_ERR_DEV_NOT_OPENED;
+  }
   *min_key_length = KVS_MIN_KEY_LENGTH;
   return KVS_SUCCESS;
 }
 
 kvs_result kvs_get_max_key_length (kvs_device_handle dev_hd, int32_t *max_key_length){
+  if((dev_hd == NULL) || (max_key_length == NULL)) {
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if(!_device_opened(dev_hd)){
+    return KVS_ERR_DEV_NOT_OPENED;
+  }
   *max_key_length = KVS_MAX_KEY_LENGTH;
   return KVS_SUCCESS;
 }
 
 kvs_result kvs_get_min_value_length (kvs_device_handle dev_hd, int32_t *min_value_length){
+  if((dev_hd == NULL) || (min_value_length == NULL)) {
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if(!_device_opened(dev_hd)){
+    return KVS_ERR_DEV_NOT_OPENED;
+  }
   *min_value_length = KVS_MIN_VALUE_LENGTH;
   return KVS_SUCCESS;
 }
 
 kvs_result kvs_get_max_value_length (kvs_device_handle dev_hd, int32_t *max_value_length){
+  if((dev_hd == NULL) || (max_value_length == NULL)) {
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if(!_device_opened(dev_hd)){
+    return KVS_ERR_DEV_NOT_OPENED;
+  }
   *max_value_length = KVS_MAX_VALUE_LENGTH;
   return KVS_SUCCESS;
 }
 
 kvs_result kvs_get_optimal_value_length (kvs_device_handle dev_hd, int32_t *opt_value_length){
+  if((dev_hd == NULL) || (opt_value_length == NULL)) {
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if(!_device_opened(dev_hd)){
+    return KVS_ERR_DEV_NOT_OPENED;
+  }
   *opt_value_length = KVS_OPTIMAL_VALUE_LENGTH;
   return KVS_SUCCESS;
 }

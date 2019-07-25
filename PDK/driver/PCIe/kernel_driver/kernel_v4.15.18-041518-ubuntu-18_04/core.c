@@ -1224,7 +1224,7 @@ static struct aio_user_ctx *get_aio_user_ctx(void __user *addr, unsigned len, bo
 
     } else {
         mapped_pages = get_user_pages_fast((unsigned long)addr, num_page,
-                0, user_ctx->pages);
+                1, user_ctx->pages);
         if (mapped_pages != num_page) {
             user_ctx->nents = mapped_pages;
             goto exit;
@@ -2160,7 +2160,10 @@ static int nvme_user_cmd(struct nvme_ctrl *ctrl, struct nvme_ns *ns,
 
 	if (cmd.timeout_ms)
 		timeout = msecs_to_jiffies(cmd.timeout_ms);
-
+#if 1
+    if (ns == NULL && cmd.opcode == nvme_admin_format_nvm)
+        timeout = (120 * HZ);
+#endif
 	effects = nvme_passthru_start(ctrl, ns, cmd.opcode);
 	status = nvme_submit_user_cmd(ns ? ns->queue : ctrl->admin_q, &c,
 			(void __user *)(uintptr_t)cmd.addr, cmd.data_len,

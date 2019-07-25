@@ -2190,7 +2190,10 @@ static int nvme_user_cmd(struct nvme_dev *dev, struct nvme_ns *ns,
 
 	timeout = cmd.timeout_ms ? msecs_to_jiffies(cmd.timeout_ms) :
 								ADMIN_TIMEOUT;
-
+#if 1
+    if (ns == NULL && cmd.opcode == nvme_admin_format_nvm)
+        timeout = (120 * HZ);
+#endif
 	if (length != cmd.data_len)
 		status = -ENOMEM;
 	else if (ns) {
@@ -2310,7 +2313,7 @@ static struct aio_user_ctx *get_aio_user_ctx(void __user *addr, unsigned len)
 	user_ctx->pages =(struct page **)user_ctx->data;
 	user_ctx->sg = (struct scatterlist *)(user_ctx->data + sizeof(__le64 *) * num_page);
 	mapped_pages = get_user_pages_fast((unsigned long)addr, num_page,
-			0, user_ctx->pages);
+			1, user_ctx->pages);
 	if (mapped_pages != num_page) {
 		user_ctx->nents = mapped_pages;
 		goto exit;

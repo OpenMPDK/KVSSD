@@ -203,6 +203,10 @@ FILE *insert_ops_fp = NULL;
 FILE *run_latency_fp = NULL;
 FILE *run_ops_fp = NULL;
 
+#if defined(__KV_BENCH)
+extern int couch_kv_min_key_len;
+extern int couch_kv_max_key_len;
+#endif
 
 #define lprintf(...) {   \
     printf(__VA_ARGS__); \
@@ -249,6 +253,29 @@ char * print_filesize_approx(uint64_t size, char *output)
         sprintf(output, "%.2f GB", (double)size / (1024*1024*1024));
     }
     return output;
+}
+
+int parse_coreid(struct bench_info *binfo, int* buffer, int buffer_size,
+  int *core_count) {
+  int core_max = binfo->cpuinfo->num_cores_per_numanodes * binfo->cpuinfo->num_numanodes;
+  char *coreid = binfo->core_ids;
+  char* pt = NULL;
+  int i = 0;
+  if (!coreid)
+    return -1;
+
+  pt = strtok ((char*)coreid, ",");
+  while (pt != NULL) {
+    int id = atoi(pt);
+    if (id < core_max) {
+      buffer[i++] = id;
+      if (i == buffer_size)
+        break;
+    }
+    pt = strtok (NULL, ",");
+  }
+  *core_count = i;
+  return i == 0 ? -1 : 0;
 }
 
 void print_filesize(char *filename)
@@ -859,13 +886,20 @@ void population(Db **db, struct bench_info *binfo)
     info_value.numunits = binfo->vp_numunits;
     info_value.unitsize = binfo->vp_unitsize;
     info_value.alignment = binfo->vp_alignment;
-    
+
+    int coreid[64] = { 0 };
+    int core_count = 0;
+    int _ret = -1;
+#ifdef __KV_BENCH
+    if (binfo->kv_device_path[0] != '/') // udd mode
+      _ret = parse_coreid(binfo, coreid, 64, &core_count);
+#endif
     for (i=0;i<binfo->pop_nthreads * binfo->nfiles;++i){
       pthread_attr_init(&attr[i]);
       db_idx = i / binfo->pop_nthreads;
       td_idx = i%binfo->pop_nthreads;
       nodeid = binfo->instances[db_idx].nodeid_load;
-      nodeid = 0;
+      //nodeid = 0;
       /*
           printf("thread %d for db %d %d th numaid %d, core %d\n",
                  (int)i, db_idx, td_idx,
@@ -879,7 +913,14 @@ void population(Db **db, struct bench_info *binfo)
       } else if(nodeid != -1){
 	CPU_ZERO(&cpus);
 	for(j = 0; j < binfo->cpuinfo->num_cores_per_numanodes; j++){
-	  CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+      if (_ret) {
+        CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+      } else {
+        for (int k = 0; k < core_count; k++) {
+          if (binfo->cpuinfo->cpulist[nodeid][j] == coreid[k])
+            CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+        }
+      }
 	}
 	pthread_attr_setaffinity_np(&attr[i], sizeof(cpu_set_t), &cpus);
       } else {
@@ -888,7 +929,14 @@ void population(Db **db, struct bench_info *binfo)
 	nodeid = db_idx % binfo->cpuinfo->num_numanodes;
 	CPU_ZERO(&cpus);
 	for(j = 0; j < binfo->cpuinfo->num_cores_per_numanodes; j++){
-	  CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+      if (_ret) {
+        CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+      } else {
+        for (int k = 0; k < core_count; k++) {
+          if (binfo->cpuinfo->cpulist[nodeid][j] == coreid[k])
+            CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+        }
+      }
 	}
 	pthread_attr_setaffinity_np(&attr[i], sizeof(cpu_set_t), &cpus);
       }
@@ -1628,7 +1676,7 @@ void * bench_thread(void *voidargs)
 	    rq_id.size = binfo->keylen.a;
 	    keygen_seqfill(r, rq_id.buf, binfo->keylen.a);
 	  }else {
-	    rq_id.size = keylen;
+	    rq_id.size = binfo->keylen.a;
 	    keygen_seed2key(&binfo->keygen, r, rq_id.buf, keylen);
 	  }
 	}
@@ -1644,11 +1692,11 @@ void * bench_thread(void *voidargs)
 	    rq_doc->id.size = binfo->keylen.a;
 	    keygen_seqfill(r, rq_doc->id.buf, binfo->keylen.a);
 	  } else {
-	    rq_doc->id.size = keylen;
+	    rq_doc->id.size = binfo->keylen.a;
 	    keygen_seed2key(&binfo->keygen, r, rq_doc->id.buf, keylen );
 	  }
 	}
-	
+
 	if(rq_doc->data.buf == NULL)
 	  rq_doc->data.buf = (char *)Allocate(args->valuepool);
 	  
@@ -1725,7 +1773,7 @@ void * bench_thread(void *voidargs)
 	    rq_doc->id.size = binfo->keylen.a;
 	    keygen_seqfill(r, rq_doc->id.buf, binfo->keylen.a);
 	  } else {
-	    rq_doc->id.size = keylen;
+	    rq_doc->id.size = binfo->keylen.a;
 	    keygen_seed2key(&binfo->keygen, r, rq_doc->id.buf, keylen);
 	  }
 	}
@@ -1887,7 +1935,7 @@ void * bench_thread(void *voidargs)
 	      rq_doc->id.size = binfo->keylen.a;
 	      keygen_seqfill(r, rq_doc->id.buf, binfo->keylen.a);
 	    } else{
-	      rq_doc->id.size = keylen;
+	      rq_doc->id.size = binfo->keylen.a;
 	      keygen_seed2key(&binfo->keygen, r, rq_doc->id.buf, keylen);
 	    }
 	  }
@@ -1928,7 +1976,7 @@ void * bench_thread(void *voidargs)
 	      rq_doc->id.size = binfo->keylen.a;
 	      keygen_seqfill(r, rq_doc->id.buf, binfo->keylen.a);
 	    } else {
-	      rq_doc->id.size = keylen;
+	      rq_doc->id.size = binfo->keylen.a;
 	      keygen_seed2key(&binfo->keygen, r, rq_doc->id.buf, keylen);
 	    }
 	  }
@@ -2525,9 +2573,10 @@ void do_bench(struct bench_info *binfo)
 #else
       for (i=0; i<(int)binfo->nfiles; ++i){
 	compaction_no[i] = 0;
+#if !defined(__KV_BENCH)
 	sprintf(curfile, "%s/%d", binfo->init_filename, i);
 	printf("db %d name is %s\n", i, curfile);
-
+#endif
 #if defined(__KV_BENCH)
 	couchstore_open_db_kvs(dev_path[i], &db[i], i);
 
@@ -2553,7 +2602,8 @@ void do_bench(struct bench_info *binfo)
 #endif
       
       stopwatch_start(&sw);
-      population(db, binfo);
+      if(binfo->pop_nthreads != 0 && binfo->nfiles != 0 && binfo->ndocs != 0)
+        population(db, binfo);
 
 #if  defined(__PRINT_IOSTAT) && \
   (defined(__LEVEL_BENCH) || defined(__ROCKS_BENCH)  || defined(__BLOBFS_ROCKS_BENCH) || defined(__KVDB_BENCH))
@@ -2813,6 +2863,13 @@ void do_bench(struct bench_info *binfo)
     pthread_attr_init(&attr[i]);
     b_args[i].socketid = nodeid;
 
+    int coreid[64] = { 0 };
+    int core_count = 0;
+    int ret = -1;
+#ifdef __KV_BENCH
+    if (binfo->kv_device_path[0] != '/') // udd mode
+      ret = parse_coreid(binfo, coreid, 64, &core_count);
+#endif
     if(binfo->instances[db_idx].coreids_bench[td_idx] != -1) {
       CPU_ZERO(&cpus);
       CPU_SET(binfo->instances[db_idx].coreids_bench[td_idx], &cpus);
@@ -2820,7 +2877,14 @@ void do_bench(struct bench_info *binfo)
     } else if(nodeid != -1){
       CPU_ZERO(&cpus);
       for(j = 0; j < binfo->cpuinfo->num_cores_per_numanodes; j++){
-	CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+        if (ret) {
+          CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+        } else {
+          for (int k = 0; k < core_count; k++) {
+            if (binfo->cpuinfo->cpulist[nodeid][j] == coreid[k])
+              CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+          }
+        }
       }
       pthread_attr_setaffinity_np(&attr[i], sizeof(cpu_set_t), &cpus);
     }else {
@@ -2829,7 +2893,14 @@ void do_bench(struct bench_info *binfo)
       nodeid = db_idx % binfo->cpuinfo->num_numanodes;
       CPU_ZERO(&cpus);
       for(j = 0; j < binfo->cpuinfo->num_cores_per_numanodes; j++){
-	CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+        if (ret) {
+          CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+        } else {
+          for (int k = 0; k < core_count; k++) {
+            if (binfo->cpuinfo->cpulist[nodeid][j] == coreid[k])
+              CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
+          }
+        }
       }
 
       pthread_attr_setaffinity_np(&attr[i], sizeof(cpu_set_t), &cpus);
@@ -2945,6 +3016,8 @@ void do_bench(struct bench_info *binfo)
 		  } else {
 		    // # operations
 		    printf("%5.1f %% (",
+			   binfo->nops * binfo->nfiles - 1 == 0 ?
+			   (op_count_read+op_count_write + op_count_delete)*100.0 :
 			   (op_count_read+op_count_write + op_count_delete)*100.0 /
 			   (binfo->nops * binfo->nfiles -1));
 		    gap = sw.elapsed;
@@ -3362,11 +3435,14 @@ void _print_benchinfo(struct bench_info *binfo)
     lprintf("DB module: %s\n", binfo->dbname);
 
     lprintf("random seed: %d\n", (int)rnd_seed);
-
+#if !defined(__KV_BENCH)
     if (strcmp(binfo->init_filename, binfo->filename)) {
         lprintf("initial filename: %s#\n", binfo->init_filename);
     }
     lprintf("filename: %s#", binfo->filename);
+#else
+    lprintf("filename: %s# ", binfo->kv_device_path)
+#endif
     if (binfo->initialize) {
         lprintf(" (initialize)\n");
     } else {
@@ -3471,7 +3547,21 @@ void _print_benchinfo(struct bench_info *binfo)
       lprintf("body length: %s(%d)\n",
 	      "Fixed size",
 	      (int)binfo->bodylen.a);
-    }else {
+    } else if (binfo->bodylen.type == RND_RATIO) {
+      int ratio_count = 0;
+      lprintf("body length: Ratio(");
+      int i = 0;
+      while (i < 5) {
+        lprintf("%d[%d%%]", binfo->value_size[i], binfo->value_size_ratio[i]);
+        ratio_count += binfo->value_size_ratio[i];
+        if (ratio_count == 100)
+          break;
+        if (i != 4)
+          lprintf(",");
+        i++;
+      }
+      lprintf(")\n");
+    } else {
       lprintf("body length: %s(%d,%d)\n",
 	      (binfo->bodylen.type == RND_NORMAL)?"Norm":"Uniform",
 	      (int)binfo->bodylen.a, (int)binfo->bodylen.b);
@@ -3637,6 +3727,15 @@ void init_cpu_aff(struct bench_info *binfo){
   while(fgets(line, sizeof line, fp)!= NULL ){
     if(line_num == 0) {line_num++; continue;}
     sscanf(line, "%d,%d,%d,%d", &nodeid, &coreid, &insid_load, &insid_perf);
+    if (nodeid >= binfo->cpuinfo->num_numanodes ||
+        (coreid / binfo->cpuinfo->num_numanodes) >= binfo->cpuinfo->num_cores_per_numanodes) {
+        fprintf(stderr, "numa node id or core id is invalid, please confirm cpu.txt\n");
+        for (i = 0; i < binfo->cpuinfo->num_numanodes; i++)
+            free(binfo->cpuinfo->cpulist[i]);
+        free(binfo->cpuinfo->cpulist);
+        if (fp) fclose(fp);
+        exit(1);
+    }
     binfo->cpuinfo->cpulist[nodeid][core_count++ % binfo->cpuinfo->num_cores_per_numanodes] = coreid;
     if(insid_load >=0 && insid_load < binfo->nfiles) {
       if(prev_load_insid != insid_load) {
@@ -3719,6 +3818,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
       get_cpuinfo(cpuinfo, 1);
       printf("total %d nodes, %d cores per node\n", cpuinfo->num_numanodes, cpuinfo->num_cores_per_numanodes);
       free(cpuinfo);
+      iniparser_free(cfg);
       exit(0);
     } else {
       binfo.cpuinfo = (cpu_info *)malloc(sizeof(cpu_info));
@@ -3828,6 +3928,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
       binfo.allocatortype = info.allocatortype = SPDK_ALLOCATOR;
 #else
       fprintf(stdout, "No SPDK allocator available, please use Posix or Numa\n");
+      iniparser_free(cfg);
       exit(0);
 #endif
     } else {
@@ -3858,7 +3959,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     while(pt != NULL){// && i < binfo.nfiles) {
       binfo.device_name[i] = (char *)malloc(256);
       devname_ret = _get_filename_pos(pt);
-      strcpy(binfo.device_name[i++], devname_ret);
+      strcpy(binfo.device_name[i++], devname_ret ? devname_ret : pt);
       pt = strtok(NULL, ",");
     }
     binfo.nfiles = i;
@@ -3873,6 +3974,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     if(binfo.kv_write_mode == 0) { // aio
       if (binfo.queue_depth > binfo.kp_numunits || binfo.queue_depth > binfo.vp_numunits) {
 	fprintf(stderr, "wARN: Please set key/value pool unit equal to or larger than the queue_depth: %d\n", binfo.queue_depth);
+	iniparser_free(cfg);
 	exit(1);
       }
     }
@@ -4036,9 +4138,9 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
         sprintf(binfo.filename, "%s/%s_%s",
             dbname_postfix, str, dbname_postfix);
     }
-
+#if !defined(__KV_BENCH)
     printf("db name %s\n", binfo.filename);
-
+#endif
     str = iniparser_getstring(cfg, (char*)"db_file:init_filename",
                                    binfo.filename);
     strcpy(binfo.init_filename, str);
@@ -4094,14 +4196,29 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
             iniparser_getint(cfg, (char*)"key_length:lower_bound", 32);
         binfo.keylen.b =
             iniparser_getint(cfg, (char*)"key_length:upper_bound", 96);
+        if (binfo.keylen.a > binfo.keylen.b) {
+          fprintf(stderr, "WARN: Please set the upper bound of key length to be equal to or larger than the lower bound\n");
+          iniparser_free(cfg);
+          exit(1);
+        }
 	max_key_len = binfo.keylen.b + 16;
     } else {
       binfo.keylen.type = RND_FIXED;
       binfo.keylen.a = iniparser_getint(cfg, (char*)"key_length:fixed_size", 16);
       max_key_len = binfo.keylen.a;
     }
+
+#if defined(__KV_BENCH)
+    if (binfo.keylen.a < couch_kv_min_key_len || binfo.keylen.a > couch_kv_max_key_len || binfo.keylen.b > couch_kv_max_key_len) {
+      fprintf(stderr, "WARN: The length of key should be between %d and %d\n", couch_kv_min_key_len, couch_kv_max_key_len);
+      iniparser_free(cfg);
+      exit(1);
+    }
+#endif
+
     if(binfo.kp_unitsize < max_key_len) {
       fprintf(stderr, "WARN: Please set 'key_pool_unit' to be equal to or larger than the largest possible key size in your config: %d\n", max_key_len);
+      iniparser_free(cfg);
       exit(1);
     }
 
@@ -4139,10 +4256,10 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     }
 #if defined __KV_BENCH || defined __KVROCKS_BENCH
     // only support one thread per device for kv
-    if (binfo.nreaders + binfo.ndeleters + binfo.nwriters > 1) {
+    if (binfo.nreaders + binfo.ndeleters + binfo.nwriters + binfo.niterators > 1) {
       fprintf(stderr, "WARN: KV SSD only support one thread per device now\n");
     }
-    binfo.nreaders = binfo.ndeleters = 0;
+    binfo.nreaders = binfo.ndeleters = binfo.niterators = 0;
     binfo.nwriters = 1;
 #endif
     init_cpu_aff(&binfo);
@@ -4168,6 +4285,11 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
             iniparser_getint(cfg, (char*)"body_length:lower_bound", 448);
         binfo.bodylen.b =
             iniparser_getint(cfg, (char*)"body_length:upper_bound", 576);
+        if (binfo.bodylen.a > binfo.bodylen.b) {
+          fprintf(stderr, "WARN: Please set the upper bound of value body length to be equal to or larger than the lower bound\n");
+          iniparser_free(cfg);
+          exit(1);
+        }
         DATABUF_MAXLEN = binfo.bodylen.b;
 	max_body_buf = binfo.bodylen.b + 16;
     } else if (str[0] == 'f'){
@@ -4179,6 +4301,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     } else if (str[0] == 'r') {
       char buf[256];
       char *pt;
+      int size_cnt = 0;
       i = 0;
       binfo.bodylen.type = RND_RATIO;
       str = iniparser_getstring(cfg, (char*)"body_length:value_size",(char*)"4096");
@@ -4192,6 +4315,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
       }
       max_body_buf = DATABUF_MAXLEN;
       str = iniparser_getstring(cfg, (char*)"body_length:value_size_ratio",(char*)"100:0");
+      size_cnt = i;
       i = 0;
       int total_ratio = 0;;
       memset(binfo.value_size_ratio, 0, sizeof(binfo.value_size_ratio));
@@ -4203,25 +4327,35 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
 	pt = strtok(NULL, ":");
       }
 
+      if(i != size_cnt) {
+        fprintf(stdout, "WARN: The number of value_size and value_size_ratio are mismatch\n");
+        iniparser_free(cfg);
+        exit(1);
+      }
+
       if(total_ratio != 100) {
 	fprintf(stdout, "WARN: Total value size ratio should equal to 100\n");
+	iniparser_free(cfg);
 	exit(1);
       }
 
-      binfo.vp_unitsize = DATABUF_MAXLEN;
+      //binfo.vp_unitsize = DATABUF_MAXLEN;
 
     } else {
       fprintf(stdout, "Please set value size (body_length) distribution properly:\n");
       fprintf(stdout, "fixed,ratio,uniform,normal\n");
+      iniparser_free(cfg);
       exit(1);
     }
     
     if(binfo.vp_unitsize < max_body_buf) {
       fprintf(stderr, "WARN: Please set 'value_pool_unit' to be equal to or larger than the largest possible value size in your config: %d\n", max_body_buf);
+      iniparser_free(cfg);
       exit(1);
     }
     if(binfo.vp_unitsize == 0 || binfo.kp_unitsize == 0){
       fprintf(stderr, "WARN: Invalide memory pool size, should be greater than 0\n");
+      iniparser_free(cfg);
       exit(1);
     }
 
@@ -4313,6 +4447,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
 	  // insertion key space extension
 	  binfo.batch_dist.b = binfo.ndocs + binfo.nops * binfo.ratio[2] * 2;
 	  printf("higher bound is %d\n", binfo.batch_dist.b);
+	  iniparser_free(cfg);
 	  exit(0);
 	} else {
 	  binfo.batch_dist.b = binfo.ndocs * binfo.amp_factor;
@@ -4353,12 +4488,19 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     //char *pt;
     memset(binfo.ratio, 0, sizeof(binfo.ratio));
     char buff[256];
+    int op_total_ratio = 0;
     i = 0;
     strcpy(buff, str);
     pt = strtok ((char*)buff, ":");
     while(pt != NULL){
       binfo.ratio[i++] = atoi(pt);
       pt = strtok(NULL, ":");
+      op_total_ratio += binfo.ratio[i - 1];
+    }
+    if (op_total_ratio > 0 && op_total_ratio != 100) {
+	  fprintf(stdout, "WARN: Total operation ratio should equal to 100\n");
+	  iniparser_free(cfg);
+	  exit(1);
     }
 
     str = iniparser_getstring(cfg,

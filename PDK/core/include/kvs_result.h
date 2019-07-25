@@ -84,7 +84,14 @@ typedef enum {
   KVS_ERR_VALUE_UPDATE_NOT_ALLOWED=0x024	, // key exists but value update is not allowed
   KVS_ERR_VENDOR=0x025	, // vendor-specific error is returned, check the system log for more details
   KVS_ERR_PERMISSION = 0x26,     // unable to open device due to permission
-  
+  KVS_ERR_ENV_NOT_INITIALIZED= 0x27	,     // environment was not initialized
+  KVS_ERR_DEV_NOT_OPENED= 0x28	,     // device was not opened
+  KVS_ERR_DEV_ALREADY_OPENED= 0x29,     // device is already opened
+  KVS_ERR_DEV_PATH_TOO_LONG=0x02A,     // the length of dev path more than 255
+  KVS_ERR_ITERATOR_NUM_OUT_RANGE=0x02B, //the number of iterator required out of range(equal 0, or bigger than 16)
+  KVS_ERR_DD_UNSUPPORTED=0x02C,   //device driver does not support.
+  KVS_ERR_ITERATOR_BUFFER_SIZE=0x02D, // buffer (iter_list->it_list) size in kvs_iterator_list error
+
   // From user driver	
   KVS_ERR_CACHE_INVALID_PARAM=0x200	, // (kv cache) invalid parameters
   KVS_ERR_CACHE_NO_CACHED_KEY=0x201	, // (kv cache) cache miss

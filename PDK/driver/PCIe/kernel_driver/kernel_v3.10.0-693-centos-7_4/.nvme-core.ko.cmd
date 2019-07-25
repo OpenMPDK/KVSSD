@@ -1,0 +1,1 @@
+cmd_/root/ilgu/kernel_v3.10.0-693/nvme-core.ko := ld -r -m elf_x86_64 -T ./scripts/module-common.lds --build-id  -o /root/ilgu/kernel_v3.10.0-693/nvme-core.ko /root/ilgu/kernel_v3.10.0-693/nvme-core.o /root/ilgu/kernel_v3.10.0-693/nvme-core.mod.o

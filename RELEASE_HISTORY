@@ -1,6 +1,11 @@
 
 Release History
 
+---   v1.2.0
+   Modify the computing method to adapt the changes of Namespace Utilization (NUSE) field of NVMe specification.
+   Add multiple-instances support for KV emulator
+   Bug fix
+
 ---   v1.0.0
    API spec update
    Bug fix

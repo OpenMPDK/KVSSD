@@ -12,6 +12,7 @@ Features Added
  - memory pool: use pre-allocated memory pool for keys and values to avoid frequent memory allocation
  - memory allocator: support different types of memory allocator: spdk, posix, and numa aware
  - Aerospike support: synchronous and asyncronous IOs benchmark for aerospike
+ - RocksDB with user space driver: support benchmark on RocksDB's spdk version which talks to blobfs
  - sequential insertion: generate sequential insertion workload for multiple dabases or devices
  - insertion(pop) first: support workloads on an existing or empty database or device
  - value size control: support up to 5 different value lengths with ratio control in percentage

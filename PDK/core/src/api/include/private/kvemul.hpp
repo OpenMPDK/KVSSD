@@ -70,10 +70,8 @@ public:
   
   kv_interrupt_handler int_handler;
   std::mutex lock;
-  std::queue<kv_key*> kv_key_pool;
-  std::queue<kv_value*> kv_value_pool;
   std::queue<kv_emul_context*> kv_ctx_pool;
-  
+  std::condition_variable ctx_pool_notfull;
 public:
   KvEmulator(kv_device_priv *dev, kvs_callback_function user_io_complete_);
   virtual ~KvEmulator();

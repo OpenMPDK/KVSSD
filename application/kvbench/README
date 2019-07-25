@@ -1,4 +1,6 @@
+
 KV-Benchmark is a benchmark program for embedded key-value storage engines, based on a sophisticated workload generation which is more realistic than performing a bunch of read/write operations. It is based on ForestDB-benchmark tool, with an extension of KVS API support.
+
 
 BUILD ========================================================================== 
 0. Install libraries
@@ -20,24 +22,41 @@ BUILD ==========================================================================
     cmake -DCMAKE_INCLUDE_PATH=<YOUR ROCKSDB HEADER FILE DIR> -DCMAKE_LIBRARY_PATH=<YOUR ROCKSDB LIB FILE DIR> ../
     make rocksdb_bench
 
-2. KV Stack on KV SSD (Direct operation to KV SSD)
+2. RocksDB (SPDK)
+  2.0 A working version of source code for intel SPDK and RocksDB(SPDK) is included in kvbench package
+  2.1 Build SPDK library
+    cd kvbench/spdk/spdk
+    ./configure
+    make
+    cd ../
+  2.2 Build RocksDB(SPDK)
+    cd kvbench/spdk/rocksdb
+    make static_lib
+    cd ../../
+  2.3 build blobfs_rocksdb_bench
+    cd kvbench
+    mkdir build_spdk && cd build_spdk
+    cmake ../
+    make blobfs_rocksdb_bench
+
+3. KV Stack on KV SSD (Direct operation to KV SSD)
   3.1 Download and build kvapi library
   3.2 Build kv_bench
     cd kvbench
     mkdir build_kv && cd build_kv
-    cmake -DCMAKE_INCLUDE_PATH=/KVSSD/PDK/core/include -DCMAKE_LIBRARY_PATH=/KVSSD/PDK/core/build ../
+    cmake -DCMAKE_INCLUDE_PATH=/KVSSD/PDK/core/include -DCMAKE_LIBRARY_PATH=/KVSSD/PDK/core/build/libkvapi.so ../
     * INCLUDE_PATH and LIBRARY_PATH must be updated based on user directories
 
     make kv_bench
 
 /* KVDB is not yet supported */
-3. KVDB
+4. KVDB
     cd kvbench
     mkdir build_kvdb && cd build_kvdb
     cmake -DCMAKE_INCLUDE_PATH=<YOUR KVDB API HEADER FILE DIR> -DCMAKE_LIBRARY_PATH="-L<YOUR KVDB API LIB FILE DIR> -L<YOUR INSDB API LIB FILE DIR>" ../
     make kv_bench
 
-4. Aerospike
+5. Aerospike
   5.1 Download & install aerospike server
     https://www.aerospike.com/docs/operations/install/linux/ubuntu
   5.2 Build as_bench
@@ -77,6 +96,19 @@ Step 3. Setup environment
      filename = /mnt/rocksdb"
      RockDB data will be loaded to /mnt/rocksdb/0, ..., /mnt/rocksdb/N, N is the number of total block devices set in bench_config.ini (e.g. [system] device_path = /dev/nvme0n1,/dev/nvme1n1). File system needs to be created and mounted accordingly before starting kvbench. 
 
+  * RocksDB on SPDK
+    - Prepare the spdk configuration file
+      # cp /KVSSD/application/kvbench/spdk/spdk/etc/spdk/rocksdb.conf.in /tmp/rocksdb.conf 
+      # /KVSSD/application/kvbench/spdk/spdk/scripts/gen_nvme.sh >> /tmp/rocksdb.conf
+    - Reserve hugepage
+      cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+      echo 1024 > /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
+    - Setup spdk environment
+      /KVSSD/application/kvbench/spdk/spdk/scripts/setup.sh
+    - Create BlobFS on the device
+      /KVSSD/application/kvbench/spdk/spdk/test/lib/blobfs/mkfs/mkfs <your_conf_file> <device_name>
+      e.g. ./test/lib/blobfs/mkfs/mkfs /tmp/rocksdb.conf Nvme0n1
+
   * KV SSD direct access
     - setup spdk environment if running with spdk driver
       /KVSSD/PDK/core/tools/setup.sh
@@ -92,7 +124,10 @@ Step 4. run benchmark
     sudo LD_LIBRARY_PATH=<YOUR_SIRIUS_LIB_DIR> ./kv_bench -f bench_config.ini
     sudo LD_LIBRARY_PATH="<YOUR_INSDB _LIB_DIR>:<YOUR_KVDB_LIB_DIR>" ./kvdb_bench -f bench_config.ini
     sudo LD_LIBRARY_PATH=<YOUR_ROCKSDB_LIB_DIR> ./rocksdb_bench -f bench_config.ini
+    sudo LD_LIBRARY_PATH=<YOUR_SPDKROCKSDB_LIB_DIR> ./blobfs_rocksdb_bench -f bench_config.ini
     sudo LD_LIBRARY_PATH=<YOUR_AEROSPIKE_LIB_DIR> ./as_bench -f bench_config.ini
+
+    # If you see a "Double allocated SPDK thread" message when running RocksDB on SPDK, it is harmless and can be ignored
 
 CONFIGURATION =====================================================================
 0. Two phases during each run:
@@ -105,7 +140,7 @@ CONFIGURATION ==================================================================
    column 2 (coreid): cpu core id
    column 3 (dbid_load): DB instances id run on the corresponding cpu core during load
    column 4 (dbid_perf): DB instances id run on the corresponding cpu core during benchmark
-   e.g. the sample cpu.txt in the kvbench main directory shows a server having two numa nodes with total 48 cores. Two device instances (id: 0,1) will be tested. At `load` phase, device (DB) 0 will have one client thread using core 0 to generate workload, DB 1 will have one thread using core 2. At 'benchmark', each DB will have two threads. DB 0 is attached to core 0 & 2, DB 1 is attached to core 4 & 6. If no coreid is specified (default '-1' for all DBs), user threads can use all available cores on the node. For KV using spdk driver, the coreid configuration must match the field in "[kvs] cq_thread_ids" which could not be '-1'. 
+   e.g. the sample cpu.txt in the kvbench main directory shows a server having two numa nodes with total 48 logical cores. Two device instances (id: 0,1) will be tested. At `load` phase, device (DB) 0 will have one client thread using core 0 to generate workload, DB 1 will have one thread using core 2. At 'benchmark', each DB will have two threads. DB 0 is attached to core 0 & 2, DB 1 is attached to core 4 & 6. If no coreid is specified (default '-1' for all DBs), user threads can use all available cores on the node. For KV using spdk driver, the coreid configuration must match the field in "[kvs] cq_thread_ids" which could not be '-1'. 
 
 2. bench_config.ini
 [document]
@@ -138,6 +173,10 @@ iterator_mode = key    # [DEFAULT] iterator command gets only key entries withou
 hosts = 127.0.0.1  # aerospike host ip
 port = 3000    # port number
 namespace = test2  # namespace used in aerospike test, also refer to aerospike's server config file
+
+[blobfs]
+spdk_conf_file = /kvbench/spdk/spdk/etc/spdk/rocksdb.conf # rocksdb-spdk config file
+spdk_cache_size = 4096    # spdk cache size
 
 [db_file]
 filename = /mnt/rocksdb  # if N devices are used in '[system] device_path', workload will be generated to /mnt/rocksdb/0, /mnt/rocksdb/2, ..., /mnt/rocksdb/N; make sure devices are properly mounted before the run
@@ -181,6 +220,7 @@ Performance measurement result files are in ./logs directory.
       ii.   KVS-run.ops.csv: similar to KVS-insert.ops.csv
     - Limitations:
       i.    Direct operation to KV SSD does not capture IOs (disk bytes written) per process. This stats will be updated in future release.
+
 
 
 More information on ForestDB Benchmark website:

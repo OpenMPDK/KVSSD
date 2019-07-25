@@ -41,6 +41,7 @@
 
 #include "queue.hpp"
 #include "kv_device.hpp"
+#include "kvs_utils.h"
 
 namespace kvadi {
 // default location for device configuration
@@ -78,39 +79,14 @@ kv_raw_dev_type kv_device_internal::get_dev_type() {
     return m_dev_type;
 }
 
-// validate key and value
-static kv_result validate_key_value(const kv_key *key, const kv_value *value) {
-    if (key->key == NULL) {
-        return KV_ERR_KEY_INVALID;
-    }
-    if (key->length > SAMSUNG_KV_MAX_KEY_LEN || key->length < SAMSUNG_KV_MIN_KEY_LEN) {
-        return KV_ERR_KEY_LENGTH_INVALID;
-    }
-
-    if (value != NULL) {
-        if (value->length < SAMSUNG_KV_MIN_VALUE_LEN || value->length > SAMSUNG_KV_MAX_VALUE_LEN) {
-            return KV_ERR_VALUE_LENGTH_INVALID;
-        }
-    }
-
-    return KV_SUCCESS;
-}
-
-
 // private constructor
 // options must be valid for emulator
 // please note kv_device_internal is just a container, the real kvstore
 // operations are carried out by kv_namespace, which contains kvstore objects
 kv_device_internal::kv_device_internal(kv_device_init_t *options) {
     static const uint64_t GB = 1024 * 1024 * 1024UL;
-    // check device path
-    m_dev_type = KV_DEV_TYPE_NONE;
-    if (options->devpath != NULL && strcmp(options->devpath, KVSSD_EMULATOR_PATH) == 0) {
-        m_dev_type = KV_DEV_TYPE_EMULATOR;
-    } else {
-        WRITE_WARN("Not supported device path: %s", options->devpath); 
-        exit(1);
-    }
+    m_dev_type = KV_DEV_TYPE_EMULATOR;
+
     // from caller's init option
     m_is_poll = options->is_polling;
 
@@ -1425,37 +1401,10 @@ kv_result kv_device_internal::submit_io(kv_queue_handle que_hdl, io_cmd *cmd) {
         return KV_ERR_QUEUE_QID_INVALID;
     }
 
-    // for kernel based SSD, check pending items for qdepth
-    // don't queue up commands here as in emulator. Device
-    // is supposed to have a queueing mechanism, details are to
-    // be in sync with device driver implementation
-    // the implementation here may be just stop gap solution
-    // XXX TODO
-    if (m_dev_type == KV_DEV_TYPE_LINUX_KERNEL) {
-        kernel_ioqueue* kque = (kernel_ioqueue*)queue;
+    emul_ioqueue* eque = (emul_ioqueue*)queue;
+    auto res = eque->enqueue(cmd, false);
 
-        if (kque->full()) {
-            return KV_ERR_QUEUE_IS_FULL;
-        } else {
-            // send to real device directly for execution
-            // actually only in a queue inside device driver for asyncIO
-            // Please note this is not actual execution, it's just sent to device
-            // for asynchronous execution.
-            // Ideally device should export a queue interface for sending commands
-            kv_result res = cmd->execute_cmd();
-            if (res == KV_SUCCESS) {
-                kque->increase_qdepth();
-            }
-
-            return res;
-        }
-    } else {
-        emul_ioqueue* eque = (emul_ioqueue*)queue;
-        // only add to SQ for emulator
-        auto res = eque->enqueue(cmd, false);
-
-        return res;
-    }
+    return res;
 }
 
 // 0 means invalid

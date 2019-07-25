@@ -41,6 +41,22 @@ elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     set(LIBRT rt)
 endif()
 
+add_executable(fdb_bench
+               bench/couch_bench.cc
+	       wrappers/couch_fdb.cc
+	       utils/avltree.cc
+	       utils/stopwatch.cc
+	       utils/iniparser.cc
+	       utils/crc32.cc
+	       utils/memleak.cc
+	       utils/zipfian_random.cc
+	       utils/keyloader.cc
+	       utils/keygen.cc
+	       utils/memory.cc)
+target_link_libraries(fdb_bench ${PTHREAD_LIB} ${LIBM} ${LIBSNAPPY} ${LIBNUMA} ${LIBFDB})
+set_target_properties(fdb_bench PROPERTIES COMPILE_FLAGS "-D__FDB_BENCH")
+file(COPY ${CMAKE_SOURCE_DIR}/bench_config.ini DESTINATION ./)
+
 add_executable(couch_bench
                bench/couch_bench.cc
                utils/avltree.cc
@@ -54,6 +70,38 @@ add_executable(couch_bench
                utils/keygen.cc)
 target_link_libraries(couch_bench ${PTHREAD_LIB} ${LIBM} ${LIBSNAPPY} ${LIBNUMA} ${LIBCOUCH})
 set_target_properties(couch_bench PROPERTIES COMPILE_FLAGS "-D__COUCH_BENCH")
+file(COPY ${CMAKE_SOURCE_DIR}/bench_config.ini DESTINATION ./)
+
+add_executable(leveldb_bench
+               bench/couch_bench.cc
+	       wrappers/couch_leveldb.cc
+	       utils/avltree.cc
+	       utils/stopwatch.cc
+	       utils/iniparser.cc
+	       utils/crc32.cc
+	       utils/memleak.cc
+	       utils/zipfian_random.cc
+	       utils/keyloader.cc
+	       utils/memory.cc
+	       utils/keygen.cc)
+target_link_libraries(leveldb_bench ${PTHREAD_LIB} ${LIBM} ${LIBSNAPPY} ${LIBNUMA} ${LIBLDB})
+set_target_properties(leveldb_bench PROPERTIES COMPILE_FLAGS "-D__LEVEL_BENCH")
+file(COPY ${CMAKE_SOURCE_DIR}/bench_config.ini DESTINATION ./)
+
+add_executable(wt_bench
+               bench/couch_bench.cc
+	       wrappers/couch_wt.cc
+	       utils/avltree.cc
+	       utils/stopwatch.cc
+	       utils/iniparser.cc
+	       utils/crc32.cc
+	       utils/memleak.cc
+	       utils/zipfian_random.cc
+	       utils/keyloader.cc
+	       utils/memory.cc
+	       utils/keygen.cc)
+target_link_libraries(wt_bench ${PTHREAD_LIB} ${LIBM} ${LIBSNAPPY} ${LIBNUMA} ${LIBWT})
+set_target_properties(wt_bench PROPERTIES COMPILE_FLAGS "-D__WT_BENCH")
 file(COPY ${CMAKE_SOURCE_DIR}/bench_config.ini DESTINATION ./)
 
 add_executable(rocksdb_bench
@@ -109,8 +157,8 @@ add_executable(kv_bench
 	       utils/keyloader.cc
 	       utils/memory.cc
 	       utils/keygen.cc)
-set(KVS_LIB -L${CMAKE_LIBRARY_PATH} -lkvapi)
-target_link_libraries(kv_bench ${COMMON_LIB} ${KVS_LIB})
+#set(KVS_LIB -L${CMAKE_LIBRARY_PATH} -lkvapi)
+target_link_libraries(kv_bench ${COMMON_LIB} ${CMAKE_LIBRARY_PATH})
 set_target_properties(kv_bench PROPERTIES COMPILE_FLAGS "-D__KV_BENCH")
 target_compile_options(kv_bench PRIVATE ${COMMON_FLAGS})
 
@@ -133,3 +181,24 @@ set_target_properties(as_bench PROPERTIES COMPILE_FLAGS "-D__AS_BENCH")
 target_compile_options(as_bench PRIVATE ${COMMON_FLAGS})
 #file(COPY ${CMAKE_SOURCE_DIR}/bench_config.ini DESTINATION ./)
 
+include_directories(${CMAKE_SOURCE_DIR}/spdk/spdk/include)
+include_directories(${CMAKE_SOURCE_DIR}/spdk/rocksdb/include)
+add_executable(blobfs_rocksdb_bench
+               bench/couch_bench.cc
+	       wrappers/couch_blobfs_rocksdb.cc
+	       utils/avltree.cc
+	       utils/stopwatch.cc
+	       utils/iniparser.cc
+	       utils/crc32.cc
+	       utils/memleak.cc
+	       utils/zipfian_random.cc
+	       utils/keyloader.cc
+	       utils/memory.cc
+	       utils/keygen.cc)
+set(SPDK_DIR ${CMAKE_SOURCE_DIR}/spdk)
+set(RDB_SPDK_LIB -L${SPDK_DIR}/rocksdb -lrocksdb)
+set(ROCKS_SPDK_LIB -L${SPDK_DIR}/spdk/dpdk/build/lib -L${SPDK_DIR}/rocksdb rocksdb.a -Wl,--start-group -Wl,--whole-archive librte_eal.a librte_mempool.a librte_ring.a librte_mempool_ring.a -Wl,--end-group -Wl,--no-whole-archive -L${SPDK_DIR}/spdk/build/lib libspdk_event.a libspdk_blobfs.a libspdk_blob.a libspdk_blob_bdev.a libspdk_conf.a libspdk_trace.a libspdk_log.a -Wl,--start-group -Wl,--whole-archive libspdk_event_bdev.a libspdk_event_copy.a libspdk_event_rpc.a libspdk_copy_ioat.a libspdk_ioat.a libspdk_bdev.a libspdk_bdev_malloc.a libspdk_bdev_null.a libspdk_bdev_nvme.a libspdk_nvme.a libspdk_vbdev_error.a libspdk_vbdev_gpt.a libspdk_vbdev_split.a libspdk_rpc.a -Wl,--end-group -Wl,--no-whole-archive libspdk_copy.a libspdk_util.a libspdk_env_dpdk.a libspdk_jsonrpc.a libspdk_json.a)
+target_link_libraries(blobfs_rocksdb_bench ${COMMON_LIB} ${ROCKS_SPDK_LIB})
+set(ROCKS_SPDK_FLAGS -DROCKSDB_JEMALLOC -D__BLOBFS_ROCKS_BENCH)
+set_target_properties(blobfs_rocksdb_bench PROPERTIES COMPILE_FLAGS "-D__BLOBFS_ROCKS_BENCH")
+target_compile_options(blobfs_rocksdb_bench PRIVATE ${COMMON_FLAGS} ${ROCKS_SPDK_FLAGS})

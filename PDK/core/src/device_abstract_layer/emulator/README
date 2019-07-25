@@ -1,0 +1,52 @@
+A library for Samsung KVSSD Emulator
+
+Release version 0.5.0.0
+
+1).
+----
+How build:
+    1. mkdir build
+    2. cd build
+    3. cmake ..
+    4. make
+
+2).
+----
+test source code is at:
+    test/test_suite.cpp
+    sample_code/sample_poll.cpp
+    sample_code/sample_interrupt.cpp
+
+Please note in order to support interrupt based operation, the device emulator configuration settings for "polling" in section "general" must be set to be "false", as default setting is to operate in polling mode.
+
+"keylen_fixed" configuration option will affect iteration behavior. If it's set to be true, then it's assumed all stored keys are fixed in length, and iteration output will not ouput a key length field preceding each key. However it's up to the caller to maintain length of keys to segment iteration output keys correctly.
+
+3).
+----
+library and test binaries are at:
+    build/
+
+    all these tests should be executed successfully
+    1. test_suite_emul
+    2. sample_client_emul
+    3. sample_interrupt_emul
+
+    Please note that LD_LIBRARY_PATH needs to be set correctly, e.g. LD_LIBRARY_PATH=. ./test_suite_emul
+
+4).
+----
+Configuration file: (for emulator only)
+
+    Currently there are two sections for emulator configuration.
+    
+    First section is the general section. It contains capacity, polling, keylen_fixed, and use_iops_model. You can use capacity to specify the max capacity of KVSSD emulator, once the capacity is reached, emulator will return capacity full error. Polling is used to overwrite the device initialization setting of field is_polling in structure kv_device_init_t, which is used by kv_initialize_device(). Keylen_fixed is used to indicate if a key length field should be included for iteration output buffer. If keylen_fixed is set to be true, then the key length field is not included assuming the API caller will know the length of key in iteration output buffer. Otherwise, the key length field is included in the iteration output buffer, preceding the value of each key. Use_iops_model is used to enable or disable IOPS modeling within the KVSSD emulator. When it's set to be false, KVSSD emulator will bypass IOPS modeling and perform faster than a real device.
+    
+    Iops_modling section should be treated as a read only section, end users shouldn't modify this section without instructions from Samsung.
+    
+    The sample code assumes there is a KVSSD device emulator configuration file named "kvssd_emul.conf" at current directory.
+
+
+5).
+----
+Limitations
+    1. Only one queue per device is recommended for best performance.

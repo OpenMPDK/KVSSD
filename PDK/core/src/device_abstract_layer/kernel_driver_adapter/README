@@ -1,0 +1,43 @@
+A library for Samsung KVSSD APIs to support kernerl driver based KVSSD operations
+Release version 0.5.0.0
+
+1).
+----
+How build:
+    1. mkdir build
+    2. cd build
+    3. cmake ..
+    4. make release
+
+2).
+----
+test source code is at:
+    test/test_suite.cpp
+    sample_code/sample_poll.cpp
+    sample_code/sample_interrupt.cpp
+
+3).
+----
+library and test binaries are at:
+    build/
+
+    all these tests should be executed successfully
+    1. test_suite
+    2. sample_client
+    3. sample_interrupt
+
+5).
+----
+How to test with KVSSD using kernel module (tenative)
+    1. load the correct version of kernel module for KVSSD
+    2. run test
+        sudo LD_LIBRARY_PATH=. ./test_suite 12356 0xffffffff 0x12345678 /dev/nvme2n1
+        sudo LD_LIBRARY_PATH=. ./sample_interrupt 2000 /dev/nvme2n1    
+        sudo LD_LIBRARY_PATH=. ./sample_poll 2000 /dev/nvme2n1    
+
+6). 
+----
+Known limitation in iteration:
+    1). The kernel module only supports iterator option KV_ITERATOR_OPT_KEY.
+    2). The kernel module only supports 32K iteration output buffer.
+    3). The kernel module only supports fixed 16 bytes key.

@@ -23,6 +23,9 @@ static int use_udd = 0;
 static int kdd_is_polling = 1;
 #define GB_SIZE (1024*1024*1024)
 
+int couch_kv_min_key_len = KVS_MIN_KEY_LENGTH;
+int couch_kv_max_key_len = KVS_MAX_KEY_LENGTH;
+
 struct _db {
   int id;
   kvs_device_handle dev;
@@ -99,7 +102,7 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list){
       // print key
       memcpy(key, it_buffer, key_size);
       key[key_size] = 0;
-      fprintf(stdout, "%dth key --> %s\n", i, key);
+      //fprintf(stdout, "%dth key --> %s\n", i, key);
       it_buffer += key_size;
     }
     
@@ -160,8 +163,13 @@ void free_doc(Doc *doc)
 
 void on_io_complete(kvs_callback_context* ioctx) {
   if(ioctx->result != KVS_SUCCESS && ioctx->result != KVS_ERR_KEY_NOT_EXIST) {
-    fprintf(stdout, "io error: op = %d, key = %s, result = %s\n", ioctx->opcode, ioctx->key? (char*)ioctx->key->key:0, kvs_errstr(ioctx->result));
-    exit(1);
+    if(ioctx->opcode != IOCB_ASYNC_GET_CMD &&
+      ioctx->result != KVS_ERR_BUFFER_SMALL) {
+      fprintf(stdout, "io error: op = %d, key = %s, result = %s\n",
+        ioctx->opcode, ioctx->key? (char*)ioctx->key->key:0,
+        kvs_errstr(ioctx->result));
+      exit(1);
+    }
   }
 
   auto owner = (struct _db*)ioctx->private1;
@@ -202,7 +210,7 @@ void on_io_complete(kvs_callback_context* ioctx) {
       break;
     case IOCB_ASYNC_ITER_NEXT_CMD:
       //ctx->op = OP_ITER_NEXT;
-      //print_iterator_keyvals(&owner->iter_list);
+      print_iterator_keyvals(&owner->iter_list);
       ctx->key = ctx->value = NULL;
       owner->has_iter_finish = 1;
       break;
@@ -643,8 +651,11 @@ couchstore_error_t kvs_store_async(Db *db, Doc* const docs[],
 #endif
 
   ret = kvs_store_tuple_async(db->cont_hd, kvskey, kvsvalue, &put_ctx, on_io_complete);
-  while (ret) {
-    ret = kvs_store_tuple_async(db->cont_hd, kvskey, kvsvalue, &put_ctx, on_io_complete);
+  if (ret) {
+    fprintf(stderr, "KVBENCH: store tuple async failed %s 0x%x\n", (char*)docs[0]->id.buf, ret);
+    if (put_ctx.private2)
+      free(put_ctx.private2);
+    exit(1);
   }
 
   return COUCHSTORE_SUCCESS;
@@ -812,8 +823,11 @@ couchstore_error_t kvs_get_async(Db *db, sized_buf *key, sized_buf *value,
 #endif
   
   ret = kvs_retrieve_tuple_async(db->cont_hd, kvskey, kvsvalue, &ret_ctx, on_io_complete);
-  while(ret) {
-    ret = kvs_retrieve_tuple_async(db->cont_hd, kvskey, kvsvalue, &ret_ctx, on_io_complete);
+  if (ret) {
+    fprintf(stderr, "KVBENCH: retrieve tuple async failed for %s, err 0x%x\n", (char*)key->buf, ret);
+    if (ret_ctx.private2)
+      free(ret_ctx.private2);
+    exit(1);
   }
 
   return COUCHSTORE_SUCCESS; 
@@ -830,9 +844,10 @@ couchstore_error_t kvs_get_async(Db *db, sized_buf *key, sized_buf *value,
   
   ret = kvs_retrieve_tuple(db->cont_hd, &kvskey, &kvsvalue, &ret_ctx);
 
-  if(ret != KVS_SUCCESS) {
+  if(ret != KVS_SUCCESS && ret != KVS_ERR_KEY_NOT_EXIST &&
+    ret != KVS_ERR_BUFFER_SMALL) {
     fprintf(stderr, "KVBENCH: retrieve tuple sync failed for %s, err 0x%x\n", (char*)key->buf, ret);
-    //exit(1);
+    exit(1);
   } 
     
   return COUCHSTORE_SUCCESS; 
@@ -911,8 +926,11 @@ couchstore_error_t kvs_delete_sync(Db *db,
 #endif
   
   ret = kvs_delete_tuple_async(db->cont_hd, kvskey, &del_ctx, on_io_complete);
-  while(ret) {
-    kvs_delete_tuple_async(db->cont_hd, kvskey, &del_ctx, on_io_complete);
+  if (ret) {
+    fprintf(stderr, "KVBENCH: delete tuple async failed for %s, err 0x%x\n", (char*)key->buf, ret);
+    if (del_ctx.private2)
+      free(del_ctx.private2);
+    exit(1);
   }
   
   return COUCHSTORE_SUCCESS;

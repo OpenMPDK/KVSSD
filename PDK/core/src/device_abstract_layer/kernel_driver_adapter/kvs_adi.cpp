@@ -48,6 +48,8 @@
 #include "kvs_adi_internal.h"
 #include "thread_pool.hpp"
 #include "kadi.h"
+#include "kvs_utils.h"
+
 #define FTRACE
 #include "kadi_debug.h"
 
@@ -62,26 +64,6 @@ inline KADI *get_kadi_from_hdl(const kv_device_handle dev_hdl)
 
     return (KADI *) dev_hdl->dev;  
 }
-
-// validate key and value
-static kv_result validate_key_value(const kv_key *key, const kv_value *value) {
-    if (key->key == NULL) {
-        return KV_ERR_KEY_INVALID;
-    }
-    if (key->length > SAMSUNG_KV_MAX_KEY_LEN || key->length < SAMSUNG_KV_MIN_KEY_LEN) {
-        return KV_ERR_KEY_LENGTH_INVALID;
-    }
-
-    if (value != NULL) {
-        if (value->length < SAMSUNG_KV_MIN_VALUE_LEN || value->length > SAMSUNG_KV_MAX_VALUE_LEN) {
-            return KV_ERR_VALUE_LENGTH_INVALID;
-        }
-    }
-
-    return KV_SUCCESS;
-}
-
-
 
 class devlist {
 public:
@@ -221,7 +203,7 @@ kv_result kv_get_device_stat(const kv_device_handle dev_hdl, kv_device_stat *dev
     dev_st->utilization = (uint16_t)(utilization * 10000);
     dev_st->waf = 0;
     dev_st->extended_info = 0;
-    
+
     return KV_SUCCESS;
 }
 
@@ -394,7 +376,21 @@ kv_result kv_open_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_
     KADI *dev = (KADI *) que_hdl->dev;
     if (dev == NULL) { return KV_ERR_DEV_NOT_EXIST; }
 
-    kv_result ret = dev->iter_open(&iter_ctx);
+    nvme_kv_iter_req_option dev_option;
+    switch(it_op){
+      case KV_ITERATOR_OPT_KEY:
+        dev_option = ITER_OPTION_KEY_ONLY;
+        break;
+      case KV_ITERATOR_OPT_KV:
+        dev_option = ITER_OPTION_KEY_VALUE;
+        break;
+      case KV_ITERATOR_OPT_KV_WITH_DELETE:
+        dev_option = ITER_OPTION_DEL_KEY_VALUE;
+        break;
+      default:
+        return KV_ERR_OPTION_INVALID;
+    }
+    kv_result ret = dev->iter_open(&iter_ctx, dev_option);
     if (ret == KV_SUCCESS) {
         *iter_handle = (uint8_t)iter_ctx.handle;
     }
@@ -416,10 +412,10 @@ kv_result kv_close_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns
 }
 kv_result kv_iterator_next(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, kv_postprocess_function *post_fn)
 {
-     if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == 0 || iter_list == NULL) {
+    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl <= 0
+        || iter_hdl > SAMSUNG_MAX_ITERATORS || iter_list == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
-
     kv_iter_context iter_ctx;
     iter_ctx.handle  = iter_hdl;
     iter_ctx.buf =  iter_list->it_list;
@@ -431,7 +427,8 @@ kv_result kv_iterator_next(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, 
 
 kv_result kv_iterator_next_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_iterator_list *iter_list) {
     FTRACE
-    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == 0 || iter_list == NULL) {
+    if (que_hdl == NULL || ns_hdl == NULL || iter_hdl <= 0
+        || iter_hdl > SAMSUNG_MAX_ITERATORS || iter_list == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
@@ -443,17 +440,22 @@ kv_result kv_iterator_next_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_
     KADI  *dev = (KADI  *) que_hdl->dev;
     kv_result ret = dev->iter_read(&iter_ctx);
 
-    unsigned int key_count = (iter_ctx.byteswritten == 0) ? 0 : *((uint32_t *)iter_ctx.buf);
-    iter_list->num_entries = key_count;
-    iter_list->size = iter_ctx.byteswritten;
-    if (ret == KV_SUCCESS) {
-      iter_list->end  = (iter_ctx.end)? TRUE:FALSE;
+    if (ret == KV_SUCCESS || ret == 0x393){
+      if(iter_ctx.byteswritten > 0){
+        const unsigned int key_count = *((uint32_t *)iter_ctx.buf);
+        iter_list->num_entries = key_count;
+        iter_list->size = iter_ctx.byteswritten;
+      }else{
+        iter_list->num_entries = 0;
+        iter_list->size = 0;
+      }
+      if(ret == KV_SUCCESS)
+        iter_list->end  = (iter_ctx.end)? TRUE:FALSE;
+      else{
+        iter_list->end = TRUE;
+        ret = KV_SUCCESS;
+      }
     }
-    else if (ret == 0x393) {
-      ret = KV_SUCCESS;
-      iter_list->end = TRUE;
-    }
-
     return ret;
 }
 kv_result kv_list_iterators(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator *kv_iters, uint32_t *iter_cnt, kv_postprocess_function  *post_fn) {
@@ -545,7 +547,24 @@ kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv
         return KV_ERR_PARAM_INVALID;
     }
     KADI *dev = (KADI *) que_hdl->dev;
-    return dev->kv_store((kv_key*)key, (kv_value*)value, post_fn, (int)option);
+    nvme_kv_store_option dev_option;
+    switch(option){
+      case KV_STORE_OPT_DEFAULT:
+        dev_option = STORE_OPTION_NOTHING;
+        break;
+      case KV_STORE_OPT_COMPRESS:
+        dev_option = STORE_OPTION_COMP;
+        break;
+      case KV_STORE_OPT_IDEMPOTENT:
+        dev_option = STORE_OPTION_IDEMPOTENT;
+        break;
+      case KV_STORE_OPT_UPDATE_ONLY:
+        dev_option = STORE_OPTION_UPDATE_ONLY;
+        break;
+      default:
+        return KV_ERR_OPTION_INVALID;
+    }
+    return dev->kv_store((kv_key*)key, (kv_value*)value, dev_option, post_fn);
 }
 
 
