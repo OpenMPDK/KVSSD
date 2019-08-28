@@ -1257,6 +1257,7 @@ int nvme_submit_user_cmd(struct request_queue *q, struct nvme_command *cmd,
  * Note.
  * - check it's address 4byte word algined. If not malloc and copy data.
  */
+#define KV_QUEUE_DAM_ALIGNMENT (0x03)
 
 static bool check_add_for_single_cont_phyaddress(void __user *address, unsigned length, struct request_queue *q)
 {
@@ -1265,7 +1266,7 @@ static bool check_add_for_single_cont_phyaddress(void __user *address, unsigned 
 
 	offset = offset_in_page(address);
 	count = DIV_ROUND_UP(offset + length, PAGE_SIZE);
-	if ((count > 1) || ((unsigned long)address & queue_dma_alignment(q))) {
+	if ((count > 1) || ((unsigned long)address & KV_QUEUE_DAM_ALIGNMENT)) {
 		/* addr does not aligned as 4 bytes or addr needs more than one page */
 		return false;
 	}
@@ -1388,7 +1389,7 @@ int __nvme_submit_kv_user_cmd(struct request_queue *q, struct nvme_command *cmd,
     param->kv_data_len = 0;
 
     if (ubuffer && bufflen) {
-        if ((unsigned long)ubuffer & queue_dma_alignment(q)) {
+        if ((unsigned long)ubuffer & KV_QUEUE_DAM_ALIGNMENT) {
             need_to_copy = true; 
             len = DIV_ROUND_UP(bufflen, PAGE_SIZE)*PAGE_SIZE;
             kv_data = kmalloc(len, GFP_KERNEL);

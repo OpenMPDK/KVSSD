@@ -42,7 +42,7 @@
 #include <mutex>
 #include <list>
 #include <condition_variable>
-#include "kvs_api.h"
+#include "private_api.h"
 
 #ifndef WITH_SPDK
 #include "kvs_adi.h"
@@ -53,7 +53,7 @@ extern "C" {
 #endif
 
 const int MAX_DEV_PATH_LEN = 256;
-
+namespace api_private {
 class kv_device_priv {
 public:
   kv_device_priv() {
@@ -179,6 +179,7 @@ class ContainHandle {
   
 };
   
+}
 #ifdef __cplusplus
 } // extern "C"
 #endif

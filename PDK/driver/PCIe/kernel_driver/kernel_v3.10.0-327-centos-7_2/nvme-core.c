@@ -2352,12 +2352,13 @@ int nvme_submit_async_kv_cmd(struct request * req, struct nvme_command* cmd, str
 	return nvme_submit_cmd(nvmeq, cmd); 
 }
 
+#define KV_QUEUE_DAM_ALIGNMENT (0x03)
 static bool check_for_single_phyaddress(void __user* address, unsigned length) {
 	unsigned offset = 0;
 	unsigned count = 0;
 	offset = offset_in_page(address);
 	count = DIV_ROUND_UP(offset + length, PAGE_SIZE);
-	if (count > 1 && ((unsigned long)address & queue_dma_alignment(NULL))) {
+	if (count > 1 && ((unsigned long)address & KV_QUEUE_DAM_ALIGNMENT)) {
 		return false;
 	}
 	return true;
@@ -2396,7 +2397,7 @@ int __nvme_submit_kv_user_cmd(struct nvme_ns *ns, struct nvme_command *cmd,
 	}
      
 	if (ubuffer && bufflen) {
-		if ((unsigned long)ubuffer & queue_dma_alignment(NULL)) {
+		if ((unsigned long)ubuffer & KV_QUEUE_DAM_ALIGNMENT) {
 			int len = DIV_ROUND_UP(bufflen, PAGE_SIZE)*PAGE_SIZE;
 			need_to_copy = true;
 			kv_data = kmalloc(len, GFP_KERNEL);

@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 
+option(SAMSUNG_API "Support SAMSUNG API not SNIA API" OFF)
+
 include_directories(BEFORE ${CMAKE_SOURCE_DIR}/utils)
 include_directories(BEFORE ${CMAKE_SOURCE_DIR}/bench)
 include_directories(BEFORE ${CMAKE_SOURCE_DIR}/include)
@@ -160,6 +162,9 @@ add_executable(kv_bench
 #set(KVS_LIB -L${CMAKE_LIBRARY_PATH} -lkvapi)
 target_link_libraries(kv_bench ${COMMON_LIB} ${CMAKE_LIBRARY_PATH})
 set_target_properties(kv_bench PROPERTIES COMPILE_FLAGS "-D__KV_BENCH")
+if(SAMSUNG_API)
+target_compile_options(kv_bench PRIVATE "-DSAMSUNG_API")
+endif()
 target_compile_options(kv_bench PRIVATE ${COMMON_FLAGS})
 
 add_executable(as_bench

@@ -111,7 +111,7 @@ public:
 KvsRWLogger kvkdd_logger;
 
 #endif
-
+namespace api_private {
 inline void free_if_error(int ret, KDDriver::kv_kdd_context *ctx) {
  if (ret != 0 && ctx) {
     delete ctx;
@@ -441,7 +441,8 @@ void kdd_on_io_complete(kv_io_context *context){
     if(ctx->on_complete && iocb) {
       ctx->on_complete(iocb);
     }
-
+    if (iocb->opcode == IOCB_ASYNC_ITER_NEXT_CMD && iocb->iter_hd)
+	  free(iocb->iter_hd);
     delete ctx;
     ctx = NULL;
   }
@@ -784,7 +785,8 @@ int32_t KDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *it
   else { /* async */
     auto ctx = prep_io_context(IOCB_ASYNC_ITER_NEXT_CMD, 0, 0, 0, private1, private2, syncio, cbfn);
     ctx->iocb.result_buffer = (uint8_t*)iter_list;
-    ctx->iocb.iter_hd = &hiter;
+    ctx->iocb.iter_hd = (kvs_iterator_handle *)malloc(sizeof(kvs_iterator_handle));
+    *(ctx->iocb.iter_hd) = hiter;
     kv_postprocess_function f = {
       kdd_on_io_complete, (void*)ctx
     };
@@ -792,7 +794,8 @@ int32_t KDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *it
   
     if(ret != KV_SUCCESS) {
       fprintf(stderr, "kv_iterator_next failed with error:  0x%X\n", ret);
-
+      if (ctx->iocb.iter_hd)
+	    free(ctx->iocb.iter_hd);
       delete ctx;
       ctx = NULL;
     }
@@ -928,4 +931,5 @@ float  KDDriver::get_waf(){
   kv_get_device_waf(devH, &tmp_waf);
 
   return (float) tmp_waf/10.0;
+}
 }

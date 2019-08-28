@@ -14,8 +14,8 @@ Here is the KV SSD host software architecture.
     -------------------------------------------------------------------------
     |                      Benchmark suite (kvbench)                        |
     -------------------------------------------------------------------------    --
-    |  Software KV Store  |  |                  KV API                      |     |
-    |   (e.g.,RocksDB)    |  |                                              |     |
+    |  Software KV Store  |  |   Samsung KV API    |      SNIA KV API       |     |
+    |   (e.g.,RocksDB)    |  |                     |                        |     |
     -----------------------  ------------------------------------------------     |- PDK
     |     File system     |  |     KV SSD        |  |      Device Driver    |     | (Platform Development Kit)
     -----------------------  |    Emulator       |  |  (Kernel/user driver) |     | 
@@ -41,7 +41,7 @@ KVSSD
    |- PDK (Platform Development Kit)
    |    |- core
    |    |    |- src
-   |    |        |- api : KV API (Application Programming Interface)
+   |    |        |- api : KV API (Application Programming Interface) & SNIA KV Storage API
    |    |        |- device abstract layer
    |    |             |- emulator : KV SSD emulator
    |    |             |- kernel_driver_adapater : Kernel driver adapter

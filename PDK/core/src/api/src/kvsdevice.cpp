@@ -34,7 +34,7 @@
 
 #include "private_types.h"
 #include "kvs_utils.h"
-
+namespace api_private {
 int32_t KvsDriver::init() {
 	int cursocket, curcore;
 	get_curcpu(&cursocket, &curcore);
@@ -55,4 +55,4 @@ kv_device_priv::~kv_device_priv() {
 
 }
 
-
+}

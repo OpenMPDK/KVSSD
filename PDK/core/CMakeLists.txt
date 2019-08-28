@@ -4,6 +4,7 @@ project (libkvapi C CXX)
 option(WITH_EMU "Enable Emulator support" OFF)
 option(WITH_KDD "Enable Kernel Driver support" OFF)
 option(WITH_SPDK "Enable SPDK Driver support" OFF)
+option(SAMSUNG_API "Support SAMSUNG API not SNIA API" OFF)
 
 set(CMAKE_C_FLAGS "-MMD -MP -Wall -DLINUX -D_FILE_OFFSET_BITS=64 -fPIC  -march=native")
 set(CMAKE_CXX_FLAGS "-O2 -g -std=c++11 -MMD -MP -Wall -DLINUX -D_FILE_OFFSET_BITS=64 -fPIC  -march=native")
@@ -15,6 +16,10 @@ include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/device_abstract_layer/inclu
 
 if(WITH_LOG)
   add_definitions(-DKVKDD_DEBUG)
+endif()
+
+if(SAMSUNG_API)
+  add_definitions(-DSAMSUNG_API)
 endif()
 
 if(WITH_KDD)
@@ -40,6 +45,8 @@ SET(SOURCES_API
   ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/driver_adapter/kvkdd.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/cfrontend.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/kvsdevice.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/private_cfrontend.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/device_abstract_layer/emulator/src/kv_config.cpp
   )
 #
 # library build rules (shared)
@@ -133,10 +140,12 @@ SET(SOURCES_API
   #${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/driver_adapter/kvkdd.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/cfrontend.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/kvsdevice.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/private_cfrontend.cpp
   )
   message("${SOURCES_API}")
 include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include)
 include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/private)
+include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/device_abstract_layer/include/private)
 set(KVAPI_CXXFLAGS "-O2 -std=c++11 -MMD -MP -Wall -D_FILE_OFFSET_BITS=64 -fPIC -fpermissive -march=native")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${KVAPI_CFLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${KVAPI_CXXFLAGS}")
@@ -159,6 +168,7 @@ elseif(WITH_SPDK)
   include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include)
   include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/udd)
   include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/api/include/private)
+  include_directories (${CMAKE_CURRENT_SOURCE_DIR}/src/device_abstract_layer/include/private)
   
   set(KVKUDD_LIBS -L${CMAKE_CURRENT_SOURCE_DIR}/lib -Wl,--no-as-needed -lkvnvmedd -ldl -luuid)
   SET(SOURCES_API
@@ -167,6 +177,8 @@ elseif(WITH_SPDK)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/driver_adapter/kvudd.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/cfrontend.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/kvsdevice.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/api/src/private_cfrontend.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/device_abstract_layer/emulator/src/kv_config.cpp
     )
   set(KVAPI_LIBS ${KVAPI_LIBS} ${KVKUDD_LIBS} -lrt)
   add_definitions(-DWITH_SPDK)

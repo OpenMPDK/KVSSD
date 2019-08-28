@@ -39,6 +39,7 @@
 #include <time.h>
 #include "io_cmd.hpp"
 #include "kv_emulator.hpp"
+#include "private_result.h"
 
 uint64_t _kv_emul_queue_latency;
 
@@ -166,13 +167,17 @@ kv_result kv_emulator::kv_retrieve(const kv_key *key, uint8_t option, kv_value *
 
             memcpy(value->value, it->second.data() + value->offset, copylen);
 
+            if (value->length < dlen - value->offset)
+              ret = KV_ERR_BUFFER_SMALL;
+            else
+              ret = KV_SUCCESS;
+
             value->length = copylen;
             value->actual_value_size = dlen;
 
             if (m_use_iops_model) {
                 stat.collect(STAT_READ, copylen);
             }
-            ret = KV_SUCCESS;
         } else {
             return KV_ERR_KEY_NOT_EXIST;
         }
@@ -294,7 +299,7 @@ kv_result kv_emulator::kv_open_iterator(const kv_iterator_option opt, const kv_g
             && m_iterator_list[i].bitmask == cond->bitmask
             && m_iterator_list[i].status == 1) {
             *iter_hdl = i+1;
-            return KVS_ERR_ITERATOR_OPEN;
+            return api_private::KVS_ERR_ITERATOR_OPEN;
         }
     }
 

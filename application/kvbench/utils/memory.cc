@@ -210,6 +210,9 @@ void pool_setup(pool_info_t *info, mempool_t *pool, int nodeid)
     }
 
     initialize(memory, info, pool);
+  } else {
+    fprintf(stderr, "ERR: The size of memory pool must be greater than 0\n");
+    exit(0);
   }
 }
 

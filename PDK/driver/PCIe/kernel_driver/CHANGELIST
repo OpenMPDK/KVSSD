@@ -1,0 +1,7 @@
+Kernel_Driver is developed based on original nvme driver of linux kernel(torvalds/linux). In order to support Samsung's Key-Value SSD, OpenMPDK made following changes.
+
+
+Feature Added
+==================
+
+ - KV SSD support: Support KV NVM Command Set and KV Admin Command Set.

@@ -37,7 +37,7 @@
 
 #include <algorithm>
 #include <stdio.h>
-#include <kvs_api.h>
+#include <private_api.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <iostream>
@@ -48,6 +48,8 @@
 #include <unistd.h>
 #include <numa.h>
 
+namespace api_private
+{
 inline void yprintf(std::ostream &stream, const char* fmt, ...)
 {
     static char buffer[1024] = "";
@@ -284,7 +286,7 @@ static inline int32_t validate_request(const kvs_key *key, const kvs_value *valu
   }
   return 0;
 }
-
+}
 
 
 #endif /* INCLUDE_KVS_UTILS_H_ */

@@ -4,11 +4,8 @@ KV-Benchmark is a benchmark program for embedded key-value storage engines, base
 
 BUILD ========================================================================== 
 0. Install libraries
-   0.1  sudo apt-get install libsnappy-dev libev-dev libbz2-dev liblz4-dev libzstd-dev libjemalloc-dev libnuma-dev libgflags-dev
-   0.2 (CentOS) sudo yum install snappy-devel libev-devel bzip2-devel lz4-devel gflags-devel jemalloc-devel
-
-   You can download and install zstd library from the following link:
-      https://github.com/facebook/zstd
+   0.1  sudo apt-get install libsnappy-dev libev-dev libbz2-dev liblz4-dev libzstd-dev libjemalloc-dev libnuma-dev libgflags-dev libssl-dev libz-dev
+   0.2 (CentOS) sudo yum install snappy-devel libev-devel bzip2-devel lz4-devel gflags-devel jemalloc-devel openssl-devel zlib-devel
 
 1. RocksDB (Linux filesystem)
   1.1 Build rocksdb from source code
@@ -46,6 +43,8 @@ BUILD ==========================================================================
     mkdir build_kv && cd build_kv
     cmake -DCMAKE_INCLUDE_PATH=/KVSSD/PDK/core/include -DCMAKE_LIBRARY_PATH=/KVSSD/PDK/core/build/libkvapi.so ../
     * INCLUDE_PATH and LIBRARY_PATH must be updated based on user directories
+    * Use kvbench with SAMSUNG API need to add marco SAMSUNG_API
+        cmake -DSAMSUNG_API=ON -DCMAKE_INCLUDE_PATH=/KVSSD/PDK/core/include -DCMAKE_LIBRARY_PATH=/KVSSD/PDK/core/build/libkvapi.so ../
 
     make kv_bench
 

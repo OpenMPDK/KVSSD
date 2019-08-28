@@ -43,7 +43,7 @@
 
 #define ATTACH_ALL
 
-int init_udd(kvs_init_options *options) {
+int init_udd(api_private::kvs_init_options *options) {
  
   kv_env_init(1024);
 

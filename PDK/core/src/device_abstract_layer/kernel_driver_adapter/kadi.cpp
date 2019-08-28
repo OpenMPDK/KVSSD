@@ -411,7 +411,7 @@ redo:
 uint32_t KADI::get_dev_waf()
 {
     const int MAX_LOG_PAGE_SIZE = 512;
-    const uint32_t log_page_id = 0xC0;
+    const uint32_t log_page_id = 0xCA;
 
     char logbuf[MAX_LOG_PAGE_SIZE];
     struct nvme_passthru_cmd cmd;
@@ -432,14 +432,14 @@ uint32_t KADI::get_dev_waf()
         return KV_ERR_SYS_IO;
     }
 
-    uint32_t waf = *(uint32_t *)logbuf;
+    uint32_t waf = *((uint32_t *)&logbuf[256]);
 
     return waf;
 
 }
 kv_result KADI::kv_store(kv_key *key, kv_value *value, nvme_kv_store_option option, const kv_postprocess_function *cb)
 {
-   if (!key || !key->key || !value || !value->value)
+  if (!key || !key->key || !value)
    {
       return KADI_ERR_NULL_INPUT;
    }
@@ -487,7 +487,7 @@ kv_result KADI::kv_store(kv_key *key, kv_value *value, nvme_kv_store_option opti
 
 kv_result KADI::kv_retrieve(kv_key *key, kv_value *value, const kv_postprocess_function *cb)
 {
-   if (!key || !key->key || !value || !value->value)
+   if (!key || !key->key || !value)
    {
        return KADI_ERR_NULL_INPUT;
    }

@@ -19,6 +19,7 @@ Features Added
  - Additional operations: mixed workload of insert and deletion
  - print out interval: configurable run time performance print out interval
  - latency distribution: 99.99%
+ - SNIA API support: KV SSD provides two APIs implementation, including SAMSUNG API and SNIA API
 
 Features Modified
 ============

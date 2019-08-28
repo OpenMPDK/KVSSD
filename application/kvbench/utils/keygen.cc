@@ -163,7 +163,7 @@ size_t keygen_seed2key(struct keygen *keygen, uint64_t seed, char *buf, int keyl
 
 size_t keygen_seqfill(uint64_t idx, char *buf, int len){
 
-  sprintf(buf, "%0*ld", len -1 , idx);
+  snprintf(buf, len, "%0*ld", len -1 , idx);
 
   return len;
 }

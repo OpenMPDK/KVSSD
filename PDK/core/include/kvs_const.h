@@ -39,7 +39,6 @@
 extern "C" {
 #endif
 
-
 #define KVS_MIN_KEY_LENGTH 4
 #define KVS_MAX_KEY_LENGTH 255
 #define KVS_MIN_VALUE_LENGTH 0
@@ -47,12 +46,11 @@ extern "C" {
 #define KVS_OPTIMAL_VALUE_LENGTH 4096
 #define KVS_ALIGNMENT_UNIT 4
 #define KVS_MAX_ITERATE_HANDLE 16
+#define G_ITER_KEY_SIZE_FIXED 16
+#define KVS_MAX_KEY_GROUP_BYTES 4
 #define KVS_ITERATOR_BUFFER_SIZE (32*1024)
-  
-#define G_ITER_KEY_SIZE_FIXED 16;
   
 #ifdef __cplusplus
 } // extern "C"
 #endif
-
 #endif

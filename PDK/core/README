@@ -9,9 +9,11 @@ How to build:
        - gcc version should be newer than v5.0
     1. mkdir build
     2. cd build
-    3. Three types of driver is available : kernel driver (KDD); emulator (EMU); user space driver (SPDK)
+    3. Two types of API are available: Samsung KV API and SNIA KV Storage API
+       Three types of driver are available : kernel driver (KDD); emulator (EMU); user space driver (SPDK)
        User can compile one of them with following options:
 
+       SNIA KV Storage API:
        Kernel Device Driver
        =======
        cmake -DWITH_KDD=ON ../
@@ -23,6 +25,19 @@ How to build:
        User Space Driver
        =======
        cmake -DWITH_SPDK=ON ../ 
+
+       Samsung KV API:
+       Kernel Device Driver
+       =======
+       cmake -DWITH_KDD=ON -DSAMSUNG_API=ON ../
+
+       Emulator
+       =======
+       cmake -DWITH_EMU=ON -DSAMSUNG_API=ON ../
+
+       User Space Driver
+       =======
+       cmake -DWITH_SPDK=ON -DSAMSUNG_API=ON ../
        * Replace <main_source_dir>/lib/libkvnvmedd.a if there is newer version of spdk driver available or if user wants to rebuild the driver
        * The pre-build library is on gcc version 5.4.0
        * https://github.com/OpenMPDK/uNVMe v18.11
@@ -53,4 +68,5 @@ How to test
      - ./sample_code_async -d 0000:06:00.0 -n 100 -q 64 -o 1 -k 16 -v 4096
      - /KVSSD/PDK/core/tools/setup.sh reset
      
-
+    PS: When test SNIA KV Storage API, make sure configuration file env_init.conf is in the upper directory of working directory
+        SNIA KV Storage API configuration file env_init.conf and emulator configuration file kvssd_emul.conf are described in KVSSD_QUICK_START_GUIDE

@@ -45,7 +45,8 @@
 
 #define MAX_POOLSIZE 10240
 #define use_pool
-
+namespace api_private
+{
 inline void malloc_context(KvEmulator::kv_emul_context **ctx,
   std::condition_variable* ctx_pool_notfull,
   std::queue<KvEmulator::kv_emul_context *> &pool, std::mutex& pool_lock){
@@ -582,5 +583,5 @@ KvEmulator::~KvEmulator() {
   kv_cleanup_device(devH);
   
 }
-
+}
 

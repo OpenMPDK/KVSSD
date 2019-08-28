@@ -102,7 +102,8 @@ kv_device_internal::kv_device_internal(kv_device_init_t *options) {
         std::string cap_str = m_config->getkv("general", "capacity");
 
         // for emulator, default is unlimited unless specified from configuration file
-        m_capacity = 0;
+        // but get_capacity return 0 seems to be an issue, so change default capacity to 512GB
+        m_capacity = 512 * GB;
 
         if (!cap_str.empty()) {
             std::size_t pos = 0;

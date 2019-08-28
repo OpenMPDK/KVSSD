@@ -56,79 +56,79 @@ extern "C" {
 typedef int32_t kv_result;
 
     // Generic command status                
-#define    KV_SUCCESS                            0x0        ///< success
+#define    KV_SUCCESS                            0x0      ///< success
 
 // warnings
-#define    KV_WRN_MORE                          0xF000        ///< more data is available, but buffer is not enough
+#define    KV_WRN_MORE                          0xF000    ///< more data is available, but buffer is not enough
 
 // errors                  
-#define    KV_ERR_DEV_CAPACITY                  KVS_ERR_DEV_CAPACITY            ///< device does not have enough space
-#define    KV_ERR_DEV_INIT                      KVS_ERR_DEV_INIT                ///< device initialization failed
-#define    KV_ERR_DEV_INITIALIZED               KVS_ERR_DEV_INITIALIZED         ///< device was initialized already
-#define    KV_ERR_DEV_NOT_EXIST                 KVS_ERR_DEV_NOT_EXIST           ///< no device exists 
-#define    KV_ERR_DEV_SANITIZE_FAILED           KVS_ERR_DEV_SANITIZE_FAILED     ///< the previous sanitize operation failed
+#define    KV_ERR_DEV_CAPACITY                  0x004     ///< device does not have enough space
+#define    KV_ERR_DEV_INIT                      0x005     ///< device initialization failed
+#define    KV_ERR_DEV_INITIALIZED               0x006     ///< device was initialized already
+#define    KV_ERR_DEV_NOT_EXIST                 0x007     ///< no device exists 
+#define    KV_ERR_DEV_SANITIZE_FAILED           0x008     ///< the previous sanitize operation failed
 
-#define    KV_ERR_ITERATOR_NOT_EXIST            KVS_ERR_ITERATOR_NOT_EXIST      ///< no iterator exists
-#define    KV_ERR_KEY_INVALID                   KVS_ERR_KEY_INVALID             ///< key invalid (value of key is NULL)
-#define    KV_ERR_KEY_LENGTH_INVALID            KVS_ERR_KEY_LENGTH_INVALID      ///< key length is out of range (unsupported key length)
-#define    KV_ERR_KEY_NOT_EXIST                 KVS_ERR_KEY_NOT_EXIST           ///< given key doesn't exist
-#define    KV_ERR_NS_DEFAULT                    KVS_ERR_NS_DEFAULT              ///< default namespace cannot be modified, deleted, attached, or detached
-#define    KV_ERR_NS_INVALID                    KVS_ERR_NS_INVALID              ///< namespace does not exist
-#define    KV_ERR_OPTION_INVALID                KVS_ERR_OPTION_INVALID          ///< device does not support the specified options
-#define    KV_ERR_PARAM_INVALID                 KVS_ERR_PARAM_INVALID           ///< no input pointer can be NULL
-#define    KV_ERR_PURGE_IN_PRGRESS              KVS_ERR_PURGE_IN_PROGRESS       ///< purge operation is in progress
-#define    KV_ERR_SYS_IO                        KVS_ERR_SYS_IO                  ///< host failed to communicate with the device
-#define    KV_ERR_VALUE_LENGTH_INVALID          KVS_ERR_VALUE_LENGTH_INVALID    ///< value length is out of range
-#define    KV_ERR_VALUE_LENGTH_MISALIGNED       KVS_ERR_VALUE_LENGTH_MISALIGNED ///< value length is misaligned. Value length shall be multiples of 4 bytes.
-#define    KV_ERR_VALUE_OFFSET_INVALID          KVS_ERR_VALUE_OFFSET_INVALID    ///< value offset is invalid meaning that offset is out of bound.
-#define    KV_ERR_VENDOR                        KVS_ERR_VENDOR                  ///< vendor-specific error is returned, check the system log for more details
-#define    KV_ERR_PERMISSION                    KVS_ERR_PERMISSION              ///< unable to open device due to permission error
+#define    KV_ERR_ITERATOR_NOT_EXIST            0x00C     ///< no iterator exists
+#define    KV_ERR_KEY_INVALID                   0x00F     ///< key invalid (value of key is NULL)
+#define    KV_ERR_KEY_LENGTH_INVALID            0x010     ///< key length is out of range (unsupported key length)
+#define    KV_ERR_KEY_NOT_EXIST                 0x011     ///< given key doesn't exist
+#define    KV_ERR_NS_DEFAULT                    0x302     ///< default namespace cannot be modified, deleted, attached, or detached
+#define    KV_ERR_NS_INVALID                    0x303     ///< namespace does not exist
+#define    KV_ERR_OPTION_INVALID                0x012     ///< device does not support the specified options
+#define    KV_ERR_PARAM_INVALID                 0x013     ///< no input pointer can be NULL
+#define    KV_ERR_PURGE_IN_PRGRESS              0x014     ///< purge operation is in progress
+#define    KV_ERR_SYS_IO                        0x01E     ///< host failed to communicate with the device
+#define    KV_ERR_VALUE_LENGTH_INVALID          0x021     ///< value length is out of range
+#define    KV_ERR_VALUE_LENGTH_MISALIGNED       0x022     ///< value length is misaligned. Value length shall be multiples of 4 bytes.
+#define    KV_ERR_VALUE_OFFSET_INVALID          0x023     ///< value offset is invalid meaning that offset is out of bound.
+#define    KV_ERR_VENDOR                        0x025     ///< vendor-specific error is returned, check the system log for more details
+#define    KV_ERR_PERMISSION                    0x026     ///< unable to open device due to permission error
 
 // command specific status(errors)               
-#define    KV_ERR_BUFFER_SMALL                  KVS_ERR_BUFFER_SMALL            ///< provided buffer size too small for iterator_next operation
-#define    KV_ERR_DEV_MAX_NS                    KVS_ERR_NS_MAX                  ///< maximum number of namespaces was created
-#define    KV_ERR_ITERATOR_COND_INVALID         KVS_ERR_ITERATOR_COND_INVALID   ///< iterator condition is not valid
-#define    KV_ERR_KEY_EXIST                     KVS_ERR_KEY_EXIST               ///< given key already exists (with KV_STORE_IDEMPOTENT option)
-#define    KV_ERR_NS_ATTAHED                    KVS_ERR_NS_ATTACHED             ///< namespace was alredy attached
-#define    KV_ERR_NS_CAPACITY                   KVS_ERR_NS_CAPACITY             ///< namespace capacity limit exceeds
-#define    KV_ERR_NS_NOT_ATTACHED               KVS_ERR_NS_NOT_ATTACHED         ///< device cannot detach a namespace since it has not been attached yet
-#define    KV_ERR_QUEUE_CQID_INVALID            KVS_ERR_QUEUE_CQID_INVALID      ///< completion queue identifier is invalid
-#define    KV_ERR_QUEUE_SQID_INVALID            KVS_ERR_QUEUE_SQID_INVALID      ///< submission queue identifier is invalid
-#define    KV_ERR_QUEUE_DELETION_INVALID        KVS_ERR_QUEUE_DELETION_INVALID  ///< cannot delete completion queue since submission queue has not been fully deleted
+#define    KV_ERR_BUFFER_SMALL                  0x001     ///< provided buffer size too small for iterator_next operation
+#define    KV_ERR_DEV_MAX_NS                    0x304     ///< maximum number of namespaces was created
+#define    KV_ERR_ITERATOR_COND_INVALID         0x00A     ///< iterator condition is not valid
+#define    KV_ERR_KEY_EXIST                     0x00E     ///< given key already exists (with KV_STORE_IDEMPOTENT option)
+#define    KV_ERR_NS_ATTAHED                    0x300     ///< namespace was alredy attached
+#define    KV_ERR_NS_CAPACITY                   0x301     ///< namespace capacity limit exceeds
+#define    KV_ERR_NS_NOT_ATTACHED               0x305     ///< device cannot detach a namespace since it has not been attached yet
+#define    KV_ERR_QUEUE_CQID_INVALID            0x015     ///< completion queue identifier is invalid
+#define    KV_ERR_QUEUE_SQID_INVALID            0x01C     ///< submission queue identifier is invalid
+#define    KV_ERR_QUEUE_DELETION_INVALID        0x016     ///< cannot delete completion queue since submission queue has not been fully deleted
 
-#define    KV_ERR_QUEUE_MAX_QUEUE               KVS_ERR_QUEUE_MAX_QUEUE         ///< maximum number of queues are already created
-#define    KV_ERR_QUEUE_QID_INVALID             KVS_ERR_QUEUE_QID_INVALID       ///< queue identifier is invalid
-#define    KV_ERR_QUEUE_QSIZE_INVALID           KVS_ERR_QUEUE_QSIZE_INVALID     ///< queue size is invalid 
+#define    KV_ERR_QUEUE_MAX_QUEUE               0x019     ///< maximum number of queues are already created
+#define    KV_ERR_QUEUE_QID_INVALID             0x01A     ///< queue identifier is invalid
+#define    KV_ERR_QUEUE_QSIZE_INVALID           0x01B     ///< queue size is invalid 
 
-#define    KV_ERR_TIMEOUT                       KVS_ERR_TIMEOUT                 ///< timer expired and no operation is completed yet. 
+#define    KV_ERR_TIMEOUT                       0x01F     ///< timer expired and no operation is completed yet. 
 
 // media and data integratiy status(error)                
-#define    KV_ERR_UNCORRECTIBLE                 KVS_ERR_UNCORRECTIBLE           ///< uncorrectable error occurs
+#define    KV_ERR_UNCORRECTIBLE                 0x020     ///< uncorrectable error occurs
 
 // quue in shutdown
-#define    KV_ERR_QUEUE_IN_SHUTDOWN             KVS_ERR_QUEUE_IN_SUTDOWN        ///< queue in shutdown mode
+#define    KV_ERR_QUEUE_IN_SHUTDOWN             0x017     ///< queue in shutdown mode
 
 // queue is full, unable to accept more IO
-#define    KV_ERR_QUEUE_IS_FULL                 KVS_ERR_QUEUE_IS_FULL           ///< queue is full
+#define    KV_ERR_QUEUE_IS_FULL                 0x018     ///< queue is full
 
 // the beginning state after being accepted into a submission queue
-#define    KV_ERR_COMMAND_SUBMITTED             KVS_ERR_COMMAND_SUBMITTED       ///< accepted state when a command is submitted   
+#define    KV_ERR_COMMAND_SUBMITTED             0x003     ///< accepted state when a command is submitted   
 
 // too many iterators open that exceeded supported max number of iterators
-#define    KV_ERR_TOO_MANY_ITERATORS_OPEN       KVS_ERR_ITERATOR_MAX            ///< Exceeded max number of opened iterators
+#define    KV_ERR_TOO_MANY_ITERATORS_OPEN       0x00B     ///< Exceeded max number of opened iterators
 
 // Added for iterator next call that can return empty results
-#define    KV_ERR_SYS_BUSY                      KVS_ERR_SYS_BUSY                ///< Retry is recommended
+#define    KV_ERR_SYS_BUSY                      0x01D     ///< Retry is recommended
 
 // initialized by caller before submission
-#define    KV_ERR_COMMAND_INITIALIZED           KVS_ERR_COMMAND_INITIALIZED     ///< start state when a command is initialized 
+#define    KV_ERR_COMMAND_INITIALIZED           0x002     ///< start state when a command is initialized 
 
-#define    KV_ERR_DD_UNSUPPORTED_CMD            KVS_ERR_DD_UNSUPPORTED_CMD      ///< invalid command or not yet supported
+#define    KV_ERR_DD_UNSUPPORTED_CMD            0x205     ///< invalid command or not yet supported
 
-#define    KV_ERR_ITERATE_REQUEST_FAIL          KVS_ERR_ITERATE_REQUEST_FAIL    ///< fail to process the iterate request
+#define    KV_ERR_ITERATE_REQUEST_FAIL          0x209     ///< fail to process the iterate request
 
 ///< device driver does not support.
-#define    KV_ERR_DD_UNSUPPORTED        KVS_ERR_DD_UNSUPPORTED
+#define    KV_ERR_DD_UNSUPPORTED       0x02C 
 
 /** 
  * \mainpage A libary for Samsung Key-Value Storage ADI

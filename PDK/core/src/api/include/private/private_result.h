@@ -32,15 +32,10 @@
  */
 
 
-#ifndef KVS_RESULT_H
-#define KVS_RESULT_H
+#ifndef PRIVATE_RESULT_H
+#define PRIVATE_RESULT_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#ifdef SAMSUNG_API
-
+namespace api_private {
 // kvs_result messages;	
 typedef enum {	
   // generic command status	
@@ -131,43 +126,5 @@ typedef enum {
   KVS_ERR_CONT_NOT_EXIST=0x406	, // container does not existi
   KVS_ERR_CONT_OPEN=0x407	, // container is already opened
 } kvs_result;	
-
-#else
-
-// API return value
-typedef enum {
-  KVS_SUCCESS                     = 0,        // Successful
-  KVS_ERR_BUFFER_SMALL            = 0x001,    // buffer space is not enough
-  KVS_ERR_DEV_CAPAPCITY           = 0x002,    // device does not have enough space. Key Space size is too big
-  KVS_ERR_DEV_NOT_EXIST           = 0x003,    // no device with the dev_hd exists
-  KVS_ERR_KS_CAPACITY             = 0x004,    // key space does not have enough space
-  KVS_ERR_KS_EXIST                = 0x005,    // key space is already created with the same name
-  KVS_ERR_KS_INDEX                = 0x006,    // index is not valid
-  KVS_ERR_KS_NAME                 = 0x007,    // key space name is not valid
-  KVS_ERR_KS_NOT_EXIST            = 0x008,    // key space does not exist
-  KVS_ERR_KS_NOT_OPEN             = 0x009,    // key space does not open
-  KVS_ERR_KS_OPEN                 = 0x00A,    // key space is already opened
-  KVS_ERR_ITERATOR_FILTER_INVALID = 0x00B,    // iterator filter(match bitmask and pattern) is not valid
-  KVS_ERR_ITERATOR_MAX            = 0x00C,    // the maximum number of iterators that a device supports is opened
-  KVS_ERR_ITERATOR_NOT_EXIST      = 0x00D,    // the iterator Key Group does not exist
-  KVS_ERR_ITERATOR_OPEN           = 0x00E,    // iterator is already opened
-  KVS_ERR_KEY_LENGTH_INVALID      = 0x00F,    // key is not valid (e.g., key length is not supported)
-  KVS_ERR_KEY_NOT_EXIST           = 0x010,    // key does not exist
-  KVS_ERR_OPTION_INVALID          = 0x011,    // an option is not supported in this implementation
-  KVS_ERR_PARAM_INVALID           = 0x012,    // null input parameter
-  KVS_ERR_SYS_IO                  = 0x013,    // I/O error occurs
-  KVS_ERR_VALUE_LENGTH_INVALID    = 0x014,    // value length is out of range
-  KVS_ERR_VALUE_OFFSET_INVALID    = 0x015,    // value offset is out of range
-  KVS_ERR_VALUE_OFFSET_MISALIGNED = 0x016,    // offset of value is required to be aligned to KVS_ALIGNMENT_UNIT
-  KVS_ERR_VALUE_UPDATE_NOT_ALLOWED = 0x017,   // key exists but value update is not allowed
-  KVS_ERR_DEV_NOT_OPENED          = 0x018,    // device was not opened yet
-  KVS_ERR_UNSUPPORTED             = 0x019     // unsupported function
-} kvs_result;
-
-#endif
-
-#ifdef __cplusplus
-} // extern "C"
-#endif
-
+}
 #endif

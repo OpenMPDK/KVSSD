@@ -40,21 +40,26 @@
 #include <kvs_api.h>
 #include <random>
 
+#ifndef SAMSUNG_API
+#define kvs_key_t uint16_t
+#endif
+
+#define DEBUG_ON 1
+#define ITER_BUFFER_SIZE (32*1024)
+
 #define SUCCESS 0
 #define FAILED 1
+
+#define WRITE_OP  1
+#define READ_OP   2
+#define DELETE_OP 3
+#define ITERATOR_OP 4
+#define KEY_EXIST_OP 5
 
 std::atomic<int> submitted(0);
 std::atomic<int> completed(0);
 std::atomic<int> cur_qdepth(0);
 pthread_mutex_t lock;
-#define DEBUG_ON 1
-
-struct iterator_info{
-  kvs_iterator_handle iter_handle;
-  kvs_iterator_list iter_list;
-  kvs_iterator_option g_iter_mode;
-};
-#define iter_buff (32*1024)
 
 void usage(char *program)
 {
@@ -195,6 +200,14 @@ double _calc_time_span(struct timespec start_time) {
   return (double)(end - start) / 1000000000L;
 }
 
+#ifdef SAMSUNG_API
+
+struct iterator_info{
+  kvs_iterator_handle iter_handle;
+  kvs_iterator_list iter_list;
+  kvs_iterator_option g_iter_mode;
+};
+
 void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_iterator_option  g_iter_mode){
   uint8_t *it_buffer = (uint8_t *) iter_list->it_list;
   uint32_t i;
@@ -322,12 +335,6 @@ void complete(kvs_callback_context* ioctx) {
     fprintf(stdout, "completed io count: %d\n", completed.load());
 }
 
-#define WRITE_OP  1
-#define READ_OP   2
-#define DELETE_OP 3
-#define ITERATOR_OP 4
-#define KEY_EXIST_OP 5
-
 // Samsung device support KVS_ITERATOR_KEY iterator type only
 int perform_iterator(kvs_container_handle cont_hd,
                       kvs_iterator_type iter_type=KVS_ITERATOR_KEY)
@@ -391,10 +398,10 @@ int perform_iterator(kvs_container_handle cont_hd,
 
   /* Do iteration */
   submitted = completed = 0;
-  iter_info->iter_list.size = iter_buff;
+  iter_info->iter_list.size = ITER_BUFFER_SIZE;
   uint8_t *buffer;
-  buffer =(uint8_t*) kvs_malloc(iter_buff, 4096);
-  memset(buffer, 0, iter_buff);
+  buffer =(uint8_t*) kvs_malloc(ITER_BUFFER_SIZE, 4096);
+  memset(buffer, 0, ITER_BUFFER_SIZE);
   iter_info->iter_list.it_list = (uint8_t*) buffer;
 
   kvs_iterator_context iter_ctx_next;
@@ -407,8 +414,8 @@ int perform_iterator(kvs_container_handle cont_hd,
   struct timespec start_time;
   clock_gettime(CLOCK_REALTIME, &start_time);
   while(1) {
-    iter_info->iter_list.size = iter_buff;
-    memset(iter_info->iter_list.it_list, 0, iter_buff);
+    iter_info->iter_list.size = ITER_BUFFER_SIZE;
+    memset(iter_info->iter_list.it_list, 0, ITER_BUFFER_SIZE);
     ret = kvs_iterator_next_async(cont_hd, iter_info->iter_handle, &iter_info->iter_list, &iter_ctx_next, complete);
     if(ret != KVS_SUCCESS) {
       fprintf(stderr, "iterator next fails with error 0x%x - %s\n", ret, kvs_errstr(ret));
@@ -429,7 +436,7 @@ int perform_iterator(kvs_container_handle cont_hd,
       break;
     } else {
       fprintf(stdout, "More keys available, do another iteration\n");
-      memset(iter_info->iter_list.it_list, 0,  iter_buff);
+      memset(iter_info->iter_list.it_list, 0,  ITER_BUFFER_SIZE);
     }
   }
   
@@ -504,7 +511,7 @@ int perform_read(kvs_container_handle cont_hd, int count, int maxdepth, kvs_key_
         }
         ret = kvs_retrieve_tuple_async(cont_hd, kvskey, kvsvalue, &ret_ctx, complete);
         if (ret != KVS_SUCCESS) {
-          fprintf(stderr, "retrieve tuple failed with err %s %x\n",  kvs_errstr(ret), ret);
+          fprintf(stderr, "retrieve tuple failed with err %s 0x%x\n",  kvs_errstr(ret), ret);
           _free_kvs_pair(kvskey, kvsvalue, &keypool, &valuepool, &lock);
           goto exit;
         }
@@ -884,3 +891,615 @@ int main(int argc, char *argv[]) {
 
   return SUCCESS;
 }
+
+#else
+
+std::queue<char*> keypool;
+std::queue<char*> valuepool;
+
+void print_iterator_keyvals(kvs_iterator_list *iter_list, kvs_option_iterator g_iter_mode){
+  uint8_t *it_buffer = (uint8_t *) iter_list->it_list;
+  uint32_t i;
+
+  if(g_iter_mode.iter_type) {
+    // key and value iterator (KVS_ITERATOR_KEY_VALUE)
+    uint32_t vlen = sizeof(uint32_t);
+    uint32_t vlen_value = 0;
+      
+    for(i = 0;i < iter_list->num_entries; i++) {
+      fprintf(stdout, "Iterator get %dth key: %s\n", i, it_buffer);
+      it_buffer += 16;
+
+      uint8_t *addr = (uint8_t *)&vlen_value;
+      for (unsigned int i = 0; i < vlen; i++) {
+         *(addr + i) = *(it_buffer + i);
+      }
+
+      it_buffer += vlen;
+      it_buffer += vlen_value;
+    }
+
+  } else {
+    // for ETA50K24 firmware with various key length       
+    uint32_t key_size = 0;
+    char key[256];
+
+    for(i = 0;i < iter_list->num_entries; i++) {
+      // get key size
+      key_size = *((unsigned int*)it_buffer);
+      it_buffer += sizeof(unsigned int);
+
+      // print key
+      memcpy(key, it_buffer, key_size);
+      key[key_size] = 0;
+      fprintf(stdout, "%dth key --> %s, size = %d\n", i, key, key_size);
+
+      it_buffer += key_size;
+    }
+  }
+}
+
+void _iterator_complete_handle(kvs_postprocess_context* ioctx) {
+  if (ioctx->result != KVS_SUCCESS) {
+    fprintf(stderr, "ERROR io_complete: iterator result=0x%x\n",
+       ioctx->result);
+    return;
+  }
+  kvs_iterator_list* iter_list = ioctx->result_buffer.iter_list;
+#if DEBUG_ON
+  fprintf(stdout, "io_complete: op=%d, end=%d, num entries=%d, size=%d, result=0x%x\n",
+    ioctx->context, iter_list->end,iter_list->num_entries,
+    iter_list->size, ioctx->result);
+  kvs_option_iterator option = {KVS_ITERATOR_KEY};
+  print_iterator_keyvals(iter_list, option);
+#endif
+}
+
+void _key_exist_complete_handle(kvs_postprocess_context* ioctx) {
+  if (ioctx->result != 0) {
+    fprintf(stderr, "ERROR io_complete: key exist, key = %s, result = 0x%x\n",
+      ioctx->key ? (char*)ioctx->key->key:0, ioctx->result);
+    return;
+  } 
+
+  uint8_t *exist;
+  exist = (uint8_t*)ioctx->result_buffer.list->result_buffer;
+#if DEBUG_ON
+  fprintf(stdout, "key %s exist? %s\n", (char*)ioctx->key->key,
+          *exist == 0? "FALSE":"TRUE");
+#endif
+  if(ioctx->result_buffer.list->result_buffer)
+    free(ioctx->result_buffer.list->result_buffer);
+  if(ioctx->result_buffer.list)
+    free(ioctx->result_buffer.list);
+
+  _free_kvs_pair(ioctx->key, NULL, &keypool, NULL, &lock);
+}
+
+void _delete_complete_handle(kvs_postprocess_context* ioctx) {
+  if(ioctx->result != KVS_SUCCESS) {
+    fprintf(stdout, "ERROR io_complete: delete . result=%d key=%s\n",
+    ioctx->result, (char*)ioctx->key->key);
+  }
+  _free_kvs_pair(ioctx->key, NULL, &keypool, NULL, &lock);
+}
+
+void _default_complete_handle(kvs_postprocess_context* ioctx) {
+  if(ioctx->result != KVS_SUCCESS) {
+    fprintf(stdout, "ERROR io_complete: op=%d. result=%d key=%s\n",
+    ioctx->context, ioctx->result, (char*)ioctx->key->key);
+  }
+  _free_kvs_pair(ioctx->key, ioctx->value, &keypool, &valuepool, &lock);
+}
+
+void complete(kvs_postprocess_context* ioctx) {
+  switch(ioctx->context) {
+    case KVS_CMD_ITER_NEXT:
+      _iterator_complete_handle(ioctx);
+      break;
+    case KVS_CMD_DELETE:
+      _delete_complete_handle(ioctx);
+      break;
+    case KVS_CMD_EXIST:
+      _key_exist_complete_handle(ioctx);
+      break;
+    case KVS_CMD_STORE:
+    case KVS_CMD_RETRIEVE:
+      _default_complete_handle(ioctx);
+      break;
+    default:
+      fprintf(stdout, "ERROR io_complete unknow op = %d, result=0x%x.\n",
+        ioctx->context, ioctx->result);
+      break;
+  }
+
+  completed++;
+  cur_qdepth--;
+  if(completed.load() % 1000 == 0)
+    fprintf(stdout, "completed io count: %d\n", completed.load());
+}
+
+int perform_iterator(kvs_key_space_handle ks_hd, kvs_option_iterator iter_op={KVS_ITERATOR_KEY})
+{
+  int count = KVS_MAX_ITERATE_HANDLE;
+
+  int ret;
+  static int total_entries = 0;
+
+  fprintf(stdout, "\n===========\n");
+  fprintf(stdout, "   Do Iterate Operation\n");
+  fprintf(stdout, "===========\n"); 
+  
+  /* Open iterator */
+  kvs_key_group_filter iter_fltr;
+  kvs_iterator_handle iter_hd;
+
+  iter_fltr.bitmask[0] = 0;
+  iter_fltr.bitmask[1] = 0;
+  iter_fltr.bitmask[2] = 0xff;
+  iter_fltr.bitmask[3] = 0xff;
+  char prefix_str[5] = "0000";
+  unsigned int PREFIX_KV = 0;
+  for (int i = 0; i < 4; i++){
+    PREFIX_KV |= (prefix_str[i] << i*8);
+  }
+
+  iter_fltr.bit_pattern[0] = PREFIX_KV & 0xff;
+  iter_fltr.bit_pattern[1] = PREFIX_KV & 0xff00 >> 8;
+  iter_fltr.bit_pattern[2] = PREFIX_KV & 0xff0000 >> 16;
+  iter_fltr.bit_pattern[3] = PREFIX_KV & 0xff000000 >> 24;
+
+  submitted = completed = 0;
+
+  //kvs_close_iterator_all(cont_hd);
+  ret = kvs_create_iterator(ks_hd, &iter_op, &iter_fltr, &iter_hd);
+  if(ret) {
+    fprintf(stdout, "open iter failed with err 0x%x\n", ret);
+    return FAILED;
+  }
+  
+  /* Do iteration */
+  kvs_iterator_list* iter_list = (kvs_iterator_list*)malloc(sizeof(kvs_iterator_list));
+  iter_list->size = ITER_BUFFER_SIZE;
+  uint8_t *buffer;
+  buffer =(uint8_t*) kvs_malloc(ITER_BUFFER_SIZE, 4096);
+  memset(buffer, 0, ITER_BUFFER_SIZE);
+  iter_list->it_list = (uint8_t*) buffer;
+  iter_list->end = false;
+  iter_list->num_entries = 0;
+
+  struct timespec start_time;
+  clock_gettime(CLOCK_REALTIME, &start_time);
+  while(1) {
+    iter_list->size = ITER_BUFFER_SIZE;
+    memset(iter_list->it_list, 0, ITER_BUFFER_SIZE);
+    ret = kvs_iterate_next_async(ks_hd, iter_hd, iter_list, complete);
+    if(ret != KVS_SUCCESS) {
+      fprintf(stderr, "iterator next fails with error 0x%x\n", ret);
+      if( (ret = kvs_delete_iterator(ks_hd, iter_hd)) != KVS_SUCCESS)
+        fprintf(stderr, "delte iterator after next fails with error 0x%x\n", ret);
+      kvs_free(buffer);
+      if(iter_list) free(iter_list);
+      return FAILED;
+    }
+        
+    submitted++;
+    while(completed < submitted)
+      usleep(1);
+      
+    total_entries += iter_list->num_entries;
+    //print_iterator_keyvals(&iter_info->iter_list, iter_info->g_iter_mode);
+
+    if(iter_list->end) {
+      fprintf(stdout, "Done with all keys. Total: %d\n", total_entries);
+      break;
+    } else {
+      fprintf(stdout, "More keys available, do another iteration\n");
+      memset(iter_list->it_list, 0, ITER_BUFFER_SIZE);
+    }
+  }
+  
+  double timespan_sec = _calc_time_span(start_time);
+  fprintf(stdout, "Total time %.2f sec; Throughput %.2f ops/sec\n",
+    timespan_sec, (double)count /timespan_sec );
+
+  /* Close iterator */
+  ret = kvs_delete_iterator(ks_hd, iter_hd);
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "Failed to close iterator\n");
+    kvs_free(buffer);
+    if(iter_list) free(iter_list);
+    return FAILED;
+  }
+
+  if(buffer) kvs_free(buffer);
+  if(iter_list) free(iter_list);
+  return SUCCESS;
+}
+
+int perform_read(kvs_key_space_handle ks_hd, int count, int maxdepth, uint16_t klen, uint32_t vlen) {
+    int num_submitted = 0;
+    completed = 0;
+    if( !_malloc_kv_pool(maxdepth, &keypool, klen, &valuepool, vlen, &lock)) {
+      printf("Allocate kv pool failed.\n");
+      return FAILED;
+    }
+
+    fprintf(stdout, "\n===========\n");
+    fprintf(stdout, "   Do Read Operation\n");
+    fprintf(stdout, "===========\n");
+
+    struct timespec start_time;
+    clock_gettime(CLOCK_REALTIME, &start_time);
+    long int seq = 0;
+    int ret = SUCCESS;
+    while (num_submitted < count) {
+      while (cur_qdepth < maxdepth) {
+        if (num_submitted >= count) break;
+        pthread_mutex_lock(&lock);
+        char *key   = keypool.front(); keypool.pop();
+        char *value = valuepool.front(); valuepool.pop();
+        pthread_mutex_unlock(&lock);
+        if(!key || !value) {
+          fprintf(stderr, "ERROR, key value memory pools exhaust.\n");
+          ret = FAILED;
+          goto exit;
+        }
+        sprintf(key, "%0*ld", klen - 1, seq++);
+        memset(value, 0, vlen);
+
+        kvs_option_retrieve option = {false};
+        
+        kvs_key *kvskey = NULL;
+        kvs_value *kvsvalue = NULL;
+        if( !_allocate_kvs_pair(key, klen, &kvskey, value, vlen, &kvsvalue)) {
+          ret = FAILED;
+          _free_kv_buff(key, value, &keypool, &valuepool, &lock);
+          goto exit;
+        }
+        ret = kvs_retrieve_kvp_async(ks_hd, kvskey, &option, kvsvalue, complete);
+        if (ret != KVS_SUCCESS) {
+          fprintf(stderr, "retrieve tuple failed with err 0x%x\n", ret);
+          _free_kvs_pair(kvskey, kvsvalue, &keypool, &valuepool, &lock);
+          goto exit;
+        }
+        cur_qdepth++;
+        num_submitted++;
+      }
+
+      if (cur_qdepth == maxdepth) {
+        usleep(1);
+      }
+    }
+
+exit:
+    // wait until commands that has succussfully submitted finish
+    while(completed < num_submitted) {
+      usleep(1);
+    }
+    double timespan_sec = _calc_time_span(start_time);
+    fprintf(stdout, "Total time %.2f sec; Throughput %.2f ops/sec\n",
+      timespan_sec, (double)count /timespan_sec );
+    _free_kv_pool(&keypool, &valuepool, &lock);
+    return ret;
+}
+
+int perform_insertion(kvs_key_space_handle ks_hd, int count, int maxdepth, uint16_t klen, uint32_t vlen) {
+  int num_submitted = 0;
+  completed = 0;
+  if( !_malloc_kv_pool(maxdepth, &keypool, klen, &valuepool, vlen, &lock)) {
+    printf("Allocate kv pool failed.\n");
+    return FAILED;
+  }
+
+  long int seq = 0;
+  fprintf(stdout, "\n===========\n");
+  fprintf(stdout, "   Do Write Operation\n");
+  fprintf(stdout, "===========\n");
+
+  struct timespec start_time;
+  clock_gettime(CLOCK_REALTIME, &start_time);
+  int ret = SUCCESS;
+  while (num_submitted < count) {
+    while (cur_qdepth < maxdepth) {
+      if (num_submitted >= count) break;
+
+      pthread_mutex_lock(&lock);
+      char *key   = keypool.front(); keypool.pop();
+      char *value = valuepool.front(); valuepool.pop();
+      pthread_mutex_unlock(&lock);
+      if(!key || !value) {
+        fprintf(stderr, "ERROR, key value memory pools exhaust.\n");
+        ret = FAILED;
+        goto exit;
+      }
+      sprintf(key, "%0*ld", klen - 1, seq++);
+      sprintf(value, "value%ld", seq);
+
+      kvs_option_store option = {KVS_STORE_POST, NULL};
+
+      kvs_key *kvskey = NULL;
+      kvs_value *kvsvalue = NULL;
+      if( !_allocate_kvs_pair(key, klen, &kvskey, value, vlen, &kvsvalue)) {
+        _free_kv_buff(key, value, &keypool, &valuepool, &lock);
+        ret = FAILED;
+        goto exit;
+      }
+      ret = kvs_store_kvp_async(ks_hd, kvskey, kvsvalue, &option, complete);
+      if (ret != KVS_SUCCESS) {
+        fprintf(stderr, "store tuple failed with err 0x%x\n", ret); 
+        _free_kvs_pair(kvskey, kvsvalue, &keypool, &valuepool, &lock);
+        return FAILED;
+      }
+
+      cur_qdepth++;
+      num_submitted++;
+    }
+
+    if (cur_qdepth == maxdepth) {
+      usleep(1);
+    }
+  }
+
+exit:
+  // wait until commands that has succussfully submitted finish
+  while(completed < num_submitted) {
+    usleep(1);
+  }
+  double timespan_sec = _calc_time_span(start_time);
+  fprintf(stdout, "Total time %.2f sec; Throughput %.2f ops/sec\n",
+    timespan_sec, (double)count /timespan_sec );
+  _free_kv_pool(&keypool, &valuepool, &lock);
+  return SUCCESS;
+}
+
+int perform_delete(kvs_key_space_handle ks_hd, int count, int maxdepth, uint16_t klen, uint32_t vlen) {
+  int num_submitted = 0;
+  completed = 0;
+  if( !_malloc_kv_pool(maxdepth, &keypool, klen, NULL, 0, &lock)) {
+    printf("Allocate kv pool failed.\n");
+    return FAILED;
+  }
+
+  long int seq = 0;
+  fprintf(stdout, "\n===========\n");
+  fprintf(stdout, "   Do Delete Operation\n");
+  fprintf(stdout, "===========\n"); 
+
+  struct timespec start_time;
+  clock_gettime(CLOCK_REALTIME, &start_time);
+  int ret = SUCCESS;
+  while (num_submitted < count) {
+    while (cur_qdepth < maxdepth) {
+      if (num_submitted >= count) break;
+      pthread_mutex_lock(&lock);
+      char *key   = keypool.front(); keypool.pop();
+      pthread_mutex_unlock(&lock);
+      if(!key) {
+        fprintf(stderr, "ERROR, key memory pools exhaust.\n");
+        ret = FAILED;
+        goto exit;
+      }
+      sprintf(key, "%0*ld", klen - 1, seq++);
+      kvs_key *kvskey = _allocate_kvskey(key, klen);
+      if(!kvskey) {
+        _free_kv_buff(key, NULL, &keypool, NULL, &lock);
+        ret = FAILED;
+        goto exit;
+      }
+      kvs_option_delete option = {false};
+      ret = kvs_delete_kvp_async(ks_hd, kvskey, &option, complete);
+      if (ret != KVS_SUCCESS) {
+        fprintf(stderr, "delete tuple failed with err 0x%x\n", ret);
+        _free_kvs_pair(kvskey, NULL, &keypool, NULL, &lock);
+        goto exit;
+      }
+      
+      cur_qdepth++;
+      num_submitted++;
+    }
+
+    if (cur_qdepth == maxdepth) {
+      usleep(1);
+    }
+  }
+
+exit:
+  // wait until commands that has succussfully submitted finish
+  while(completed < num_submitted) {
+    usleep(1);
+  }
+
+  double timespan_sec = _calc_time_span(start_time);
+  fprintf(stdout, "Total time %.2f sec; Throughput %.2f ops/sec\n",
+    timespan_sec, (double)count /timespan_sec );
+  _free_str_pool(&keypool, &lock);
+  return SUCCESS;
+}
+
+int perform_key_exist(kvs_key_space_handle ks_hd, int count, int maxdepth, uint16_t klen, uint32_t vlen ) {
+  int num_submitted = 0;
+  completed = 0;
+  if( !_malloc_kv_pool(maxdepth, &keypool, klen, NULL, 0, &lock)) {
+    printf("Allocate kv pool failed.\n");
+    return FAILED;
+  }
+
+  long int seq = 0;
+  fprintf(stdout, "\n===========\n");
+  fprintf(stdout, "   Do key exist check Operation\n");
+  fprintf(stdout, "===========\n");
+
+  struct timespec start_time;
+  clock_gettime(CLOCK_REALTIME, &start_time);
+  int ret = SUCCESS;
+  while (num_submitted < count) {
+    while (cur_qdepth < maxdepth) {
+      if (num_submitted >= count) break;
+      pthread_mutex_lock(&lock);
+      char *key   = keypool.front(); keypool.pop();
+      pthread_mutex_unlock(&lock);
+      if(!key) {
+        fprintf(stderr, "ERROR, key memory pools exhaust.\n");
+        ret = FAILED;
+        goto exit;
+      }
+      sprintf(key, "%0*ld", klen - 1, seq++);
+      kvs_key *kvskey = _allocate_kvskey(key, klen);
+      if(!kvskey) {
+        _free_kv_buff(key, NULL, &keypool, NULL, &lock);
+        ret = FAILED;
+        goto exit;
+      }
+
+      uint8_t *status = (uint8_t*)malloc(sizeof(uint8_t));
+      kvs_exist_list *list = (kvs_exist_list*)malloc(sizeof(kvs_exist_list));
+      list->keys = kvskey;
+      list->length = 1;
+      list->num_keys = 1;
+      list->result_buffer = status;
+      ret = kvs_exist_kv_pairs_async(ks_hd, 1, kvskey, list, complete);
+      if (ret != KVS_SUCCESS) {
+        fprintf(stderr, "exit tuple failed with err 0x%x\n", ret);
+        if(status) free(status);
+        if(list) free(list);
+        _free_kvs_pair(kvskey, NULL, &keypool, NULL, &lock);
+        goto exit;
+      }
+
+      cur_qdepth++;
+      num_submitted++;
+    }
+
+    if (cur_qdepth == maxdepth) {
+      usleep(1);
+    }
+  }
+
+exit:
+  // wait until commands that has succussfully submitted finish
+  while(completed < num_submitted) {
+    usleep(1);
+  }
+
+  double timespan_sec = _calc_time_span(start_time);
+  fprintf(stdout, "Total time %.2f sec; Throughput %.2f ops/sec\n",
+    timespan_sec, (double)count /timespan_sec );
+  _free_str_pool(&keypool, &lock);
+  return SUCCESS;
+}
+
+int main(int argc, char *argv[]) {
+  char* dev_path = NULL;
+  int num_ios = 10;
+  int qdepth = 64;
+  int op_type = 1;
+  uint16_t klen = 16;
+  uint32_t vlen = 4096;
+  //int is_polling = 0;
+  int c;
+  int ret;
+
+  while ((c = getopt(argc, argv, "d:n:q:o:k:v:h")) != -1) {
+    switch(c) {
+    case 'd':
+      dev_path = optarg;
+      break;
+    case 'n':
+      num_ios = atoi(optarg);
+      break;
+    case 'q':
+      qdepth = atoi(optarg);
+      break;
+    case 'o':
+      op_type = atoi(optarg);
+      break;
+    case 'k':
+      klen = atoi(optarg);
+      break;
+    case 'v':
+      vlen = atoi(optarg);
+      break;
+    case 'h':
+      usage(argv[0]);
+      return FAILED;
+    default:
+      usage(argv[0]);
+      return SUCCESS;
+    }
+  }
+
+  if(dev_path == NULL) {
+    fprintf(stderr, "Please specify KV SSD device path\n");
+    usage(argv[0]);
+    return SUCCESS;
+  }
+
+  kvs_device_handle dev;
+  ret = kvs_open_device(dev_path, &dev);
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "Device open failed 0x%x\n", ret);
+    return FAILED;
+  }
+  
+  const char* name = "test";
+  kvs_key_space_name ks_name;
+  kvs_option_key_space option = {KVS_KEY_ORDER_ASCEND};
+  ks_name.name = name;
+  ks_name.name_len = strlen(name);
+  
+  kvs_create_key_space(dev, &ks_name, 0, option);
+  
+  kvs_key_space_handle ks_hd;
+  kvs_open_key_space(dev, name, &ks_hd);
+
+  uint32_t dev_util = 0;
+  uint64_t dev_capa = 0;
+  kvs_device *dev_info = (kvs_device*)malloc(sizeof(kvs_device));
+
+  kvs_get_device_utilization(dev, &dev_util);
+
+  kvs_get_device_capacity(dev, &dev_capa);
+  fprintf(stdout, "Before: Total size is %ld bytes, used is %d\n", dev_capa, dev_util);
+
+  kvs_get_device_info(dev, dev_info);
+  fprintf(stdout, "Total size: %.2f GB\nMax value size: %d\nMax key size: %d\nOptimal value size: %d\n",
+    (float)dev_info->capacity/1000/1000/1000, dev_info->max_value_len,
+    dev_info->max_key_len, dev_info->optimal_value_len);
+  free(dev_info);
+  
+  switch(op_type) {
+  case WRITE_OP:
+    perform_insertion(ks_hd, num_ios, qdepth, klen, vlen);
+    break;
+  case READ_OP:
+    //perform_insertion(cont_handle, num_ios, qdepth, klen, vlen);
+    perform_read(ks_hd, num_ios, qdepth, klen, vlen);
+    break;
+  case DELETE_OP:
+    //perform_insertion(cont_handle, num_ios, qdepth, klen, vlen);
+    perform_delete(ks_hd, num_ios, qdepth, klen, vlen);
+    break;
+  case ITERATOR_OP:
+    //perform_insertion(cont_handle, num_ios, qdepth, klen, vlen);
+    perform_iterator(ks_hd);
+    break;
+  case KEY_EXIST_OP:
+    //perform_insertion(cont_handle, num_ios, qdepth,  klen, vlen);
+    perform_key_exist(ks_hd, num_ios, qdepth,  klen, vlen);
+    break;
+  default:
+    fprintf(stderr, "Please specify a correct op_type for testing\n");
+    return FAILED;
+  }
+
+  kvs_get_device_utilization(dev, &dev_util);
+  fprintf(stdout, "After: Total size is %ld bytes, used is %d\n", dev_capa, dev_util);  
+  
+  kvs_close_key_space(ks_hd);
+  kvs_delete_key_space(dev, &ks_name);
+  kvs_close_device(dev);
+
+  return SUCCESS;
+}
+#endif

@@ -44,7 +44,8 @@
 #include <queue>
 #include <atomic>
 #include <kvs_adi.h>
-
+namespace api_private
+{
 class KvEmulator: public KvsDriver
 {
 
@@ -97,6 +98,6 @@ private:
   bool ispersist;
   std::string datapath;
 };
-
+}
 
 #endif /* KVDRAM_HPP_ */

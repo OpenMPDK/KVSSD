@@ -39,7 +39,7 @@
 #include <map>
 #include "private_types.h"
 
-int init_udd(kvs_init_options *options);
+int init_udd(api_private::kvs_init_options *options);
 void _udd_free(void * buf);
 void *_udd_malloc(size_t size_bytes, size_t alignment);
 void *_udd_zalloc(size_t size_bytes, size_t alignment);

@@ -46,9 +46,7 @@
 #include <kvs_adi.h>
 #include <kadi.h>
 
-class KDDriver;
-
-
+namespace api_private {
 class KDDriver: public KvsDriver
 {
 
@@ -107,6 +105,6 @@ private:
   bool ispersist;
   std::string datapath;
 };
-
+}
 
 #endif /* KVDRAM_HPP_ */

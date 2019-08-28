@@ -48,6 +48,7 @@
 #define MAX_POOLSIZE 10240
 #define GB_SIZE (1024 * 1024 * 1024)
 
+namespace api_private {
 KUDDriver::KUDDriver(kv_device_priv *dev, kvs_callback_function user_io_complete_):
   KvsDriver(dev, user_io_complete_), queue_depth(256), num_cq_threads(1), mem_size_mb(1024)
 {
@@ -86,6 +87,7 @@ void udd_iterate_cb(kv_iterate *it, unsigned int result, unsigned int status) {
     unsigned int buffer_size = it->kv.value.length;
     char *current_ptr = data_buff;
     
+    iocb->iter_hd = (kvs_iterator_handle *)&(it->iterator);
     unsigned int key_size = 0;
     int keydata_len_with_padding = 0;
     unsigned int buffdata_len = buffer_size;
@@ -162,8 +164,8 @@ void udd_write_cb(kv_pair *kv, unsigned int result, unsigned int status) {
     else if (status == KV_SUCCESS)
       status = 1;
     *iocb->result_buffer = status;
-  } else if (iocb->opcode == IOCB_ASYNC_GET_CMD) {
-    if (status == KV_SUCCESS && kv->value.actual_value_size > kv->value.length)
+  } else if (iocb->opcode == IOCB_ASYNC_GET_CMD && status == KV_SUCCESS 
+      && kv->value.actual_value_size > kv->value.length) {
       iocb->result = KVS_ERR_BUFFER_SMALL;
   } else {
     if(status == KV_SUCCESS) {
@@ -202,8 +204,10 @@ void udd_write_cb(kv_pair *kv, unsigned int result, unsigned int status) {
     iocb->key->key = kv->key.key;
     iocb->key->length = kv->key.length;
   }
-  if(iocb->value)
+  if(iocb->value) {
     iocb->value->actual_value_size = kv->value.actual_value_size;
+    iocb->value->length = kv->value.length;
+  }
   
   if(ctx->on_complete && iocb) ctx->on_complete(iocb);
  
@@ -237,7 +241,7 @@ int32_t KUDDriver::init(const char* devpath, bool syncio, uint64_t sq_core, uint
   kv_nvme_io_options options = {0};
   options.core_mask = (1ULL << sq_core); //sq_core; 
   if (syncio)
-    options.sync_mask = 1;     // Use Sync I/O mode
+    options.sync_mask = (1ULL << sq_core);     // Use Sync I/O mode
   else
     options.sync_mask = 0;     // Use Async I/O mode
   options.num_cq_threads = 1;  // Use only one CQ Processing Thread
@@ -506,6 +510,7 @@ int32_t KUDDriver::retrieve_tuple(int contid, const kvs_key *key, kvs_value *val
   if(syncio) {
     ret = kv_nvme_read(handle, DEFAULT_IO_QUEUE_ID, kv);
     value->actual_value_size = kv->value.actual_value_size;
+    value->length = kv->value.length;
     this->kv_pair_pool.push(kv);
     free(ctx);
     ctx = NULL;
@@ -915,19 +920,22 @@ int32_t KUDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *i
   it->kv.param.io_option.iterate_read_option = KV_ITERATE_READ_DEFAULT;
   if (syncio) {
     ret = kv_nvme_iterate_read(handle, DEFAULT_IO_QUEUE_ID, it);
-
+    iter_list->end = 0;
     if(ret != KV_SUCCESS) {
       if(ret == KV_ERR_ITERATE_READ_EOF  /*KVS_ERR_ITERATOR_END*/) {
-	iter_list->end = 0x01;//TRUE;
-	ret = 0;
+        iter_list->end = 0x01;//TRUE;
+        ret = 0;
       } else if (ret == KV_ERR_ITERATE_FAIL_TO_PROCESS_REQUEST) {
-	ret = KVS_ERR_ITERATOR_NOT_EXIST;
+        ret = KVS_ERR_ITERATOR_NOT_EXIST;
       } else if (ret == KV_ERR_BUFFER) {
-	ret = KVS_ERR_BUFFER_SMALL;
+        ret = KVS_ERR_BUFFER_SMALL;
       } else if (ret == KV_ERR_INVALID_OPTION) {
-	ret = KVS_ERR_OPTION_INVALID;
-      } else 
-	ret = KVS_ERR_SYS_IO;
+        ret = KVS_ERR_OPTION_INVALID;
+      } else if (ret == KV_ERR_DD_INVALID_PARAM) {
+        ret = KVS_ERR_PARAM_INVALID;
+      } else {
+        ret = KVS_ERR_SYS_IO;
+      }
     }
 
 
@@ -994,7 +1002,12 @@ int32_t KUDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *i
     memcpy((char*)it->kv.value.value, (char*)it->kv.value.value + 4,  it->kv.value.length - 4);
     */
     iter_list->it_list = it->kv.value.value;
-    iter_list->size = it->kv.value.length - KV_IT_READ_BUFFER_META_LEN;
+    if(it->kv.value.length >= KV_IT_READ_BUFFER_META_LEN){
+      iter_list->size = it->kv.value.length - KV_IT_READ_BUFFER_META_LEN;
+    }else{
+      iter_list->size = 0;
+    }
+
     
     if (it) {
       kv_free(it);
@@ -1007,6 +1020,7 @@ int32_t KUDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *i
   } else { // async
     while(ret) {
       ret = kv_nvme_iterate_read_async(handle, DEFAULT_IO_QUEUE_ID, it);
+      iter_list->end = 0;
       if(ret == KV_ERR_DD_NO_AVAILABLE_RESOURCE || ret == KV_ERR_DD_NO_AVAILABLE_QUEUE) {
         usleep(1);
       }
@@ -1091,5 +1105,6 @@ KUDDriver::~KUDDriver() {
     delete p;
   }
   */
+}
 }
 

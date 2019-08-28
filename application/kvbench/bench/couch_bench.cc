@@ -258,7 +258,10 @@ char * print_filesize_approx(uint64_t size, char *output)
 int parse_coreid(struct bench_info *binfo, int* buffer, int buffer_size,
   int *core_count) {
   int core_max = binfo->cpuinfo->num_cores_per_numanodes * binfo->cpuinfo->num_numanodes;
-  char *coreid = binfo->core_ids;
+  int str_len = strnlen(binfo->core_ids, 256);
+  char *coreid = (char *)malloc(str_len + 1);
+  memset(coreid, 0, str_len + 1);
+  strncpy(coreid, binfo->core_ids, str_len);
   char* pt = NULL;
   int i = 0;
   if (!coreid)
@@ -275,6 +278,7 @@ int parse_coreid(struct bench_info *binfo, int* buffer, int buffer_size,
     pt = strtok (NULL, ",");
   }
   *core_count = i;
+  free(coreid);
   return i == 0 ? -1 : 0;
 }
 
@@ -912,32 +916,25 @@ void population(Db **db, struct bench_info *binfo)
 	pthread_attr_setaffinity_np(&attr[i], sizeof(cpu_set_t), &cpus);
       } else if(nodeid != -1){
 	CPU_ZERO(&cpus);
-	for(j = 0; j < binfo->cpuinfo->num_cores_per_numanodes; j++){
-      if (_ret) {
+    if (_ret) {
+      for(j = 0; j < binfo->cpuinfo->num_cores_per_numanodes; j++){
         CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
-      } else {
-        for (int k = 0; k < core_count; k++) {
-          if (binfo->cpuinfo->cpulist[nodeid][j] == coreid[k])
-            CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
-        }
       }
-	}
+    } else {
+      CPU_SET(db_idx < core_count ? coreid[db_idx] : 0, &cpus);
+    }
 	pthread_attr_setaffinity_np(&attr[i], sizeof(cpu_set_t), &cpus);
       } else {
 	// if no core & socket is set, use round robin to assign numa node
 	CPU_ZERO(&cpus);
-	nodeid = db_idx % binfo->cpuinfo->num_numanodes;
-	CPU_ZERO(&cpus);
-	for(j = 0; j < binfo->cpuinfo->num_cores_per_numanodes; j++){
-      if (_ret) {
+    nodeid = db_idx % binfo->cpuinfo->num_numanodes;
+    if (_ret) {
+      for(j = 0; j < binfo->cpuinfo->num_cores_per_numanodes; j++){
         CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
-      } else {
-        for (int k = 0; k < core_count; k++) {
-          if (binfo->cpuinfo->cpulist[nodeid][j] == coreid[k])
-            CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
-        }
       }
-	}
+    } else {
+      CPU_SET(db_idx < core_count ? coreid[db_idx] : 0, &cpus);
+    }
 	pthread_attr_setaffinity_np(&attr[i], sizeof(cpu_set_t), &cpus);
       }
       args[i].socketid = nodeid;
@@ -2653,7 +2650,7 @@ void do_bench(struct bench_info *binfo)
 #endif // __LEVEL_BENCH || __ROCKS_BENCH
       gap_double = gap.tv_sec + (double)gap.tv_usec / 1000000.0;
       LOG_PRINT_TIME(gap, " sec elapsed ");
-      lprintf("(%.2f ops/sec)\n", binfo->ndocs * binfo->nfiles / gap_double);
+      lprintf("(%.2f ops/sec)\n", gap_double ? binfo->ndocs * binfo->nfiles / gap_double : 0);
     } else {
       fprintf(stdout, "Start benchmark without population\n");
 #if defined(__KV_BENCH)
@@ -2876,31 +2873,24 @@ void do_bench(struct bench_info *binfo)
       pthread_attr_setaffinity_np(&attr[i], sizeof(cpu_set_t), &cpus);
     } else if(nodeid != -1){
       CPU_ZERO(&cpus);
+    if (ret) {
       for(j = 0; j < binfo->cpuinfo->num_cores_per_numanodes; j++){
-        if (ret) {
-          CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
-        } else {
-          for (int k = 0; k < core_count; k++) {
-            if (binfo->cpuinfo->cpulist[nodeid][j] == coreid[k])
-              CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
-          }
-        }
+        CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
       }
+    } else {
+      CPU_SET(db_idx < core_count ? coreid[db_idx] : 0, &cpus);
+    }
       pthread_attr_setaffinity_np(&attr[i], sizeof(cpu_set_t), &cpus);
     }else {
       // if no core & socket is set, use round robin to assign numa node
       CPU_ZERO(&cpus);
       nodeid = db_idx % binfo->cpuinfo->num_numanodes;
-      CPU_ZERO(&cpus);
-      for(j = 0; j < binfo->cpuinfo->num_cores_per_numanodes; j++){
-        if (ret) {
+      if (ret) {
+        for(j = 0; j < binfo->cpuinfo->num_cores_per_numanodes; j++){
           CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
-        } else {
-          for (int k = 0; k < core_count; k++) {
-            if (binfo->cpuinfo->cpulist[nodeid][j] == coreid[k])
-              CPU_SET(binfo->cpuinfo->cpulist[nodeid][j], &cpus);
-          }
         }
+      } else {
+        CPU_SET(db_idx < core_count ? coreid[db_idx] : 0, &cpus);
       }
 
       pthread_attr_setaffinity_np(&attr[i], sizeof(cpu_set_t), &cpus);
@@ -3972,8 +3962,12 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
 
     binfo.queue_depth = iniparser_getint(cfg, (char*)"kvs:queue_depth", 8);
     if(binfo.kv_write_mode == 0) { // aio
-      if (binfo.queue_depth > binfo.kp_numunits || binfo.queue_depth > binfo.vp_numunits) {
-	fprintf(stderr, "wARN: Please set key/value pool unit equal to or larger than the queue_depth: %d\n", binfo.queue_depth);
+      if (binfo.queue_depth <= 0) {
+	fprintf(stderr, "WARN: Please set queue depth greater than 0\n");
+	iniparser_free(cfg);
+	exit(1);
+      } else if (binfo.queue_depth > binfo.kp_numunits || binfo.queue_depth > binfo.vp_numunits) {
+	fprintf(stderr, "WARN: Please set key/value pool unit equal to or greater than the queue_depth: %d\n", binfo.queue_depth);
 	iniparser_free(cfg);
 	exit(1);
       }
@@ -4619,7 +4613,7 @@ int main(int argc, char **argv){
             case 'h':
                 printf("Usage: %s [OPTIONS]\n", argv[0]);
                 printf("  -f file                   file\n");
-                printf("  -e, --existing            use existing database file\n");
+                printf("  -e, --database            use existing database file\n");
 		printf("  -c, --config only         generate CPU config file\n");
                 printf("  -h, --help                print this help and exit\n");
                 printf("\n");
