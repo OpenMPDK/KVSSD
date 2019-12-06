@@ -40,13 +40,15 @@
 extern "C" {
 #endif
 
-#define KV_MAX_KEY_SIZE (4096)
+#define KV_MAX_KEY_SIZE (255)
+#define KV_MIN_KEY_SIZE (4)
 #define KV_MAX_EMBED_KEY_SIZE (16)
 #define KV_MAX_VALUE_SIZE (4<<20)
 
 enum spdk_nvme_samsung_nvm_opcode {
 
   SPDK_NVME_OPC_KV_STORE      = 0x81,
+  SPDK_NVME_OPC_KV_STORE_BATCH  = 0x85,
   SPDK_NVME_OPC_KV_RETRIEVE   = 0x90,
   SPDK_NVME_OPC_KV_DELETE     = 0xA1,
   SPDK_NVME_OPC_KV_ITERATE_REQUEST	= 0xB1,
@@ -266,7 +268,36 @@ spdk_nvme_kv_cmd_iterate_close (struct spdk_nvme_ns *ns, struct spdk_nvme_qpair 
 			      uint8_t iterator,
 			      spdk_nvme_cmd_cb cb_fn, void *cb_arg,
 		              uint32_t io_flags, uint8_t  option);
- 
+
+/**
+ * \brief Submits a KV Batch Request command with batch option
+ *
+ * \param ns NVMe namespace to submit the KV Iterate I/O
+ * \param qpair I/O queue pair to submit the request
+ * \param buffer Batch command payload buffer
+ * \param buffer_size Batch command payload buffer size
+ * \param cmd_cnt Sub-command number in batch command
+ * \param cb_fn callback function to invoke when the I/O is completed
+ * \param cb_arg argument to pass to the callback function
+ * \param io_flags set flags, defined by the SPDK_NVME_IO_FLAGS_* entries
+ *                      in spdk/nvme_spec.h, for this I/O.
+ * \param option option to pass to NVMe command
+ *       0 - no atomicity; 1 - atomicity
+ *
+ * \return 0 if successfully submitted, KV_ERR_DD_NO_AVAILABLE_RESOURCE if an nvme_request
+ *           structure cannot be allocated for the I/O request, KV_ERR_DD_INVALID_PARAM if
+ *           param error.
+ *
+ * The command is submitted to a qpair allocated by spdk_nvme_ctrlr_alloc_io_qpair().
+ * The user must ensure that only one thread submits I/O on a given qpair at any given time.
+ */
+
+int
+spdk_nvme_kv_batch_cmd_store(struct spdk_nvme_ns *ns,
+    struct spdk_nvme_qpair *qpair, void *buffer, uint32_t buffer_size,
+    uint32_t cmd_cnt, spdk_nvme_cmd_cb cb_fn, void *cb_arg, uint32_t io_flags,
+    uint8_t option);
+
 /**
  * \brief Submits a KV Iterate I/O to the specified NVMe namespace.
  * \param ns NVMe namespace to submit the KV Iterate I/O

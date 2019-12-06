@@ -49,9 +49,9 @@ extern "C" {
 #endif
 
 // memory
-#define _FUNCTIONIZE(a,b)  a(b)
+#define _FUNCTIONIZE(a, b)  a(b)
 #define _STRINGIZE(a)      #a
-#define _INT2STRING(i)     _FUNCTIONIZE(_STRINGIZE,i)
+#define _INT2STRING(i)     _FUNCTIONIZE(_STRINGIZE, i)
 #define _LOCATION       __FILE__ ":" _INT2STRING(__LINE__)
 
 void *_kvs_zalloc(size_t size_bytes, size_t alignment, const char *file);
@@ -160,7 +160,10 @@ kvs_result kvs_delete_container (kvs_device_handle dev_hd, const char *cont_name
 kvs_result kvs_open_container (kvs_device_handle dev_hd, const char* name, kvs_container_handle *cont_hd);
   
 kvs_result kvs_close_container (kvs_container_handle cont_hd);
-    
+
+kvs_result kvs_list_containers(kvs_device_handle dev_hd, uint32_t index,
+  uint32_t buffer_size, kvs_container_name *names, uint32_t *cont_cnt);
+
 kvs_result kvs_get_container_info (kvs_container_handle cont_hd, kvs_container *cont);
 
 
@@ -242,8 +245,7 @@ kvs_result kvs_delete_tuple_async(kvs_container_handle cont_hd, const kvs_key* k
 kvs_result kvs_exist_tuples(kvs_container_handle cont_hd, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, const kvs_exist_context *ctx);
   
 kvs_result kvs_exist_tuples_async(kvs_container_handle cont_hd, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, const kvs_exist_context *ctx, kvs_callback_function cbfn);
-  
-  
+
 /*! Open an iterator
  *
  * \param cont_hd container handle
@@ -739,7 +741,7 @@ kvs_result kvs_retrieve_kvp(kvs_key_space_handle ks_hd, kvs_key *key, kvs_option
   As an input value.value contains the buffer to store the key value pair value and value.length contains the buffer size.
   The key value pair value is copied to value.value buffer and value.length is set to the retrieved value size. If the offset of value is not zero,
   the value of key value pair is copied into the buffer, skipping the first offset bytes of the value of key value pair.
-  That is, value.length is equal to the total size of (actual_value_size ‚Äì offset). The offset is required to align to KVS_ALIGNMENT_UNIT.
+  That is, value.length is equal to the total size of (actual_value_size ®C offset). The offset is required to align to KVS_ALIGNMENT_UNIT.
   If the offset is not aligned, a KVS_ERR_VALUE_OFFSET_MISALIGNED error is returned. If an allocated value buffer is not big enough to hold the value,
   it will set value.actual_value_size to the actual value length and return KVS_ERR_BUFFER_SMALL.
 
@@ -980,7 +982,7 @@ kvs_result kvs_exist_kv_pairs_async(kvs_key_space_handle ks_hd, uint32_t key_cnt
 *
   This API enables applications to set up a Key Group such that the keys in that Key Group may be iterated within a Key Space
   (i.e., kvs_crearte_iterator() enables a device to prepare a Key Group of keys for iteration by matching a given bit pattern (it_fltr.bit_pattern) to all keys in the Key Space
-  considering bits indicated by it_fltr.bitmask and the device sets up a Key Group of keys matching that ‚Äú(bitmask & key) == bit_pattern‚Äù.)
+  considering bits indicated by it_fltr.bitmask and the device sets up a Key Group of keys matching that °∞(bitmask & key) == bit_pattern°±.)
 
   PARAMETERS
   IN ks_hd Key Space handle
@@ -1029,8 +1031,8 @@ kvs_result kvs_delete_iterator(kvs_key_space_handle ks_hd, kvs_iterator_handle i
   buffer_size is the iterator buffer (iter_list) size in bytes. The retrieved values (iter_list) are either keys or key-value pairs based on the iterator option
   which is specified by kvs_create_iterator().
   Output values (iter_list.it_list) are determined by the iterator option specified by an application.
-  ‚Ä¢ KV_ITERATOR_OPT_KEY [MANDATORY]: a subset of keys are returned in iter_list.it_list data structure
-  ‚Ä¢ KV_ITERATOR_OPT_KEY_VALUE; a subset of key-value pairs are returned in iter_list.it_list data structure
+  KV_ITERATOR_OPT_KEY [MANDATORY]: a subset of keys are returned in iter_list.it_list data structure
+  KV_ITERATOR_OPT_KEY_VALUE; a subset of key-value pairs are returned in iter_list.it_list data structure
 
   PARAMETERS
   IN ks_hd Key Space handle
@@ -1055,8 +1057,8 @@ kvs_result kvs_iterate_next(kvs_key_space_handle ks_hd, kvs_iterator_handle iter
   This API obtains a subset of key or key-value pairs from an iterator Key Group of iter_hd within a Key Space
   (i.e., kvs_iterator_next() retrieves a next Key Group of keys or key-value pairs in the iterator key group (iter_hd) that is set with kvs_create_iterator() command).
   Output values (iter_list.it_list) are determined by the iterator option set by an application.
-  ‚Ä¢ KV_ITERATOR_OPT_KEY [MANDATORY]: a subset of keys are returned in iter_list.it_list data structure
-  ‚Ä¢ KV_ITERATOR_OPT_KEY_VALUE; a subset of key-value pairs are returned in iter_list.it_list data structure
+  KV_ITERATOR_OPT_KEY [MANDATORY]: a subset of keys are returned in iter_list.it_list data structure
+  KV_ITERATOR_OPT_KEY_VALUE; a subset of key-value pairs are returned in iter_list.it_list data structure
 
   PARAMETERS
   IN ks_hd Key Space handle

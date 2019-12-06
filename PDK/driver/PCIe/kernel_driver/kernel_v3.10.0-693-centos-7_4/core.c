@@ -3160,11 +3160,6 @@ int __init nvme_core_init(void)
 	else if (result > 0)
 		nvme_char_major = result;
 
-	nvme_class = class_create(THIS_MODULE, "nvme");
-	if (IS_ERR(nvme_class)) {
-		result = PTR_ERR(nvme_class);
-		goto unregister_chrdev;
-	}
 #if 1
 	result = aio_service_init();
 	if (result)
@@ -3173,10 +3168,18 @@ int __init nvme_core_init(void)
 	result = aio_worker_init();
 	if (result)
 		goto unregister_aio_service;
+
 #endif
+	nvme_class = class_create(THIS_MODULE, "nvme");
+	if (IS_ERR(nvme_class)) {
+		result = PTR_ERR(nvme_class);
+		goto unregister_aio_worker;
+	}
 
 	return 0;
 #if 1
+unregister_aio_worker:
+	aio_worker_exit();
 unregister_aio_service:
 	aio_service_exit();
 #endif

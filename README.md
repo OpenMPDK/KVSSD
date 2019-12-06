@@ -41,7 +41,7 @@ KVSSD
    |- PDK (Platform Development Kit)
    |    |- core
    |    |    |- src
-   |    |        |- api : KV API (Application Programming Interface) & SNIA KV Storage API
+   |    |        |- api : SAMSUNG KV API (Application Programming Interface) & SNIA KV Storage API
    |    |        |- device abstract layer
    |    |             |- emulator : KV SSD emulator
    |    |             |- kernel_driver_adapater : Kernel driver adapter

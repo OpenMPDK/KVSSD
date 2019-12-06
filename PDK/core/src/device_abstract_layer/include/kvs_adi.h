@@ -34,7 +34,6 @@
 #define SAMSUNG_KVS_ADI_H
 
 #include "stdint.h"
-#include "kvs_result.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,16 +49,21 @@ extern "C" {
 
 #define SAMSUNG_MAX_ITERATORS 16
 
+#define SAMSUNG_MAX_KEYSPACE_CNT 2
+#define SAMSUNG_MIN_KEYSPACE_ID 0
+#define KV_ALIGNMENT_UNIT 512
+
+
 /**
  * return value from all interfaces
  */
 typedef int32_t kv_result;
 
     // Generic command status                
-#define    KV_SUCCESS                            0x0      ///< success
+#define    KV_SUCCESS                            0x0        ///< success
 
 // warnings
-#define    KV_WRN_MORE                          0xF000    ///< more data is available, but buffer is not enough
+#define    KV_WRN_MORE                          0xF000        ///< more data is available, but buffer is not enough
 
 // errors                  
 #define    KV_ERR_DEV_CAPACITY                  0x004     ///< device does not have enough space
@@ -69,6 +73,7 @@ typedef int32_t kv_result;
 #define    KV_ERR_DEV_SANITIZE_FAILED           0x008     ///< the previous sanitize operation failed
 
 #define    KV_ERR_ITERATOR_NOT_EXIST            0x00C     ///< no iterator exists
+#define    KV_ERR_ITERATOR_ALREADY_OPEN         0x00D     ///< terator is already open
 #define    KV_ERR_KEY_INVALID                   0x00F     ///< key invalid (value of key is NULL)
 #define    KV_ERR_KEY_LENGTH_INVALID            0x010     ///< key length is out of range (unsupported key length)
 #define    KV_ERR_KEY_NOT_EXIST                 0x011     ///< given key doesn't exist
@@ -83,6 +88,8 @@ typedef int32_t kv_result;
 #define    KV_ERR_VALUE_OFFSET_INVALID          0x023     ///< value offset is invalid meaning that offset is out of bound.
 #define    KV_ERR_VENDOR                        0x025     ///< vendor-specific error is returned, check the system log for more details
 #define    KV_ERR_PERMISSION                    0x026     ///< unable to open device due to permission error
+#define    KV_ERR_MISALIGNED_VALUE_OFFSET       0x20C     ///< misaligned value offset
+
 
 // command specific status(errors)               
 #define    KV_ERR_BUFFER_SMALL                  0x001     ///< provided buffer size too small for iterator_next operation
@@ -130,7 +137,10 @@ typedef int32_t kv_result;
 ///< device driver does not support.
 #define    KV_ERR_DD_UNSUPPORTED       0x02C 
 
-/** 
+//device does not support the specified keyspace
+#define KV_ERR_KEYSPACE_INVALID        0x031
+
+/**
  * \mainpage A libary for Samsung Key-Value Storage ADI
  */
 
@@ -492,8 +502,6 @@ typedef struct {
   void *pattern;            ///< buffer address for sanize overwrite pattern 
 } kv_sanitize_pattern; 
 
-
-
 /**
  * \defgroup device_interfaces
  */
@@ -649,7 +657,6 @@ typedef struct {
     kv_group_condition *grp_cond;
 } op_delete_group_struct_t;
 
-
 ////////////////////////////////
 // this part must be the same as the public portion of 
 // io_ctx_t
@@ -696,12 +703,19 @@ typedef struct {
         kv_iterator_handle hiter;
     } result;
 
+    struct {
+        int id;
+        bool end;
+        void *buf;
+        int buflength;
+    } hiter;
 
 //private
     void (*post_fn)(kv_io_context *op);   ///< asynchronous notification callback (valid only for async I/O)
     uint32_t timeout_usec;
     uint16_t qid;
     uint32_t nsid;
+    int8_t ks_id;
 
     // command specific structure
     // see structures defined above
@@ -1113,7 +1127,7 @@ kv_result kv_get_namespace_stat(const kv_device_handle dev_hdl, const kv_namespa
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details 
   */
-kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_purge_option option, kv_postprocess_function *post_fn);
+kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, kv_purge_option option, kv_postprocess_function *post_fn);
 
 /**
   \ingroup Iterator_Interfaces
@@ -1157,9 +1171,9 @@ kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_purge
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
  
   */
-kv_result kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_postprocess_function *post_fn);
+kv_result kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_postprocess_function *post_fn);
 
-kv_result kv_open_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_iterator_option it_op, const kv_group_condition *it_cond, uint8_t *iterhandle);
+kv_result kv_open_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_iterator_option it_op, const kv_group_condition *it_cond, uint8_t *iterhandle);
 kv_result kv_close_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl);
 kv_result kv_list_iterators_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator *kv_iters, uint32_t *iter_cnt);
 kv_result kv_iterator_next_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_iterator_list *iter_list);
@@ -1305,7 +1319,7 @@ kv_result kv_list_iterators(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
   */
-kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_delete_option option, kv_postprocess_function *post_fn);
+kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, kv_delete_option option, kv_postprocess_function *post_fn);
 
 
 /**
@@ -1337,7 +1351,7 @@ kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const k
   KV_ERR_PARAM_INVALID       grp_cond or op_hdl cannot be NULL, both shall have been already allocated
   KV_ERR_VENDOR           vendor-specific error is returned, check the system log for more details
  */
-kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_group_condition *grp_cond, kv_postprocess_function *post_fn);
+kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, kv_group_condition *grp_cond, kv_postprocess_function *post_fn);
 
 /**
   kv_exist
@@ -1378,7 +1392,7 @@ kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, k
   KV_ERR_SYS_PERMISSION 		this caller does not have a permission to call this interface
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
   */
-kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *keys, uint32_t keycount, uint32_t buffer_size, uint8_t *buffer, kv_postprocess_function *post_fn);
+kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *keys, uint32_t keycount, uint32_t buffer_size, uint8_t *buffer, kv_postprocess_function *post_fn);
 
 /**
   kv_retrieve 
@@ -1427,7 +1441,7 @@ kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv
   KV_ERR_VALUE_LENGTH_INVALID	the value length is out of range of kv_device.min_value_len and kv_device.max_value_len
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
   */
-kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_retrieve_option option, kv_value *value,  const kv_postprocess_function *post_fn);
+kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, kv_retrieve_option option, kv_value *value,  const kv_postprocess_function *post_fn);
 
 /**
   kv_store
@@ -1480,8 +1494,7 @@ kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const
   KV_ERR_VENDOR			vendor-specific error is returned, check the system log for more details
 
   */
-kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, const kv_value *value, kv_store_option option, const kv_postprocess_function *post_fn);
-
+kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, const kv_value *value, kv_store_option option, const kv_postprocess_function *post_fn);
 
 /**
  \ingroup Completion Interfaces

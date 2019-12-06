@@ -145,9 +145,14 @@ kv_result kv_namespace_internal::kv_get_namespace_stat(kv_namespace_stat *ns_st)
 
 // direct interact with kv storage
 // this is processed off submission Q
-kv_result kv_namespace_internal::kv_purge(kv_purge_option option, void *ioctx) {
+kv_result kv_namespace_internal::kv_purge(uint8_t ks_id,kv_purge_option option, void *ioctx) {
     set_purge_in_progress(TRUE); 
-    kv_result res = m_kvstore->kv_purge(option, ioctx);
+
+    if(ks_id < SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+        return KV_ERR_KEYSPACE_INVALID;
+    }
+
+    kv_result res = m_kvstore->kv_purge(ks_id, option, ioctx);
 
     // restore capacity
     if (res == KV_SUCCESS) {
@@ -160,12 +165,16 @@ kv_result kv_namespace_internal::kv_purge(kv_purge_option option, void *ioctx) {
 
 
 // directly work with kvstore
-kv_result kv_namespace_internal::kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) {
+kv_result kv_namespace_internal::kv_store(uint8_t ks_id, const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) {
     if (key == NULL || value == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
-    kv_result res = m_kvstore->kv_store(key, value, option, consumed_bytes, ioctx);
+    if(ks_id < SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+        return KV_ERR_KEYSPACE_INVALID;
+    }
+
+    kv_result res = m_kvstore->kv_store(ks_id, key, value, option, consumed_bytes, ioctx);
 
     if (res == KV_SUCCESS && consumed_bytes != NULL) {
         // update capacity
@@ -175,12 +184,16 @@ kv_result kv_namespace_internal::kv_store(const kv_key *key, const kv_value *val
     return res;
 }
 
-kv_result kv_namespace_internal::kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) {
+kv_result kv_namespace_internal::kv_delete(uint8_t ks_id, const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) {
     if (key == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
-    kv_result res = m_kvstore->kv_delete(key, option, recovered_bytes, ioctx);
+    if(ks_id <SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+        return KV_ERR_KEYSPACE_INVALID;
+    }
+
+    kv_result res = m_kvstore->kv_delete(ks_id, key, option, recovered_bytes, ioctx);
 
     if (res == KV_SUCCESS && recovered_bytes != NULL) {
         // update capacity
@@ -190,29 +203,40 @@ kv_result kv_namespace_internal::kv_delete(const kv_key *key, uint8_t option, ui
 }
 
 
-kv_result kv_namespace_internal::kv_exist(const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) {
+kv_result kv_namespace_internal::kv_exist(uint8_t ks_id, const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) {
     if (key == NULL || value== NULL) {
         return KV_ERR_PARAM_INVALID;
     }
-    return m_kvstore->kv_exist(key, keycount, value, valuesize, ioctx);
+
+    if(ks_id <SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+        return KV_ERR_KEYSPACE_INVALID;
+    }
+    return m_kvstore->kv_exist(ks_id, key, keycount, value, valuesize, ioctx);
 }
 
-kv_result kv_namespace_internal::kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx) {
+kv_result kv_namespace_internal::kv_retrieve(uint8_t ks_id, const kv_key *key, uint8_t option, kv_value *value, void *ioctx) {
     if (key == NULL || value == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
-    return m_kvstore->kv_retrieve(key, option, value, ioctx);
+    if(ks_id <SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+        return KV_ERR_KEYSPACE_INVALID;
+    }
+
+    return m_kvstore->kv_retrieve(ks_id, key, option, value, ioctx);
 }
 
-
 // at this stage to interact with kvstore, these APIs are all synchronous
-kv_result kv_namespace_internal::kv_open_iterator(const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_iterator_handle *iter_hdl, void *ioctx) {
+kv_result kv_namespace_internal::kv_open_iterator(uint8_t ks_id, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_iterator_handle *iter_hdl, void *ioctx) {
     if (iter_hdl == 0 || it_cond == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
-    return m_kvstore->kv_open_iterator(it_op, it_cond, m_dev->is_keylen_fixed(), iter_hdl, ioctx);
+    if(ks_id <SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+        return KV_ERR_KEYSPACE_INVALID;
+    }
+
+    return m_kvstore->kv_open_iterator(ks_id, it_op, it_cond, m_dev->is_keylen_fixed(), iter_hdl, ioctx);
 }
 
 // return after done, no IO command
@@ -246,12 +270,15 @@ kv_result kv_namespace_internal::kv_list_iterators(kv_iterator *kv_iters, uint32
     return m_kvstore->kv_list_iterators(kv_iters, iter_cnt, ioctx);
 }
 
-kv_result kv_namespace_internal::kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) {
+kv_result kv_namespace_internal::kv_delete_group(uint8_t ks_id, kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) {
     if (grp_cond == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
+    if(ks_id <SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+        return KV_ERR_KEYSPACE_INVALID;
+    }
 
-    return m_kvstore->kv_delete_group(grp_cond, recovered_bytes, ioctx);
+    return m_kvstore->kv_delete_group(ks_id, grp_cond, recovered_bytes, ioctx);
 }
 
 uint64_t kv_namespace_internal::get_total_capacity() {

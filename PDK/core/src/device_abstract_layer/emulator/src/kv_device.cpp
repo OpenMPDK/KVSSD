@@ -813,7 +813,7 @@ kv_result kv_device_internal::kv_get_namespace_stat(const kv_device_handle dev_h
 // more important IO APIs below
 // operate on a device object, can access kv_device_internal members
 // ASYNC IO in a device context
-kv_result kv_device_internal::kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_purge_option option, kv_postprocess_function *post_fn) {
+kv_result kv_device_internal::kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, kv_purge_option option, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL) {
         return KV_ERR_PARAM_INVALID;
@@ -821,6 +821,10 @@ kv_result kv_device_internal::kv_purge(kv_queue_handle que_hdl, kv_namespace_han
 
     if (option != KV_PURGE_OPT_DEFAULT && option != KV_PURGE_OPT_KV_ERASE && option != KV_PURGE_OPT_CRYPTO_ERASE) {
         return KV_ERR_OPTION_INVALID;
+    }
+
+    if(ks_id < SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+          return KV_ERR_KEYSPACE_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
@@ -853,6 +857,7 @@ kv_result kv_device_internal::kv_purge(kv_queue_handle que_hdl, kv_namespace_han
     cmd->ioctx.command.purge_info = info;
     cmd->ioctx.key = NULL;
     cmd->ioctx.value = NULL;
+    cmd->ioctx.ks_id = ks_id;
 
     // pass ioctx by value, as there is no ownership of those memories in the
     // structure
@@ -861,13 +866,16 @@ kv_result kv_device_internal::kv_purge(kv_queue_handle que_hdl, kv_namespace_han
 }
 
 // async IO
-kv_result kv_device_internal::kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_postprocess_function *post_fn) {
+kv_result kv_device_internal::kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL || it_cond == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
     if (it_op != KV_ITERATOR_OPT_KEY && it_op != KV_ITERATOR_OPT_KV && it_op != KV_ITERATOR_OPT_KV_WITH_DELETE) {
         return KV_ERR_OPTION_INVALID;
+    }
+    if(ks_id < SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+          return KV_ERR_KEYSPACE_INVALID;
     }
 
     kv_namespace_internal *ns = (kv_namespace_internal *) ns_hdl->ns;
@@ -900,7 +908,7 @@ kv_result kv_device_internal::kv_open_iterator(kv_queue_handle que_hdl, kv_names
     cmd->ioctx.command.iterator_open_info.it_cond.bit_pattern = it_cond->bit_pattern;
     cmd->ioctx.key = NULL;
     cmd->ioctx.value = NULL;
-
+    cmd->ioctx.ks_id = ks_id;
     return dev->submit_io(que_hdl, cmd);
 }
 
@@ -1084,7 +1092,7 @@ kv_result kv_device_internal::kv_list_iterators(kv_queue_handle que_hdl, kv_name
 }
 
 // async IO
-kv_result kv_device_internal::kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_delete_option option, kv_postprocess_function *post_fn) {
+kv_result kv_device_internal::kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, kv_delete_option option, kv_postprocess_function *post_fn) {
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
@@ -1092,6 +1100,10 @@ kv_result kv_device_internal::kv_delete(kv_queue_handle que_hdl, kv_namespace_ha
     kv_result res = validate_key_value(key, NULL);
     if (res != KV_SUCCESS) {
         return res;
+    }
+ 
+    if(ks_id < SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+          return KV_ERR_KEYSPACE_INVALID;
     }
 
     /*
@@ -1130,12 +1142,13 @@ kv_result kv_device_internal::kv_delete(kv_queue_handle que_hdl, kv_namespace_ha
     }
     cmd->ioctx.opcode = KV_OPC_DELETE;
     cmd->ioctx.command.delete_info = info;
+    cmd->ioctx.ks_id = ks_id;
 
 
     return dev->submit_io(que_hdl, cmd);
 }
 
-kv_result kv_device_internal::kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_group_condition *grp_cond, kv_postprocess_function *post_fn) {
+kv_result kv_device_internal::kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, kv_group_condition *grp_cond, kv_postprocess_function *post_fn) {
     if (que_hdl == NULL || ns_hdl == NULL || grp_cond == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
@@ -1143,6 +1156,10 @@ kv_result kv_device_internal::kv_delete_group(kv_queue_handle que_hdl, kv_namesp
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
     if (dev == NULL) {
         return KV_ERR_DEV_NOT_EXIST;
+    }
+
+    if(ks_id <SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+          return KV_ERR_KEYSPACE_INVALID;
     }
 
     emul_ioqueue *que = (emul_ioqueue *)(que_hdl->queue);
@@ -1170,12 +1187,13 @@ kv_result kv_device_internal::kv_delete_group(kv_queue_handle que_hdl, kv_namesp
     }
     cmd->ioctx.opcode = KV_OPC_DELETE_GROUP;
     cmd->ioctx.command.delete_group_info= info;
+    cmd->ioctx.ks_id = ks_id;
 
 
     return dev->submit_io(que_hdl, cmd);
 }
 
-kv_result kv_device_internal::kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *keys, uint32_t key_cnt, kv_postprocess_function *post_fn, uint32_t buffer_size, uint8_t *buffer) {
+kv_result kv_device_internal::kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *keys, uint32_t key_cnt, kv_postprocess_function *post_fn, uint32_t buffer_size, uint8_t *buffer) {
 
     if (que_hdl == NULL || ns_hdl == NULL || keys == NULL || buffer == NULL) {
         return KV_ERR_PARAM_INVALID;
@@ -1187,6 +1205,10 @@ kv_result kv_device_internal::kv_exist(kv_queue_handle que_hdl, kv_namespace_han
         if (res != KV_SUCCESS) {
             return res;
         }
+    }
+
+    if(ks_id <SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+        return KV_ERR_KEYSPACE_INVALID;
     }
 
     ioqueue *queue = (ioqueue *)(que_hdl->queue);
@@ -1220,19 +1242,24 @@ kv_result kv_device_internal::kv_exist(kv_queue_handle que_hdl, kv_namespace_han
     cmd->ioctx.command.key_exist_info.result = buffer;
     cmd->ioctx.command.key_exist_info.result_size = buffer_size;
     cmd->ioctx.command.key_exist_info.keycount = key_cnt;
+    cmd->ioctx.ks_id = ks_id;
 
     return dev->submit_io(que_hdl, cmd);
 }
 
 // ASYNC IO in a device context
-kv_result kv_device_internal::kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_retrieve_option option, const kv_postprocess_function *post_fn, kv_value *value) {
+kv_result kv_device_internal::kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, kv_retrieve_option option, const kv_postprocess_function *post_fn, kv_value *value) {
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL || value == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
-    kv_result res = validate_key_value(key, NULL);
+    kv_result res = validate_key_value(key, value);
     if (res != KV_SUCCESS) {
         return res;
+    }
+
+    if(ks_id < SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+          return KV_ERR_KEYSPACE_INVALID;
     }
 
     /*
@@ -1272,6 +1299,7 @@ kv_result kv_device_internal::kv_retrieve(kv_queue_handle que_hdl, kv_namespace_
     }
     cmd->ioctx.opcode = KV_OPC_GET;
     cmd->ioctx.command.get_info = info;
+    cmd->ioctx.ks_id = ks_id;
    
 
     return dev->submit_io(que_hdl, cmd);
@@ -1279,7 +1307,7 @@ kv_result kv_device_internal::kv_retrieve(kv_queue_handle que_hdl, kv_namespace_
 
 
 // Async IO
-kv_result kv_device_internal::kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, const kv_value *value, kv_store_option option, const kv_postprocess_function *post_fn) {
+kv_result kv_device_internal::kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, const kv_value *value, kv_store_option option, const kv_postprocess_function *post_fn) {
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL || value == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
@@ -1287,6 +1315,10 @@ kv_result kv_device_internal::kv_store(kv_queue_handle que_hdl, kv_namespace_han
     kv_result res = validate_key_value(key, value);
     if (res != KV_SUCCESS) {
         return res;
+    }
+
+    if(ks_id < SAMSUNG_MIN_KEYSPACE_ID || ks_id >= SAMSUNG_MAX_KEYSPACE_CNT){
+          return KV_ERR_KEYSPACE_INVALID;
     }
 
     /* disable checking
@@ -1326,7 +1358,7 @@ kv_result kv_device_internal::kv_store(kv_queue_handle que_hdl, kv_namespace_han
     }
     cmd->ioctx.opcode = KV_OPC_STORE;
     cmd->ioctx.command.store_info = info;
-
+    cmd->ioctx.ks_id = ks_id;
 
     return dev->submit_io(que_hdl, cmd);
 }
@@ -1382,9 +1414,12 @@ kv_interrupt_handler kv_device_internal::kv_get_interrupt_handler(kv_queue_handl
 
 // for emulator, XXX only use queue with id 1
 kv_result kv_device_internal::submit_io(kv_queue_handle que_hdl, io_cmd *cmd) {
-
+    kv_result res = KV_SUCCESS;
+    ioqueue *queue = (ioqueue *)(que_hdl->queue);
+    emul_ioqueue* eque = (emul_ioqueue*)queue;
     if (que_hdl == NULL || cmd == NULL) {
-        return KV_ERR_PARAM_INVALID;
+        res = KV_ERR_PARAM_INVALID;
+        goto free_io_cmd;
     }
 
     // skip this, as higher layer should have checked it.
@@ -1392,19 +1427,26 @@ kv_result kv_device_internal::submit_io(kv_queue_handle que_hdl, io_cmd *cmd) {
     // if (res != KV_SUCCESS) {
     //     return res;
     // }
-
-    ioqueue *queue = (ioqueue *)(que_hdl->queue);
     if (queue == NULL) {
-        return KV_ERR_QUEUE_QID_INVALID;
+        res = KV_ERR_QUEUE_QID_INVALID;
+        goto free_io_cmd;
     }
 
     if (queue->get_type() != SUBMISSION_Q_TYPE) {
-        return KV_ERR_QUEUE_QID_INVALID;
+        res = KV_ERR_QUEUE_QID_INVALID;
+        goto free_io_cmd;
     }
-
-    emul_ioqueue* eque = (emul_ioqueue*)queue;
-    auto res = eque->enqueue(cmd, false);
-
+    res = eque->enqueue(cmd, true);
+    if(res != KV_SUCCESS){
+        goto free_io_cmd;
+    }
+    return res;
+    
+free_io_cmd:
+    if(cmd){
+        delete cmd;
+        cmd = NULL;
+    }
     return res;
 }
 

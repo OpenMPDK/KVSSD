@@ -38,10 +38,10 @@ struct epoll_event list_of_events[1];
 
 const int identify_ret_data_size = 4096;
 
-kv_result KADI::iter_readall(kv_iter_context *iter_ctx, 
+kv_result KADI::iter_readall(uint8_t ks_id, kv_iter_context *iter_ctx, 
     nvme_kv_iter_req_option option, std::list<std::pair<void *, int>> &buflist)
 {
-    kv_result r = iter_open(iter_ctx, option);
+    kv_result r = iter_open(ks_id, iter_ctx, option);
     if (r != 0)
         return r;
     while (!iter_ctx->end)
@@ -84,7 +84,9 @@ int KADI::open(std::string &devpath)
     for (int i = 0; i < qdepth; i++)
     {
         aio_cmd_ctx *ctx = (aio_cmd_ctx *)calloc(1, sizeof(aio_cmd_ctx));
-        ctx->index = i;
+        if(ctx){
+            ctx->index = i;
+        }
         free_cmdctxs.push_back(ctx);
     }
 #ifdef EPOLL_DEV
@@ -160,7 +162,10 @@ int KADI::close()
             free((void*)p);
         }
 
-        ioctl(fd, NVME_IOCTL_DEL_AIOCTX, &aioctx);
+        if(ioctl(fd, NVME_IOCTL_DEL_AIOCTX, &aioctx) < 0){
+            std::cerr << "KV device is closed error!" << std::endl;
+            return KADI_ERR_IO;
+        }
         ::close((int)aioctx.eventfd);
         ::close(fd);
         std::cerr << "KV device is closed: fd " << fd << std::endl;
@@ -176,7 +181,6 @@ int KADI::close()
 KADI::aio_cmd_ctx *KADI::get_cmd_ctx(const kv_postprocess_function *cb)
 {
     std::unique_lock<std::mutex> lock(cmdctx_lock);
-
     while (free_cmdctxs.empty())
     {
         if (cmdctx_cond.wait_for(lock, std::chrono::seconds(5)) == std::cv_status::timeout)
@@ -187,9 +191,13 @@ KADI::aio_cmd_ctx *KADI::get_cmd_ctx(const kv_postprocess_function *cb)
 
     aio_cmd_ctx *p = free_cmdctxs.back();
     free_cmdctxs.pop_back();
-
-    p->post_fn = cb->post_fn;
-    p->post_data = cb->private_data;
+    if(cb) {
+      p->post_fn = cb->post_fn;
+      p->post_data = cb->private_data;
+    }else {
+      p->post_fn = NULL;
+      p->post_data = NULL;
+    }
     pending_cmdctxs.insert(std::make_pair(p->index, p));
     return p;
 }
@@ -203,13 +211,14 @@ void KADI::release_cmd_ctx(aio_cmd_ctx *p)
     cmdctx_cond.notify_one();
 }
 
-kv_result KADI::iter_open(kv_iter_context *iter_handle, nvme_kv_iter_req_option option)
+kv_result KADI::iter_open(uint8_t ks_id, kv_iter_context *iter_handle,
+  nvme_kv_iter_req_option option)
 {
     struct nvme_passthru_kv_cmd cmd;
     memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
 
     cmd.opcode = nvme_cmd_kv_iter_req;
-    cmd.cdw3 = space_id;
+    cmd.cdw3 = ks_id;
     cmd.nsid = nsid;
     cmd.cdw4 = (ITER_OPTION_OPEN | option);
     cmd.cdw12 = iter_handle->prefix;
@@ -234,7 +243,7 @@ kv_result KADI::iter_close(kv_iter_context *iter_handle)
     struct nvme_passthru_kv_cmd cmd;
     memset(&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
     cmd.opcode = nvme_cmd_kv_iter_req;
-    cmd.cdw3 = space_id;
+    //cmd.cdw3 = space_id;  //iterator close and read don't need keyspace id
     cmd.nsid = nsid;
     cmd.cdw4 = ITER_OPTION_CLOSE;
     cmd.cdw5 = iter_handle->handle;
@@ -256,7 +265,7 @@ kv_result KADI::iter_read_async(kv_iter_context *iter_handle, const kv_postproce
     ioctx->buf = iter_handle->buf;
     ioctx->cmd.opcode = nvme_cmd_kv_iter_read;
     ioctx->cmd.nsid = nsid;
-    ioctx->cmd.cdw3 = space_id;
+    //ioctx->cmd.cdw3 = space_id; //iterator close and read don't need keyspace id
     ioctx->cmd.cdw5 = iter_handle->handle;
     ioctx->cmd.data_addr = (__u64)iter_handle->buf;
     ioctx->cmd.data_length = iter_handle->buflen;
@@ -283,7 +292,7 @@ kv_result KADI::iter_read(kv_iter_context *iter_handle)
 
     cmd.opcode = nvme_cmd_kv_iter_read;
     cmd.nsid = nsid;
-    cmd.cdw3 = space_id;
+    //cmd.cdw3 = space_id; //iterator close and read don't need keyspace id
     cmd.cdw5 = iter_handle->handle;
     cmd.data_addr = (__u64)iter_handle->buf;
     cmd.data_length = iter_handle->buflen;
@@ -365,6 +374,11 @@ kv_result KADI::iter_list(kv_iterator *iter_list, uint32_t *count)
         iter_list[open_count].reserved[2] = (*(uint8_t *)(logbuf + offset + 15));
         // fprintf(stderr, "handle_id=%d status=%d type=%d prefix=%08x bitmask=%08x is_eof=%d\n",
         //             iter_list[open_count].handle_id, iter_list[open_count].status, iter_list[open_count].type, iter_list[open_count].prefix, iter_list[open_count].bitmask, iter_list[open_count].is_eof);
+        /*The bitpattern of the KV API is of big-endian mode. If the CPU is of little-endian mode,
+                  the bit pattern and bit mask should be transformed.*/
+        iter_list[open_count].prefix = htobe32(iter_list[open_count].prefix);
+        iter_list[open_count].bitmask = htobe32(iter_list[open_count].bitmask);
+
         open_count++;
     }
     *count = open_count;
@@ -400,8 +414,11 @@ redo:
     afterKeygap = (((*length + 3) >> 2) << 2);
     bufoffset += afterKeygap;
 
-    if (db && !db->exist(*key, *length))
-    {
+    if (!db){
+        return false;
+    }
+    if (db && !db->exist(0, *key, *length, 0))
+    {//currently, class iterbuf_reader is not used.
         goto redo;
     }
 
@@ -432,12 +449,13 @@ uint32_t KADI::get_dev_waf()
         return KV_ERR_SYS_IO;
     }
 
-    uint32_t waf = *((uint32_t *)&logbuf[256]);
+    uint32_t waf = 0;
+    memcpy(&waf, logbuf + 256, sizeof(waf));
 
     return waf;
-
 }
-kv_result KADI::kv_store(kv_key *key, kv_value *value, nvme_kv_store_option option, const kv_postprocess_function *cb)
+kv_result KADI::kv_store(uint8_t ks_id, kv_key *key, kv_value *value,
+  nvme_kv_store_option option, const kv_postprocess_function *cb)
 {
   if (!key || !key->key || !value)
    {
@@ -451,7 +469,7 @@ kv_result KADI::kv_store(kv_key *key, kv_value *value, nvme_kv_store_option opti
 
     ioctx->cmd.opcode = nvme_cmd_kv_store;
     ioctx->cmd.nsid = nsid;
-
+    ioctx->cmd.cdw3 = ks_id;
     if (key->length > KVCMD_INLINE_KEY_MAX)
     {
         ioctx->cmd.key_addr = (__u64)key->key;
@@ -485,7 +503,7 @@ kv_result KADI::kv_store(kv_key *key, kv_value *value, nvme_kv_store_option opti
     return 0;
 }
 
-kv_result KADI::kv_retrieve(kv_key *key, kv_value *value, const kv_postprocess_function *cb)
+kv_result KADI::kv_retrieve(uint8_t ks_id, kv_key *key, kv_value *value, const kv_postprocess_function *cb)
 {
    if (!key || !key->key || !value)
    {
@@ -499,7 +517,7 @@ kv_result KADI::kv_retrieve(kv_key *key, kv_value *value, const kv_postprocess_f
 
     ioctx->cmd.opcode = nvme_cmd_kv_retrieve;
     ioctx->cmd.nsid = nsid;
-    ioctx->cmd.cdw3 = space_id;
+    ioctx->cmd.cdw3 = ks_id;
     ioctx->cmd.cdw4 = 0;
     ioctx->cmd.cdw5 = value->offset;
     ioctx->cmd.data_addr = (__u64)value->value;
@@ -531,7 +549,7 @@ kv_result KADI::kv_retrieve(kv_key *key, kv_value *value, const kv_postprocess_f
     return 0;
 }
 
-kv_result KADI::kv_retrieve_sync(kv_key *key, kv_value *value)
+kv_result KADI::kv_retrieve_sync(uint8_t ks_id, kv_key *key, kv_value *value)
 {
     if (!key || !key->key || !value || !value->value)
     {
@@ -542,7 +560,7 @@ kv_result KADI::kv_retrieve_sync(kv_key *key, kv_value *value)
     memset((void *)&cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
     cmd.opcode = nvme_cmd_kv_retrieve;
     cmd.nsid = nsid;
-    cmd.cdw3 = space_id;
+    cmd.cdw3 = ks_id;
     cmd.cdw4 = 0;
     cmd.cdw5 = value->offset;
     cmd.data_addr = (__u64)value->value;
@@ -591,6 +609,9 @@ kv_result KADI::update_capacity()
 kv_result KADI::get_freespace(uint64_t &bytesused, uint64_t &capacity, double &utilization)
 {
     char *data = (char *)calloc(1, identify_ret_data_size);
+    if(data == NULL){
+       return KADI_ERR_MEMORY;
+    }
     struct nvme_passthru_cmd cmd;
     memset(&cmd, 0, sizeof(struct nvme_passthru_cmd));
     cmd.opcode = nvme_cmd_admin_identify;
@@ -601,8 +622,10 @@ kv_result KADI::get_freespace(uint64_t &bytesused, uint64_t &capacity, double &u
 
     if (ioctl(fd, NVME_IOCTL_ADMIN_CMD, &cmd) < 0)
     {
-        if (data)
+        if (data){
             free(data);
+            data = NULL;
+        }
         return KV_ERR_SYS_IO;
     }
 
@@ -611,19 +634,21 @@ kv_result KADI::get_freespace(uint64_t &bytesused, uint64_t &capacity, double &u
     capacity = namespace_size * BLOCK_SIZE;
     bytesused = namespace_utilization * BLOCK_SIZE;
     utilization = (1.0 * namespace_utilization) / namespace_size;
-    if (data)
+    if (data){
         free(data);
+        data = NULL;
+    }
     return 0;
 }
 
-bool KADI::exist(void *key, int length, const kv_postprocess_function *cb)
+bool KADI::exist(uint8_t ks_id, void *key, int length, const kv_postprocess_function *cb)
 {
     int ret = 0;
     aio_cmd_ctx *ioctx = get_cmd_ctx(cb);
     memset((void *)&ioctx->cmd, 0, sizeof(struct nvme_passthru_kv_cmd));
     ioctx->cmd.opcode = nvme_cmd_kv_exist;
     ioctx->cmd.nsid = nsid;
-    ioctx->cmd.cdw3 = space_id;
+    ioctx->cmd.cdw3 = ks_id;
     ioctx->cmd.key_length = length;
     if (length > KVCMD_INLINE_KEY_MAX)
     {
@@ -654,12 +679,13 @@ bool KADI::exist(void *key, int length, const kv_postprocess_function *cb)
     return (ret == 0) ? true : false;
 }
 
-bool KADI::exist(kv_key *key, const kv_postprocess_function *cb)
+bool KADI::exist(uint8_t ks_id, kv_key *key, const kv_postprocess_function *cb)
 {
-    return exist((void *)key->key, key->length, cb);
+    return exist(ks_id, (void *)key->key, key->length, cb);
 }
 
-kv_result KADI::kv_delete(kv_key *key, const kv_postprocess_function *cb, int check_exist)
+kv_result KADI::kv_delete(uint8_t ks_id, kv_key *key,
+  const kv_postprocess_function *cb, int check_exist)
 {
     if (!key || !key->key)
     {
@@ -673,7 +699,7 @@ kv_result KADI::kv_delete(kv_key *key, const kv_postprocess_function *cb, int ch
 
     ioctx->cmd.opcode = nvme_cmd_kv_delete;
     ioctx->cmd.nsid = nsid;
-    ioctx->cmd.cdw3 = space_id;
+    ioctx->cmd.cdw3 = ks_id;
     ioctx->cmd.cdw4 = check_exist;
     if (key->length <= KVCMD_INLINE_KEY_MAX)
     {
@@ -813,8 +839,9 @@ kv_result KADI::fill_ioresult(const aio_cmd_ctx &ioctx, const struct nvme_aioeve
         break;
     }
 
-    if (ioresult.retcode != 0)
+    if (ioresult.retcode != 0) {
         return 0;
+    }
 
     switch (ioresult.opcode)
     {
@@ -823,8 +850,12 @@ kv_result KADI::fill_ioresult(const aio_cmd_ctx &ioctx, const struct nvme_aioeve
 
         if (ioctx.value)
         {
-            ioresult.value->actual_value_size = event.result;
-            ioresult.value->length = std::min(event.result, ioctx.value->length);
+            ioresult.value->actual_value_size = event.result - ioctx.value->offset;
+            //event.result is the total value length that returned from ssd, 
+            //remain value length = event.result - offset, user inputted buffer length may
+            //big or little than remain_val_len
+            ioresult.value->length = std::min(ioresult.value->actual_value_size,
+              ioctx.value->length);
             //std::cerr << "length = " << ioresult.value->length << ", actual = " << ioresult.value->actual_value_size <<std::endl;
         }
         break;

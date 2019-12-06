@@ -36,9 +36,6 @@ enum nvme_kv_iter_req_option {
 #endif
 };
 
-
-
-
 enum nvme_kv_opcode {
     nvme_cmd_kv_store	= 0x81,
 	nvme_cmd_kv_append	= 0x83,
@@ -53,7 +50,6 @@ enum nvme_kv_opcode {
 #define KVCMD_INLINE_KEY_MAX	(16)
 #define KVCMD_MAX_KEY_SIZE		(255)
 #define KVCMD_MIN_KEY_SIZE		(255)
-
 
 int nvme_kv_store(int space_id, int fd, unsigned int nsid,
 		const char *key, int key_len,
@@ -85,5 +81,8 @@ int nvme_kv_iterate_read_one(int sapce_id, int fd, unsigned int nsid,
 int nvme_kv_exist(int sapce_id, int fd, unsigned int nsid,
 		const char *key, int key_len);
 
-int nvme_kv_get_log(int fd, unsigned int nsid, char page_num, char *buffer, int bufferlen);
+int nvme_kv_get_log(int fd, unsigned int nsid, char page_num,
+                    char *buffer, int bufferlen);
+
+
 #endif /* #ifndef _KV_NVME_H_ */

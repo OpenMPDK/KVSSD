@@ -1045,53 +1045,53 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
 //    }
 
 	switch(cmd.opcode) {
-		case nvme_cmd_kv_store:
+        case nvme_cmd_kv_store:
         case nvme_cmd_kv_append:
             option = cpu_to_le32(cmd.cdw4);
-			c.kv_store.offset = cpu_to_le32(cmd.cdw5);
-			/* validate key length */
+            c.kv_store.offset = cpu_to_le32(cmd.cdw5);
+            /* validate key length */
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
-                    cmd.key_length < KVCMD_MIN_KEY_SIZE) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
+                cmd.key_length < KVCMD_MIN_KEY_SIZE) {
+                cmd.result = KVS_ERR_VALUE;
+                status = -EINVAL;
+                goto exit;
             }
-			c.kv_store.key_len = cpu_to_le32(cmd.key_length -1); /* key len -1 */
+            c.kv_store.key_len = cpu_to_le32(cmd.key_length -1); /* key len -1 */
             c.kv_store.option = (option & 0xff);
             /* set value size */
             if (cmd.data_length % 4) {
-			    c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2) + 1);
+                c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2) + 1);
                 c.kv_store.invalid_byte = 4 - (cmd.data_length % 4);
             } else {
-			    c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2));
+                c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2));
             }
-			if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
-				metadata = (void __user*)cmd.key_addr;
-				meta_len = cmd.key_length;
-			} else {
-				memcpy(c.kv_store.key, cmd.key, cmd.key_length);
-			}
-		break;
-		case nvme_cmd_kv_retrieve:
+            if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
+                metadata = (void __user*)cmd.key_addr;
+                meta_len = cmd.key_length;
+            } else {
+                memcpy(c.kv_store.key, cmd.key, cmd.key_length);
+            }
+        break;
+        case nvme_cmd_kv_retrieve:
             option = cpu_to_le32(cmd.cdw4);
-			c.kv_retrieve.offset = cpu_to_le32(cmd.cdw5);
-			/* validate key length */
+            c.kv_retrieve.offset = cpu_to_le32(cmd.cdw5);
+            /* validate key length */
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
-                    cmd.key_length < KVCMD_MIN_KEY_SIZE) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
+                cmd.key_length < KVCMD_MIN_KEY_SIZE) {
+                cmd.result = KVS_ERR_VALUE;
+                status = -EINVAL;
+                goto exit;
             }
-			c.kv_retrieve.key_len = cpu_to_le32(cmd.key_length -1); /* key len - 1 */
+            c.kv_retrieve.key_len = cpu_to_le32(cmd.key_length -1); /* key len - 1 */
             c.kv_retrieve.option = (option & 0xff);
-			c.kv_retrieve.value_len = cpu_to_le32((cmd.data_length >> 2));
+            c.kv_retrieve.value_len = cpu_to_le32((cmd.data_length >> 2));
 
-			if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
-				metadata = (void __user*)cmd.key_addr;
-				meta_len = cmd.key_length;
-			} else {
-				memcpy(c.kv_retrieve.key, cmd.key, cmd.key_length);
-			}
+            if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
+                metadata = (void __user*)cmd.key_addr;
+                meta_len = cmd.key_length;
+            } else {
+                memcpy(c.kv_retrieve.key, cmd.key, cmd.key_length);
+            }
 #if 0
             if (aio && offset_in_page(cmd.data_addr)) {
                 /* aio does not support unaligned memory*/
@@ -1099,11 +1099,11 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
 				goto exit;
             }
 #endif
-		break;
-		case nvme_cmd_kv_delete:
+        break;
+        case nvme_cmd_kv_delete:
             option = cpu_to_le32(cmd.cdw4);
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
-                    cmd.key_length < KVCMD_MIN_KEY_SIZE) {
+                cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
 				status = -EINVAL;
 				goto exit;
@@ -1119,7 +1119,7 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
 			break;
 		case nvme_cmd_kv_exist:
             option = cpu_to_le32(cmd.cdw4);
-            if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
+            if (cmd.key_length > KVCMD_MAX_KEY_SIZE ||
                     cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
 				status = -EINVAL;
@@ -1149,11 +1149,11 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
             c.kv_iter_read.iter_handle = iter_handle & 0xff;
             c.kv_iter_read.option = option & 0xff;
 			c.kv_iter_read.value_len = cpu_to_le32((cmd.data_length >> 2));
-		break;
+			break;
 		default:
-				cmd.result = KVS_ERR_IO;
-				status = -EINVAL;
-				goto exit;
+			cmd.result = KVS_ERR_IO;
+			status = -EINVAL;
+			goto exit;
 	}
 
 //    if (cmd.data_addr) {
@@ -2546,11 +2546,6 @@ int __init nvme_core_init(void)
 	else if (result > 0)
 		nvme_char_major = result;
 
-	nvme_class = class_create(THIS_MODULE, "nvme");
-	if (IS_ERR(nvme_class)) {
-		result = PTR_ERR(nvme_class);
-		goto unregister_chrdev;
-	}
 #if 1
 	result = aio_service_init();
 	if (result)
@@ -2560,14 +2555,22 @@ int __init nvme_core_init(void)
     if (result)
 		goto unregister_aio_service;
 #endif
+
+	nvme_class = class_create(THIS_MODULE, "nvme");
+	if (IS_ERR(nvme_class)) {
+		result = PTR_ERR(nvme_class);
+		goto unregister_aio_worker;
+	}
 	return 0;
 #if 1
- unregister_aio_service:
+unregister_aio_worker:
+	aio_worker_exit();
+unregister_aio_service:
     aio_service_exit();
 #endif
- unregister_chrdev:
+unregister_chrdev:
 	__unregister_chrdev(nvme_char_major, 0, NVME_MINORS, "nvme");
- unregister_blkdev:
+unregister_blkdev:
 	unregister_blkdev(nvme_major, "nvme");
 	return result;
 }

@@ -53,7 +53,6 @@
 #include <pthread.h>
 
 //Constants
-#define KV_ALIGNMENT_UNIT 64
 #define KV_MIN_VALUE_LEN 0
 #define KV_MAX_IO_VALUE_LEN (2048*1024) //28KB -> 2048KB
 #define LBA_MAX_IO_VALUE_LEN (2048*1024) //2024KB -> 2048KB
@@ -79,7 +78,7 @@
 */
 enum kv_sdk_init_types {
 	KV_SDK_INIT_FROM_JSON = 0x00,	/**< initialize sdk with json file */
-	KV_SDK_INIT_FROM_STR = 0x01,	/**< initialize sdk with data structure ‘kv_sdk’ */
+	KV_SDK_INIT_FROM_STR = 0x01,	/**< initialize sdk with data structure 'kv_sdk' */
 };
 
 /**
@@ -187,7 +186,7 @@ enum kv_keyspace_id {
 enum kv_iterate_read_option {		
 	KV_ITERATE_READ_DEFAULT = 0x00,			/**<  [DEFAULT] default operation for command */
 };
-		
+
 /**
  * @brief options used for store operation
  */
@@ -219,6 +218,7 @@ enum kv_result {
 	KV_ERR_ITERATE_REQUEST_FAIL = 0x94,     		/**<  fail to process the iterate request due to FW internal status */ 
 	KV_ERR_ITERATE_TCG_LOCKED = 0x95,     			/**<  iterate TCG locked */
 	KV_ERR_ITERATE_ERROR = 0x96,     			/**<  an error while iterate, closing the iterate handle is recommended */
+
 
         //0x100 ~ 0x1FF for DD Error
 	KV_ERR_DD_NO_DEVICE = 0x100,
@@ -281,7 +281,7 @@ typedef struct {
 
 
         int nr_ssd;				/**< number of SSDs */
-        char dev_id[NR_MAX_SSD][DEV_ID_LEN];		/**< PCI devices’ address */
+        char dev_id[NR_MAX_SSD][DEV_ID_LEN];		/**< PCI devices' address */
         kv_nvme_io_options dd_options[NR_MAX_SSD];	/**< structure about description for devices */
         uint64_t dev_handle[NR_MAX_SSD];	/**< device handle */
 
@@ -323,6 +323,7 @@ typedef struct {
 		int iterate_request_option;
 		int iterate_read_option;
 		int exist_option;
+		int batch_option;
 	}io_option;			/**< options for operations */	
 } kv_param;	
 

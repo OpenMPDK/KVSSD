@@ -133,51 +133,52 @@ uint32_t IndexFromAddr(const unsigned char* p, mempool_t *pool)
   return (((uint32_t )(p - pool->base)) / pool->block_size);
 }
 
-void* Allocate(mempool_t *pool)
+void *Allocate(mempool_t *pool)
 {
 
-  if (pool->num_initializedblocks < pool->num_blocks )
+  if (pool->num_initializedblocks < pool->num_blocks)
   {
-      uint32_t * p = (uint32_t *)AddrFromIndex(pool->num_initializedblocks, pool);
-      *p = pool->num_initializedblocks + 1;
-      pool->num_initializedblocks++;
+    uint32_t *p = (uint32_t *)AddrFromIndex(pool->num_initializedblocks, pool);
+    *p = pool->num_initializedblocks + 1;
+    pool->num_initializedblocks++;
   }
-  void* ret = NULL;
-  if ( pool->num_freeblocks > 0 )
-    {
-      ret = (void*)pool->nextfreeblock;
+  void *ret = NULL;
+  if (pool->num_freeblocks > 0)
+  {
+    ret = (void *)pool->nextfreeblock;
 
-      --(pool->num_freeblocks);
-      if (pool->num_freeblocks!=0)
-	{
-	  pool->nextfreeblock = AddrFromIndex(*((uint32_t *)pool->nextfreeblock), pool);
-	}
-      else
-	{
-	  pool->nextfreeblock = NULL;
-	}
+    --(pool->num_freeblocks);
+    if (pool->num_freeblocks != 0)
+    {
+      pool->nextfreeblock = AddrFromIndex(*((uint32_t *)pool->nextfreeblock), pool);
     }
+    else
+    {
+      pool->nextfreeblock = NULL;
+    }
+  }
 
   return ret;
 }
 
 void DeAllocate(void* p, mempool_t *pool)
 {
-  if(p == NULL) return;
+  if (p == NULL)
+    return;
 
   if (pool->nextfreeblock != NULL)
-    {
-      (*(uint32_t *)p) = IndexFromAddr( pool->nextfreeblock, pool );
-      pool->nextfreeblock = (unsigned char*)p;
-    }
+  {
+    (*(uint32_t *)p) = IndexFromAddr(pool->nextfreeblock, pool);
+    pool->nextfreeblock = (unsigned char *)p;
+  }
   else
-    {
-      *((uint32_t *)p) = pool->num_blocks;
-      pool->nextfreeblock = (unsigned char*)p;
-    }
-  
-  ++(pool->num_freeblocks);
+  {
+    *((uint32_t *)p) = pool->num_blocks;
+    pool->nextfreeblock = (unsigned char *)p;
+  }
 
+  ++(pool->num_freeblocks);
+  
 }
 
 void *allocate_mem_numa(int alignment, uint64_t size, int nodeid);
@@ -206,7 +207,12 @@ void pool_setup(pool_info_t *info, mempool_t *pool, int nodeid)
 #endif
 
     if (memory == NULL) {
-      fprintf(stderr, "Not enough memory on Socket %d : request size = %ld\n", nodeid, size );
+      fprintf(stderr,
+      "Allocate memory failed. "
+      "Pool alignment is invalid: pool alignment = %d "
+      "or Not enough memory on Socket %d : request size = %ld\n",
+      info->alignment, nodeid, size );
+      exit(0);
     }
 
     initialize(memory, info, pool);

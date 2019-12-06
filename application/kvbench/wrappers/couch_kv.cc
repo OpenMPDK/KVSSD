@@ -22,13 +22,17 @@
 
 #define workload_check (0)
 #define LATENCY_CHECK  // only for async IO completion latency
-#define MAX_SAMPLES 1000000
+//#define MAX_SAMPLES 1000000
+static uint32_t max_sample = 1000000;
 static int use_udd = 0;
 static int kdd_is_polling = 1;
 #define GB_SIZE (1024*1024*1024)
 
 int couch_kv_min_key_len = KVS_MIN_KEY_LENGTH;
 int couch_kv_max_key_len = KVS_MAX_KEY_LENGTH;
+
+const char* g_container_name = "container1";
+const int g_max_iterator_count = 16;
 
 struct _db {
   int id;
@@ -83,7 +87,7 @@ static const char *kv_conf_path = "../env_init.conf";
 static kvs_option_iterator g_iter_mode;
 static std::map<kvs_key*, kv_bench_data*> kvdata_map[3];
 static std::mutex kvdata_lock[3];
-static std::map<kvs_iterator_handle, kv_bench_data*> kviter_map;
+static std::map<kvs_key_space_handle, kv_bench_data*> kviter_map;
 static std::mutex kviter_lock;
 #endif
 
@@ -348,9 +352,9 @@ void on_io_complete(kvs_callback_context* ioctx) {
     end = t11.tv_sec * 1000000000L + t11.tv_nsec;
     end /= 1000L;
     start = *((unsigned long long*)ioctx->private2);
-    if (l_stat->cursor >= MAX_SAMPLES) {
-      l_stat->cursor = l_stat->cursor % MAX_SAMPLES;
-      l_stat->nsamples = MAX_SAMPLES;
+    if (l_stat->cursor >= max_sample) {
+      l_stat->cursor = l_stat->cursor % max_sample;
+      l_stat->nsamples = max_sample;
     } else {
       l_stat->nsamples = l_stat->cursor + 1; 
     }
@@ -445,6 +449,7 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
   int ret;
   Db *ppdb;
   *pDb = (Db*)malloc(sizeof(Db));
+  memset(*pDb, 0, sizeof(Db));
   ppdb = *pDb;
 
   ret = kvs_open_device(dev_path, &ppdb->dev);
@@ -489,9 +494,24 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
   }
     
   /* Container related op */
+  uint32_t valid_cnt = 0;
+  const uint32_t retrieve_cnt = 2;
+  kvs_container_name names[retrieve_cnt];
+  char tname[retrieve_cnt][MAX_CONT_PATH_LEN];
+  for(uint8_t idx = 0; idx < retrieve_cnt; idx++) {
+    names[idx].name_len = MAX_CONT_PATH_LEN;
+    names[idx].name = tname[idx];
+  }
+  kvs_list_containers(ppdb->dev, 1, retrieve_cnt*sizeof(kvs_container_name),
+    names, &valid_cnt);
+  for (uint8_t idx = 0; idx < valid_cnt; idx++) {
+    kvs_delete_container(ppdb->dev, names[idx].name);
+  }
+
   kvs_container_context ctx;
-  kvs_create_container(ppdb->dev, "test", 4, &ctx);
-  kvs_open_container(ppdb->dev, "test", &ppdb->cont_hd);
+  ctx.option = {KVS_KEY_ORDER_NONE};
+  kvs_create_container(ppdb->dev, g_container_name, 4, &ctx);
+  kvs_open_container(ppdb->dev, g_container_name, &ppdb->cont_hd);
   
   fprintf(stdout, "device open %s\n", dev_path);
 
@@ -532,6 +552,8 @@ couchstore_error_t couchstore_close_db(Db *db)
   }
 
   kvs_close_container(db->cont_hd);
+  
+  kvs_delete_container(db->dev, g_container_name);
   kvs_close_device(db->dev);
   free(db);
     
@@ -558,7 +580,7 @@ couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
   char prefix_str[5] = "0000";
   unsigned int PREFIX_KV = 0;
   for (int i = 0; i < 4; i++){
-    PREFIX_KV |= (prefix_str[i] << i*8);
+    PREFIX_KV |= (prefix_str[i] << (3-i)*8);
   }
   iter_ctx.bit_pattern = PREFIX_KV;
 
@@ -577,7 +599,7 @@ couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
 
   //kvs_close_iterator_all(db->cont_hd);
   int ret = kvs_open_iterator(db->cont_hd, &iter_ctx, &db->iter_handle);
-  if(ret) {
+  if(ret && ret != KVS_ERR_ITERATOR_OPEN) {
     fprintf(stdout, "open iter failed with err %s\n", kvs_errstr(ret));
     exit(1);
   }
@@ -706,14 +728,16 @@ couchstore_error_t kvs_store_sync(Db *db, Doc* const docs[],
 				   unsigned numdocs, couchstore_save_options options)
 {
   int i, ret;
-  kvs_store_option option; 
+  kvs_store_option option;
+  option.st_type = KVS_STORE_POST;
+  option.kvs_store_compress = false;
+
   for(i = 0; i < numdocs; i++){
     const kvs_store_context put_ctx = {option, db, NULL};
     const kvs_key kvskey = {docs[i]->id.buf, (kvs_key_t)docs[i]->id.size};
     const kvs_value kvsvalue = { docs[i]->data.buf, (uint32_t)docs[i]->data.size , 0, 0 };
 
     ret = kvs_store_tuple(db->cont_hd, &kvskey, &kvsvalue, &put_ctx);
-
     if(ret != KVS_SUCCESS) {
       fprintf(stderr, "KVBENCH: store tuple sync failed %s 0x%x\n", (char*)docs[i]->id.buf, ret);
       exit(1);
@@ -730,7 +754,9 @@ couchstore_error_t kvs_store_async(Db *db, Doc* const docs[],
   int ret;
 
   assert(numdocs == 1);
-  kvs_store_option option; 
+  kvs_store_option option;
+  option.st_type = KVS_STORE_POST;
+  option.kvs_store_compress = false;
   kvs_store_context put_ctx; //{KVS_STORE_POST , 0, db, NULL};
 
   std::unique_lock<std::mutex> lock(db->lock_k);
@@ -884,7 +910,7 @@ void on_io_complete(kvs_postprocess_context* ioctx) {
     if (*(ioctx->iter_hd) != 1)
         *ioctx->iter_hd = 1;
     std::unique_lock<std::mutex> key_lock(kviter_lock);
-    auto db_it = kviter_map.find((kvs_iterator_handle)(*ioctx->iter_hd));
+    auto db_it = kviter_map.find((kvs_key_space_handle)(*ioctx->ks_hd));
     if (db_it == kviter_map.end()) {
       fprintf(stderr, "not found keyspace handle in map %lu\n", (uint64_t)*ioctx->iter_hd);
       return;
@@ -995,9 +1021,9 @@ void on_io_complete(kvs_postprocess_context* ioctx) {
     end /= 1000L;
     start = *((unsigned long long*)kvdata->time);
     free(kvdata->time);
-    if (l_stat->cursor >= MAX_SAMPLES) {
-      l_stat->cursor = l_stat->cursor % MAX_SAMPLES;
-      l_stat->nsamples = MAX_SAMPLES;
+    if (l_stat->cursor >= max_sample) {
+      l_stat->cursor = l_stat->cursor % max_sample;
+      l_stat->nsamples = max_sample;
     } else {
       l_stat->nsamples = l_stat->cursor + 1; 
     }
@@ -1088,6 +1114,7 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
   int ret;
   Db *ppdb;
   *pDb = (Db*)malloc(sizeof(Db));
+  memset(*pDb, 0, sizeof(Db));
   ppdb = *pDb;
 
   ret = kvs_open_device((char *)dev_path, &ppdb->dev);
@@ -1133,17 +1160,29 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
   }
     
   /* Keyspace related op */
-  const char* name = "test";
+  uint32_t valid_cnt = 0;
+  const uint32_t retrieve_cnt = 2;
+  kvs_key_space_name names[retrieve_cnt];
+  char tname[retrieve_cnt][MAX_CONT_PATH_LEN];
+  for(uint8_t idx = 0; idx < retrieve_cnt; idx++) {
+    names[idx].name_len = MAX_KEYSPACE_NAME_LEN;
+    names[idx].name = tname[idx];
+  }
+
+  kvs_list_key_spaces(ppdb->dev, 1, retrieve_cnt*sizeof(kvs_key_space_name),
+    names, &valid_cnt);
+  
+  for (uint8_t idx = 0; idx < valid_cnt; idx++) {
+    kvs_delete_key_space(ppdb->dev, &names[idx]);
+  }
+  
   kvs_key_space_name ks_name;
-  kvs_option_key_space option = {KVS_KEY_ORDER_ASCEND};
-  ks_name.name = (char *)name;
-  ks_name.name_len = strlen(name);
-  
+  ks_name.name = (char *)g_container_name;
+  ks_name.name_len = strlen(g_container_name);
+  kvs_option_key_space option = {KVS_KEY_ORDER_NONE};
   kvs_create_key_space(ppdb->dev, &ks_name, 0, option);
-  
-  kvs_key_space_handle ks_hd;
-  kvs_open_key_space(ppdb->dev, (char *)name, &ppdb->cont_hd);
-  
+  kvs_open_key_space(ppdb->dev, (char *)g_container_name, &ppdb->cont_hd);
+
   fprintf(stdout, "device open %s\n", dev_path);
 
   return COUCHSTORE_SUCCESS;
@@ -1183,7 +1222,12 @@ couchstore_error_t couchstore_close_db(Db *db)
   }
 
   kvs_close_key_space(db->cont_hd);
-  kvs_delete_key_space(db->dev, NULL);
+
+  kvs_key_space_name ks_name;
+  ks_name.name = (char *)g_container_name;
+  ks_name.name_len = strlen(g_container_name);
+  kvs_delete_key_space(db->dev, &ks_name);
+
   kvs_close_device(db->dev);
 
   free(db);
@@ -1202,19 +1246,15 @@ couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
   kvs_key_group_filter iter_ctx;
   kvs_iterator_handle iter_hd;
 
-  iter_ctx.bitmask[0] = 0;
-  iter_ctx.bitmask[1] = 0;
-  iter_ctx.bitmask[2] = 0xff;
-  iter_ctx.bitmask[3] = 0xff;
-  char prefix_str[5] = "0000";
-  unsigned int PREFIX_KV = 0;
-  for (int i = 0; i < 4; i++){
-    PREFIX_KV |= (prefix_str[i] << i*8);
-  }
-  iter_ctx.bit_pattern[0] = PREFIX_KV & 0xff;
-  iter_ctx.bit_pattern[1] = PREFIX_KV & 0xff00 >> 8;
-  iter_ctx.bit_pattern[2] = PREFIX_KV & 0xff0000 >> 16;
-  iter_ctx.bit_pattern[3] = PREFIX_KV & 0xff000000 >> 24;
+  iter_ctx.bitmask[0] = 0xff;
+  iter_ctx.bitmask[1] = 0xff;
+  iter_ctx.bitmask[2] = 0;
+  iter_ctx.bitmask[3] = 0;
+  
+  iter_ctx.bit_pattern[0] = '0';
+  iter_ctx.bit_pattern[1] = '0';
+  iter_ctx.bit_pattern[2] = '0';
+  iter_ctx.bit_pattern[3] = '0';
 
   kvs_option_iterator option;
   memset(&option, 0, sizeof(kvs_option_iterator));
@@ -1228,7 +1268,7 @@ couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
 
   //kvs_close_iterator_all(db->cont_hd);
   int ret = kvs_create_iterator(db->cont_hd, &option, &iter_ctx, &db->iter_handle);
-  if(ret) {
+  if(ret && ret!= KVS_ERR_ITERATOR_OPEN) {
     fprintf(stdout, "open iter failed with err %d\n", ret);
     exit(1);
   }
@@ -1244,8 +1284,8 @@ couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
   memset(kvdata, 0, sizeof(kv_bench_data));
   kvdata->db = db;
   std::unique_lock<std::mutex> k_lock(kviter_lock);
-  kviter_map.insert(std::make_pair<kvs_iterator_handle, kv_bench_data*>
-    ((kvs_iterator_handle)db->iter_handle, (kv_bench_data*)kvdata));
+  kviter_map.insert(std::make_pair<kvs_key_space_handle, kv_bench_data*>
+    ((kvs_key_space_handle)db->cont_hd, (kv_bench_data*)kvdata));
   k_lock.unlock();
   return COUCHSTORE_SUCCESS; 
 }
@@ -1260,12 +1300,12 @@ couchstore_error_t couchstore_iterator_close(Db *db) {
   }
 
   std::unique_lock<std::mutex> k_lock(kviter_lock);
-  auto it = kviter_map.find(db->iter_handle);
+  auto it = kviter_map.find(db->cont_hd);
   if (it == kviter_map.end()) {
     fprintf(stderr, "not found iterator handle %lu ", (uint64_t)db->iter_handle);
   } else {
     kv_bench_data *data = it->second;
-    kviter_map.erase(db->iter_handle);
+    kviter_map.erase(db->cont_hd);
     free(data);
   }
   k_lock.unlock();
@@ -1540,6 +1580,12 @@ couchstore_error_t couchstore_kvs_get_aiocompletion(int32_t *count)
 
 couchstore_error_t couchstore_kvs_reset_aiocompletion(){
   aio_count = 0;
+  return COUCHSTORE_SUCCESS;
+}
+
+couchstore_error_t couchstore_kvs_set_max_sample(uint32_t sample_num)
+{
+  max_sample = sample_num;
   return COUCHSTORE_SUCCESS;
 }
 

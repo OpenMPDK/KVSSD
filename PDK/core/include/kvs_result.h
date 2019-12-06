@@ -91,7 +91,8 @@ typedef enum {
   KVS_ERR_DEV_PATH_TOO_LONG=0x02A,     // the length of dev path more than 255
   KVS_ERR_ITERATOR_NUM_OUT_RANGE=0x02B, //the number of iterator required out of range(equal 0, or bigger than 16)
   KVS_ERR_DD_UNSUPPORTED=0x02C,   //device driver does not support.
-  KVS_ERR_ITERATOR_BUFFER_SIZE=0x02D, // buffer (iter_list->it_list) size in kvs_iterator_list error
+  KVS_ERR_ITERATOR_BUFFER_SIZE=0x02D, // buffer (iter_list->it_list) size in kvs_iterator_list error  
+  KVS_ERR_MEMORY_MALLOC_FAIL=0x032,  // memory malloc function error.
 
   // From user driver	
   KVS_ERR_CACHE_INVALID_PARAM=0x200	, // (kv cache) invalid parameters
@@ -130,6 +131,8 @@ typedef enum {
   KVS_ERR_CONT_NAME=0x405	, // container name is invalid
   KVS_ERR_CONT_NOT_EXIST=0x406	, // container does not existi
   KVS_ERR_CONT_OPEN=0x407	, // container is already opened
+  KVS_ERR_CONT_PATH_TOO_LONG=0x408, //the length of container more than 255
+  KVS_ERR_CONT_MAX = 0x409, //Exceeded max number of created container
 } kvs_result;	
 
 #else

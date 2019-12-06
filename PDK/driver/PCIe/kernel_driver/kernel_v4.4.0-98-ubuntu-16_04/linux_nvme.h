@@ -1022,9 +1022,9 @@ struct nvme_command {
 		struct nvme_kv_store_command kv_store;
 		struct nvme_kv_retrieve_command kv_retrieve;
 		struct nvme_kv_delete_command kv_delete;
-        struct nvme_kv_append_command kv_append;
-        struct nvme_kv_iter_req_command kv_iter_req;
-        struct nvme_kv_iter_read_command kv_iter_read;
+		struct nvme_kv_append_command kv_append;
+		struct nvme_kv_iter_req_command kv_iter_req;
+		struct nvme_kv_iter_read_command kv_iter_read;
 		struct nvme_kv_exist_command kv_exist;
 #endif
 	};

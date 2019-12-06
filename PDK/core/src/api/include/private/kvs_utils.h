@@ -47,9 +47,9 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <numa.h>
+#include <private_types.h>
 
-namespace api_private
-{
+namespace api_private {
 inline void yprintf(std::ostream &stream, const char* fmt, ...)
 {
     static char buffer[1024] = "";
@@ -120,12 +120,12 @@ inline void write_info(FILE * out, const char* format, ... ) {
 
 
 #ifdef ENABLE_LOGGING
-	#define WRITE_ERR(...) do { write_err(__VA_ARGS__); exit(1); } while (0)
+	#define WRITE_ERR(...) do { write_err(__VA_ARGS__); } while (0)
 	#define WRITE_WARNING(...) write_warn(stderr, __VA_ARGS__)
 	#define WRITE_INFO(...) write_info(stdout, __VA_ARGS__)
 	#define WRITE_LOG(...) logprintf(__VA_ARGS__)
 #else
-	#define WRITE_ERR(...) do { write_err(__VA_ARGS__); exit(1); } while (0)
+	#define WRITE_ERR(...) do { write_err(__VA_ARGS__); } while (0)
 	#define WRITE_WARNING(...) write_warn(stderr, __VA_ARGS__)
 	#define WRITE_INFO(...) write_info(stdout, __VA_ARGS__)
 	#define WRITE_LOG(...)
@@ -260,7 +260,8 @@ static inline void trim(std::string &s) {
     rtrim(s);
 }
 
-static inline int32_t validate_request(const kvs_key *key, const kvs_value *value) {
+static inline int32_t validate_kv_pair_(
+  const kvs_key *key, const kvs_value *value, uint32_t max_valid_val_len){
   if (key) {
     if(key->length < KVS_MIN_KEY_LENGTH || key->length > KVS_MAX_KEY_LENGTH) {
       WRITE_WARNING("key size is out of range, key size = %d\n", key->length);
@@ -272,21 +273,22 @@ static inline int32_t validate_request(const kvs_key *key, const kvs_value *valu
     }
   }
   if(value) {
-    if(value->length < KVS_MIN_VALUE_LENGTH || value->length > KVS_MAX_VALUE_LENGTH) {
+    if(value->length < KVS_MIN_VALUE_LENGTH || value->length > max_valid_val_len) {
       WRITE_WARNING("value size is out of range, value size = %d\n", value->length);
       return KVS_ERR_VALUE_LENGTH_INVALID;
     }
-    if(value->offset % KVS_ALIGNMENT_UNIT != 0) {
-      return KVS_ERR_VALUE_OFFSET_INVALID;
+    if(value->offset & (KVS_ALIGNMENT_UNIT - 1)) {
+      return KVS_ERR_MISALIGNED_VALUE_OFFSET;
     }
     if(value->value == NULL && value->length > 0){
       WRITE_WARNING("value buffer inputted is NULL\n");
       return KVS_ERR_PARAM_INVALID;
     }
   }
-  return 0;
+  return KVS_SUCCESS;
+}
+static inline int32_t validate_request(const kvs_key *key, const kvs_value *value) {
+  return validate_kv_pair_(key, value, KVS_MAX_VALUE_LENGTH);
 }
 }
-
-
 #endif /* INCLUDE_KVS_UTILS_H_ */

@@ -44,12 +44,16 @@ extern "C" {
 #define KVS_MIN_VALUE_LENGTH 0
 #define KVS_MAX_VALUE_LENGTH (2*1024*1024)
 #define KVS_OPTIMAL_VALUE_LENGTH 4096
-#define KVS_ALIGNMENT_UNIT 4
+#define KVS_ALIGNMENT_UNIT 512 /*value of KVS_ALIGNMENT_UNIT must be a power of 2 currently */
+#define KVS_VALUE_LENGTH_ALIGNMENT_UNIT 4 /*value of KV_VALUE_LENGTH_ALIGNMENT_UNIT must be a power of 2 currently */
 #define KVS_MAX_ITERATE_HANDLE 16
 #define G_ITER_KEY_SIZE_FIXED 16
 #define KVS_MAX_KEY_GROUP_BYTES 4
 #define KVS_ITERATOR_BUFFER_SIZE (32*1024)
-  
+#define MAX_CONT_PATH_LEN 255
+#define MAX_KEYSPACE_NAME_LEN MAX_CONT_PATH_LEN
+
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

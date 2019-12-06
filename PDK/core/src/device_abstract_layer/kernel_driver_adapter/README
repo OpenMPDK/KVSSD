@@ -31,9 +31,9 @@ library and test binaries are at:
 How to test with KVSSD using kernel module (tenative)
     1. load the correct version of kernel module for KVSSD
     2. run test
-        sudo LD_LIBRARY_PATH=. ./test_suite 12356 0xffffffff 0x12345678 /dev/nvme2n1
-        sudo LD_LIBRARY_PATH=. ./sample_interrupt 2000 /dev/nvme2n1    
-        sudo LD_LIBRARY_PATH=. ./sample_poll 2000 /dev/nvme2n1    
+        sudo LD_LIBRARY_PATH=. ./test_suite 12356 0xffffffff 0x12345678 /dev/nvme2n1 0
+        sudo LD_LIBRARY_PATH=. ./sample_interrupt 2000 /dev/nvme2n1 0 
+        sudo LD_LIBRARY_PATH=. ./sample_poll 2000 /dev/nvme2n1 0    
 
 6). 
 ----

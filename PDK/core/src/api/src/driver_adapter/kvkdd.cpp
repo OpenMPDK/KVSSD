@@ -34,6 +34,7 @@
 
 #include <iostream>
 #include <fstream>
+#include <map>
 
 #include "kvs_utils.h"
 #include "kvkdd.hpp"
@@ -381,7 +382,6 @@ inline kvs_result convert_return_code(int opcode, int dev_status_code)
       return KVS_ERR_SYS_IO;
     }
   }
-
   return KVS_ERR_SYS_IO;
 
 }
@@ -403,7 +403,8 @@ void kdd_on_io_complete(kv_io_context *context){
   if(iocb->opcode == IOCB_ASYNC_GET_CMD) {
     iocb->value->actual_value_size = context->value->actual_value_size;
     iocb->value->length = context->value->length;
-    if(iocb->value->length < iocb->value->actual_value_size)  //actual length bigger than buffer length user inputted
+    //when it is not a partial retrieve and actual length bigger than buffer length user inputted
+    if(iocb->value->length < iocb->value->actual_value_size)
       iocb->result = KVS_ERR_BUFFER_SMALL;
   }
   else if (iocb->opcode == IOCB_ASYNC_ITER_NEXT_CMD && context->retcode == 0) {
@@ -441,8 +442,6 @@ void kdd_on_io_complete(kv_io_context *context){
     if(ctx->on_complete && iocb) {
       ctx->on_complete(iocb);
     }
-    if (iocb->opcode == IOCB_ASYNC_ITER_NEXT_CMD && iocb->iter_hd)
-	  free(iocb->iter_hd);
     delete ctx;
     ctx = NULL;
   }
@@ -508,62 +507,25 @@ int32_t KDDriver::init(const char* devpath, const char* configfile, int queue_de
 
 /* MAIN ENTRY POINT */
 
-int32_t KDDriver::store_tuple(int contid, const kvs_key *key, const kvs_value *value, kvs_store_option option, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
-
-  auto ctx = prep_io_context(IOCB_ASYNC_PUT_CMD, contid, key, value, private1, private2, syncio, cbfn);
+int32_t KDDriver::store_tuple(kvs_container_handle cont_hd, const kvs_key *key,
+  const kvs_value *value, kvs_store_option option, void *private1, void *private2,
+  bool syncio, kvs_callback_function cbfn) {
+  auto ctx = prep_io_context(IOCB_ASYNC_PUT_CMD, cont_hd, key, value, private1,
+    private2, syncio, cbfn);
   kv_postprocess_function f = {
     kdd_on_io_complete, (void*)ctx
   };
-
   kv_store_option option_adi;
-  if(!option.kvs_store_compress) {
-    // Default: no compression
-    switch(option.st_type) {
-    case KVS_STORE_POST:
-      option_adi = KV_STORE_OPT_DEFAULT;
-      break;
-    case KVS_STORE_UPDATE_ONLY:
-      option_adi = KV_STORE_OPT_UPDATE_ONLY;
-      break;
-    case KVS_STORE_NOOVERWRITE:
-      option_adi = KV_STORE_OPT_IDEMPOTENT;
-      break;
-    case KVS_STORE_APPEND:
-      option_adi = KV_STORE_OPT_APPEND;
-      break;
-    default:
-      fprintf(stderr, "WARN: Wrong store option\n");
-      delete ctx;
-      ctx = NULL;
-      return KVS_ERR_OPTION_INVALID;
-    }
-  } else {
-    // compression
-    switch(option.st_type) {
-    case KVS_STORE_POST:
-      option_adi = KV_STORE_OPT_POST_WITH_COMPRESS;
-      break;
-    case KVS_STORE_UPDATE_ONLY:
-      option_adi = KV_STORE_OPT_UPDATE_ONLY_COMPRESS;
-      break;
-    case KVS_STORE_NOOVERWRITE:
-      option_adi = KV_STORE_OPT_NOOVERWRITE_COMPRESS;
-      break;
-    case KVS_STORE_APPEND:
-      option_adi = KV_STORE_OPT_APPEND_COMPRESS;
-      break;
-    default:
-      delete ctx;
-      ctx = NULL;
-      fprintf(stderr, "WARN: Wrong store option\n");
-      return KVS_ERR_OPTION_INVALID;
-    }
+  if(trans_store_cmd_opt(option, &option_adi)) {
+    delete ctx;
+    return KVS_ERR_OPTION_INVALID;
   }
- 
-  int ret = kv_store(this->sqH, this->nsH, (kv_key*)key, (kv_value*)value, option_adi, &f);
 
+  int ret = kv_store(this->sqH, this->nsH, cont_hd->keyspace_id, (kv_key*)key,
+    (kv_value*)value, option_adi, &f);
   while(ret == KV_ERR_QUEUE_IS_FULL) {
-    ret = kv_store(this->sqH, this->nsH, (kv_key*)key, (kv_value*)value, option_adi, &f);
+    ret = kv_store(this->sqH, this->nsH, cont_hd->keyspace_id, (kv_key*)key,
+      (kv_value*)value, option_adi, &f);
   }
   
   if(syncio && ret == 0) {
@@ -574,7 +536,6 @@ int32_t KDDriver::store_tuple(int contid, const kvs_key *key, const kvs_value *v
   }
 
   free_if_error(ret, ctx);
-
 
   return ret;
 }
@@ -587,9 +548,10 @@ void KDDriver::wait_for_io(kv_kdd_context *ctx) {
 
 }
 
-int32_t KDDriver::retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, kvs_retrieve_option option, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
-
-  auto ctx = prep_io_context(IOCB_ASYNC_GET_CMD, contid, key, value, private1, private2, syncio, cbfn);
+int32_t KDDriver::retrieve_tuple(kvs_container_handle cont_hd, const kvs_key *key,
+  kvs_value *value, kvs_retrieve_option option, void *private1, void *private2,
+  bool syncio, kvs_callback_function cbfn) {
+  auto ctx = prep_io_context(IOCB_ASYNC_GET_CMD, cont_hd, key, value, private1, private2, syncio, cbfn);
   kv_postprocess_function f = {kdd_on_io_complete, (void*)ctx};
 
   kv_retrieve_option option_adi;
@@ -605,27 +567,29 @@ int32_t KDDriver::retrieve_tuple(int contid, const kvs_key *key, kvs_value *valu
       option_adi = KV_RETRIEVE_OPT_DECOMPRESS_DELETE;
   }
   
-  int ret = kv_retrieve(this->sqH, this->nsH, (kv_key*)key, option_adi, (kv_value*)value, &f);
+  int ret = kv_retrieve(this->sqH, this->nsH, cont_hd->keyspace_id,
+    (kv_key*)key, option_adi, (kv_value*)value, &f);
   
   while(ret == KV_ERR_QUEUE_IS_FULL) {
-    ret = kv_retrieve(this->sqH, this->nsH, (kv_key*)key, option_adi, (kv_value*)value, &f);
+    ret = kv_retrieve(this->sqH, this->nsH, cont_hd->keyspace_id,
+      (kv_key*)key, option_adi, (kv_value*)value, &f);
   }
 
   if(syncio && ret == 0) {
-   
      wait_for_io(ctx);  
      ret = ctx->iocb.result;
-
-    delete ctx;
-    ctx = NULL;
+     delete ctx;
+     ctx = NULL;
   }
 
   free_if_error(ret, ctx);
   return ret;
 }
 
-int32_t KDDriver::delete_tuple(int contid, const kvs_key *key, kvs_delete_option option, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
-  auto ctx = prep_io_context(IOCB_ASYNC_DEL_CMD, contid, key, NULL, private1, private2, syncio, cbfn);
+int32_t KDDriver::delete_tuple(kvs_container_handle cont_hd, const kvs_key *key,
+  kvs_delete_option option, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
+  auto ctx = prep_io_context(IOCB_ASYNC_DEL_CMD, cont_hd, key, NULL, private1, private2,
+    syncio, cbfn);
   kv_postprocess_function f = {kdd_on_io_complete, (void*)ctx};
 
   kv_delete_option option_adi;
@@ -634,17 +598,17 @@ int32_t KDDriver::delete_tuple(int contid, const kvs_key *key, kvs_delete_option
   else
     option_adi = KV_DELETE_OPT_ERROR;
   
-  int ret =  kv_delete(this->sqH, this->nsH, (kv_key*)key, option_adi, &f);
+  int ret =  kv_delete(this->sqH, this->nsH, cont_hd->keyspace_id,
+    (kv_key*)key, option_adi, &f);
   
   while(ret == KV_ERR_QUEUE_IS_FULL) {
-    ret =  kv_delete(this->sqH, this->nsH, (kv_key*)key, option_adi, &f);
+    ret =  kv_delete(this->sqH, this->nsH, cont_hd->keyspace_id,
+      (kv_key*)key, option_adi, &f);
   }
   
   if(syncio && ret == 0) {
-    
     wait_for_io(ctx);  
     ret = ctx->iocb.result;
-
     delete ctx;
     ctx = NULL;
   }    
@@ -654,28 +618,30 @@ int32_t KDDriver::delete_tuple(int contid, const kvs_key *key, kvs_delete_option
 }
 
 
-int32_t KDDriver::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
-
+int32_t KDDriver::exist_tuple(kvs_container_handle cont_hd, uint32_t key_cnt,
+  const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, void *private1,
+  void *private2, bool syncio, kvs_callback_function cbfn) {
   if(key_cnt > 1) {
     fprintf(stderr, "WARN: kernel driver only supports one key check \n");
     return KV_ERR_PARAM_INVALID;
   }
-  auto ctx = prep_io_context(IOCB_ASYNC_CHECK_KEY_EXIST_CMD, contid, keys, NULL, private1, private2, syncio, cbfn);
+  auto ctx = prep_io_context(IOCB_ASYNC_CHECK_KEY_EXIST_CMD, cont_hd, keys, NULL,
+    private1, private2, syncio, cbfn);
   ctx->iocb.key_cnt = key_cnt;
   ctx->iocb.result_buffer = result_buffer;
   
   kv_postprocess_function f = {kdd_on_io_complete, (void*)ctx};
 
-  int ret = kv_exist(this->sqH, this->nsH, (kv_key*)keys, key_cnt, buffer_size, result_buffer, &f);
-  
+  int ret = kv_exist(this->sqH, this->nsH, cont_hd->keyspace_id,
+    (kv_key*)keys, key_cnt, buffer_size, result_buffer, &f);
   while(ret == KV_ERR_QUEUE_IS_FULL) {
-    ret = kv_exist(this->sqH, this->nsH, (kv_key*)keys, key_cnt, buffer_size, result_buffer, &f);
+    ret = kv_exist(this->sqH, this->nsH, cont_hd->keyspace_id,
+      (kv_key*)keys, key_cnt, buffer_size, result_buffer, &f);
   }
 
   if(syncio && ret == 0) {
     wait_for_io(ctx);  
     ret = ctx->iocb.result;
-
     delete ctx;
     ctx = NULL;
   }
@@ -685,7 +651,8 @@ int32_t KDDriver::exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys,
   return ret;
 }
 
-int KDDriver::check_opened_iterators(uint32_t bitmask, uint32_t bit_pattern) {
+int KDDriver::check_opened_iterators(uint32_t bitmask, uint32_t bit_pattern,
+                                     kvs_iterator_handle *iter_hd) {
   kv_iterator kv_iters[SAMSUNG_MAX_ITERATORS];
   memset(kv_iters, 0, sizeof(kv_iters));
   uint32_t count = SAMSUNG_MAX_ITERATORS;
@@ -699,6 +666,7 @@ int KDDriver::check_opened_iterators(uint32_t bitmask, uint32_t bit_pattern) {
       opened++;
       //fprintf(stdout, "found handler %d, prefix 0x%x 0x%x\n", kv_iters[i].handle_id, kv_iters[i].prefix, kv_iters[i].bitmask);
       if(kv_iters[i].prefix == bit_pattern && kv_iters[i].bitmask == bitmask) {
+        *iter_hd = kv_iters[i].handle_id;
 	      fprintf(stdout, "WARN: Iterator with same prefix/bitmask is already opened\n");
 	      return KVS_ERR_ITERATOR_OPEN;
       }
@@ -711,13 +679,13 @@ int KDDriver::check_opened_iterators(uint32_t bitmask, uint32_t bit_pattern) {
   return 0;
 }
 
-int32_t KDDriver::open_iterator(int contid, kvs_iterator_option option /*uint8_t option*/, uint32_t bitmask,
-				uint32_t bit_pattern, kvs_iterator_handle *iter_hd) {
-  int ret = check_opened_iterators(bitmask, bit_pattern);
+int32_t KDDriver::open_iterator(kvs_container_handle cont_hd, kvs_iterator_option option,
+  uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) {
+  int ret = check_opened_iterators(bitmask, bit_pattern, iter_hd);
   if (ret) {
     return ret;
   }
-  
+
   kv_group_condition grp_cond = {bitmask, bit_pattern};
   kv_iterator_option option_adi;
   switch(option.iter_type) {
@@ -735,23 +703,23 @@ int32_t KDDriver::open_iterator(int contid, kvs_iterator_option option /*uint8_t
     return KVS_ERR_OPTION_INVALID;
   }
   
-  ret = kv_open_iterator_sync(this->sqH, this->nsH, option_adi, &grp_cond, iter_hd);
+  ret = kv_open_iterator_sync(this->sqH, this->nsH, cont_hd->keyspace_id,
+    option_adi, &grp_cond, iter_hd);
   return ret;
 }
 
-int32_t KDDriver::close_iterator(int contid, kvs_iterator_handle hiter) {
+int32_t KDDriver::close_iterator(kvs_container_handle cont_hd, kvs_iterator_handle hiter) {
   int ret = kv_close_iterator_sync(this->sqH, this->nsH, hiter/*iterh_adi*/);
   return ret;
 }
 
-int32_t KDDriver::close_iterator_all(int contid) {
-
+int32_t KDDriver::close_iterator_all(kvs_container_handle cont_hd) {
   fprintf(stderr, "WARN: this feature is not supported in the kernel driver\n");
   return KVS_ERR_OPTION_INVALID;
-
 }
 
-int32_t KDDriver::list_iterators(int contid, kvs_iterator_info *kvs_iters, uint32_t count) {
+int32_t KDDriver::list_iterators(kvs_container_handle cont_hd, kvs_iterator_info *kvs_iters,
+  uint32_t count) {
   int ret = kv_list_iterators_sync(sqH, nsH, (kv_iterator *)kvs_iters, &count);
   if(ret == KV_SUCCESS){
      for(uint32_t idx = 0; idx < count; idx++){
@@ -763,6 +731,10 @@ int32_t KDDriver::list_iterators(int contid, kvs_iterator_info *kvs_iters, uint3
           ret = KVS_ERR_ITERATOR_COND_INVALID;
         break;
       }
+      /* The bitmask and bit_pattern are reversed when the iterator is opened in the case
+      of cpu for little endian mode,so it needs to be inverted again in get_iterator_info.
+      kvs_iters[idx].bitmask = htobe32(kvs_iters[idx].bitmask);
+      kvs_iters[idx].bit_pattern = htobe32(kvs_iters[idx].bit_pattern);*/
     }
   }
   if(ret == KV_ERR_PARAM_INVALID)
@@ -771,31 +743,24 @@ int32_t KDDriver::list_iterators(int contid, kvs_iterator_info *kvs_iters, uint3
 }
 
 
-int32_t KDDriver::iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
+int32_t KDDriver::iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1, void *private2, bool syncio, kvs_callback_function cbfn) {
   int ret;
   if (syncio) {   
-    ret = kv_iterator_next_sync(this->sqH, this->nsH, hiter/*hiter->iterh_adi*/, (kv_iterator_list *)iter_list);
-
+    ret = kv_iterator_next_sync(this->sqH, this->nsH, hiter, (kv_iterator_list *)iter_list);
     reformat_iterbuffer(iter_list);
-    /*if(ret != KV_SUCCESS) {
-      fprintf(stderr, "kv_iterator_next failed with error:  0x%X\n", ret);
-    }*/
     return ret;
   }
   else { /* async */
-    auto ctx = prep_io_context(IOCB_ASYNC_ITER_NEXT_CMD, 0, 0, 0, private1, private2, syncio, cbfn);
+    auto ctx = prep_io_context(IOCB_ASYNC_ITER_NEXT_CMD, cont_hd, 0, 0, private1, private2, syncio, cbfn);
     ctx->iocb.result_buffer = (uint8_t*)iter_list;
-    ctx->iocb.iter_hd = (kvs_iterator_handle *)malloc(sizeof(kvs_iterator_handle));
-    *(ctx->iocb.iter_hd) = hiter;
+    ctx->iocb.iter_hd = hiter;
     kv_postprocess_function f = {
       kdd_on_io_complete, (void*)ctx
     };
-    ret = kv_iterator_next(this->sqH, this->nsH, hiter/*hiter->iterh_adi*/, (kv_iterator_list *)iter_list, &f);
+    ret = kv_iterator_next(this->sqH, this->nsH, hiter, (kv_iterator_list *)iter_list, &f);
   
     if(ret != KV_SUCCESS) {
       fprintf(stderr, "kv_iterator_next failed with error:  0x%X\n", ret);
-      if (ctx->iocb.iter_hd)
-	    free(ctx->iocb.iter_hd);
       delete ctx;
       ctx = NULL;
     }
@@ -818,9 +783,11 @@ int32_t KDDriver::get_used_size(int32_t *dev_util){
     if(stat) free(stat);
     return ret;
   }
-  *dev_util = stat->utilization;
 
-  if(stat) free(stat);
+  if(stat){
+    *dev_util = stat->utilization;
+    free(stat);
+  }
   
   return ret;
 }
@@ -838,9 +805,10 @@ int32_t KDDriver::get_total_size(int64_t *dev_capa) {
     return ret;
   }
 
-  *dev_capa = devinfo->capacity;
-
-  if(devinfo) free(devinfo);
+  if(devinfo){
+    *dev_capa = devinfo->capacity;
+    free(devinfo);
+  }
   return ret;
 }
 
@@ -872,13 +840,13 @@ KDDriver::~KDDriver() {
   kv_cleanup_device(devH);
 }
 
-KDDriver::kv_kdd_context* KDDriver::prep_io_context(int opcode, int contid, const kvs_key *key, const kvs_value *value, void *private1, void *private2, bool syncio, kvs_callback_function cbfn){
-
+KDDriver::kv_kdd_context* KDDriver::prep_io_context(int opcode, kvs_container_handle cont_hd,
+  const kvs_key *key, const kvs_value *value, void *private1, void *private2,
+  bool syncio, kvs_callback_function cbfn){
   kv_kdd_context *ctx = new kv_kdd_context();
-
   ctx->owner = this;
   ctx->iocb.opcode = opcode;
-  //ctx->iocb.contid = contid;
+  ctx->iocb.cont_hd = cont_hd;
   if(key) {
     ctx->iocb.key = (kvs_key*)key;
   } else {
@@ -923,6 +891,51 @@ int32_t KDDriver::trans_iter_type(uint8_t dev_it_type, uint8_t* kvs_it_type){
       break;
   }
   return ret;
+}
+
+int32_t KDDriver::trans_store_cmd_opt(kvs_store_option kvs_opt,
+                                            kv_store_option *kv_opt){
+  if(!kvs_opt.kvs_store_compress) {
+    // Default: no compression
+    switch(kvs_opt.st_type) {
+    case KVS_STORE_POST:
+      *kv_opt = KV_STORE_OPT_DEFAULT;
+      break;
+    case KVS_STORE_UPDATE_ONLY:
+      *kv_opt = KV_STORE_OPT_UPDATE_ONLY;
+      break;
+    case KVS_STORE_NOOVERWRITE:
+      *kv_opt = KV_STORE_OPT_IDEMPOTENT;
+      break;
+    case KVS_STORE_APPEND:
+      *kv_opt = KV_STORE_OPT_APPEND;
+      break;
+    default:
+      fprintf(stderr, "WARN: Wrong store option\n");
+      return KVS_ERR_OPTION_INVALID;
+    }
+  } else {
+    // compression
+    switch(kvs_opt.st_type) {
+    case KVS_STORE_POST:
+      *kv_opt = KV_STORE_OPT_POST_WITH_COMPRESS;
+      break;
+    case KVS_STORE_UPDATE_ONLY:
+      *kv_opt = KV_STORE_OPT_UPDATE_ONLY_COMPRESS;
+      break;
+    case KVS_STORE_NOOVERWRITE:
+      *kv_opt = KV_STORE_OPT_NOOVERWRITE_COMPRESS;
+      break;
+    case KVS_STORE_APPEND:
+      *kv_opt = KV_STORE_OPT_APPEND_COMPRESS;
+      break;
+    default:
+      fprintf(stderr, "WARN: Wrong store option\n");
+      return KVS_ERR_OPTION_INVALID;
+    }
+  }
+
+  return KVS_SUCCESS;
 }
 
 float  KDDriver::get_waf(){

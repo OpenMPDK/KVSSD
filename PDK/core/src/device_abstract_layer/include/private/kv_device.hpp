@@ -154,9 +154,9 @@ public:
     static kv_result _kv_bypass_namespace(const kv_device_handle dev_hdl, const kv_namespace_handle ns_hdl, bool_t bypass);
 
     // async IO APIs are below
-    kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_purge_option option, kv_postprocess_function *post_fn);
+    kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, kv_purge_option option, kv_postprocess_function *post_fn);
 
-    kv_result kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_postprocess_function *post_fn);
+    kv_result kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_postprocess_function *post_fn);
 
     kv_result kv_close_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_postprocess_function *post_fn, kv_iterator_handle iter_hdl);
 
@@ -167,15 +167,14 @@ public:
     kv_result kv_list_iterators(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_postprocess_function  *post_fn, kv_iterator *kv_iters, uint32_t *iter_cnt);
 
     /*** Key value APIs ***/
-    kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_delete_option option, kv_postprocess_function *post_fn);
+    kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, kv_delete_option option, kv_postprocess_function *post_fn);
     
-    kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_group_condition *grp_cond, kv_postprocess_function *post_fn);
+    kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, kv_group_condition *grp_cond, kv_postprocess_function *post_fn);
 
-    kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, uint32_t key_cnt, kv_postprocess_function *post_fn, uint32_t buffer_size, uint8_t *buffer);
+    kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, uint32_t key_cnt, kv_postprocess_function *post_fn, uint32_t buffer_size, uint8_t *buffer);
 
-    kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_retrieve_option option, const kv_postprocess_function *post_fn, kv_value *value);
-    kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, const kv_value *value, kv_store_option option, const kv_postprocess_function *post_fn);
-
+    kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, kv_retrieve_option option, const kv_postprocess_function *post_fn, kv_value *value);
+    kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, const kv_value *value, kv_store_option option, const kv_postprocess_function *post_fn);
     /*** poll and interrupt handler APIs***/
     // poll will check completion queue, and find corresponding submission
     // queue

@@ -53,7 +53,25 @@ extern "C" {
 #endif
 
 const int MAX_DEV_PATH_LEN = 256;
+
+
 namespace api_private {
+// max sub-command number in a batch command
+const int MAX_SUB_CMD_NUM = 8;
+// max value size of sub-command in a batch command */
+const int MAX_SUB_CMD_VALUE_LEN = 8192;
+
+/* the max number of container that supported currently, as currently kv ssd only support two 
+keyspace: 0 */ 
+const int NR_MAX_CONT = 1; 
+const int META_DATA_KEYSPACE_ID = 0; //use keyspace 0 as meta data key space
+const int USER_DATA_KEYSPACE_START_ID = 1; //start keyspace id that used for user containers 
+//extern const cf_digest cf_digest_zero;
+extern const char* KEY_SPACE_LIST_KEY_NAME; //the key of kv pair that store key
+                                            //spaces name list
+const int PAGE_ALIGN = 4096; //page align (4KB)
+const int DMA_ALIGN = 4; //DMA required size align(4B)
+
 class kv_device_priv {
 public:
   kv_device_priv() {
@@ -66,6 +84,7 @@ public:
     isattached = false;
     isspdkdev = false;
     isemul = false;
+    iskerneldev = false;
     num_opened_qpairs = 0;
   }
 
@@ -127,15 +146,17 @@ public:
   virtual int32_t init(const char* devpath, bool syncio, uint64_t sq_core, uint64_t cq_core, uint32_t mem_size_mb, int queue_depth) {return 0;}
   virtual int32_t init(const char* devpath, bool syncio) {return 0;}
   virtual int32_t process_completions(int max) =0;
-  virtual int32_t store_tuple(int contid, const kvs_key *key, const kvs_value *value, kvs_store_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
-  virtual int32_t retrieve_tuple(int contid, const kvs_key *key, kvs_value *value, kvs_retrieve_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
-  virtual int32_t delete_tuple(int contid, const kvs_key *key, kvs_delete_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
-  virtual int32_t exist_tuple(int contid, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
-  virtual int32_t open_iterator(int contid, kvs_iterator_option option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) = 0;
-  virtual int32_t close_iterator(int contid, kvs_iterator_handle hiter) = 0;
-  virtual int32_t close_iterator_all(int contid) = 0;
-  virtual int32_t list_iterators(int contid, kvs_iterator_info *kvs_iters, uint32_t count) = 0;
-  virtual int32_t iterator_next(kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
+  virtual int32_t store_tuple(kvs_container_handle cont_hd, const kvs_key *key,
+    const kvs_value *value, kvs_store_option option, void *private1=NULL,
+    void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
+  virtual int32_t retrieve_tuple(kvs_container_handle cont_hd, const kvs_key *key, kvs_value *value, kvs_retrieve_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
+  virtual int32_t delete_tuple(kvs_container_handle cont_hd, const kvs_key *key, kvs_delete_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
+  virtual int32_t exist_tuple(kvs_container_handle cont_hd, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
+  virtual int32_t open_iterator(kvs_container_handle cont_hd, kvs_iterator_option option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) = 0;
+  virtual int32_t close_iterator(kvs_container_handle cont_hd, kvs_iterator_handle hiter) = 0;
+  virtual int32_t close_iterator_all(kvs_container_handle cont_hd) = 0;
+  virtual int32_t list_iterators(kvs_container_handle cont_hd, kvs_iterator_info *kvs_iters, uint32_t count) = 0;
+  virtual int32_t iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
   virtual float get_waf() {return 0.0;}
   virtual int32_t get_used_size(int32_t *dev_util) {return 0;}
   virtual int32_t get_total_size(int64_t *dev_capa) {return 0;}
@@ -147,12 +168,15 @@ struct _kvs_device_handle {
   kv_device_priv * dev;
   KvsDriver* driver;
   char* dev_path;
+  kvs_container_handle meta_cont_hd;
+  std::list<kvs_container_handle> open_cont_hds; //containers opened by user
 };
 
 struct _kvs_container_handle {
   uint8_t container_id;
+  uint8_t keyspace_id; //corresponding keyspace id in KVSSD
   kvs_device_handle dev;
-  char name[256];
+  char name[MAX_CONT_PATH_LEN];
 };
 
 struct _kvs_iterator_handle{

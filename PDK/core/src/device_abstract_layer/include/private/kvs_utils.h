@@ -116,12 +116,12 @@ inline void write_info(FILE * out, const char* format, ... ) {
 
 
 #ifdef ENABLE_LOGGING
-	#define WRITE_ERR(...) do { write_err(__VA_ARGS__); exit(1); } while (0)
+	#define WRITE_ERR(...) do { write_err(__VA_ARGS__);} while (0)
 	#define WRITE_WARN(...) write_warn(stderr, __VA_ARGS__)
 	#define WRITE_INFO(...) write_info(stdout, __VA_ARGS__)
 	#define WRITE_LOG(...) logprintf(__VA_ARGS__)
 #else
-	#define WRITE_ERR(...) do { write_err(__VA_ARGS__); exit(1); } while (0)
+	#define WRITE_ERR(...) do { write_err(__VA_ARGS__);} while (0)
 	#define WRITE_WARN(...) write_warn(stderr, __VA_ARGS__)
 	#define WRITE_INFO(...) write_info(stdout, __VA_ARGS__)
 	#define WRITE_LOG(...)
@@ -227,6 +227,9 @@ static inline kv_result validate_key_value(const kv_key *key, const kv_value *va
     if (value != NULL) {
         if (value->length < SAMSUNG_KV_MIN_VALUE_LEN || value->length > SAMSUNG_KV_MAX_VALUE_LEN) {
             return KV_ERR_VALUE_LENGTH_INVALID;
+        }
+        if(value->offset & (KV_ALIGNMENT_UNIT - 1)) {
+          return KV_ERR_MISALIGNED_VALUE_OFFSET;
         }
     }
 

@@ -63,18 +63,17 @@ public:
     kv_result kv_get_namespace_stat(kv_namespace_stat *ns_st);
 
     // all these are sync IO, directly working with kvstore
-    kv_result kv_purge(kv_purge_option option, void *ioctx);
-    kv_result kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx);
-    kv_result kv_exist(const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx);
-    kv_result kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx);
-    kv_result kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx);
-
-    kv_result kv_open_iterator(const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_iterator_handle *iter_hdl, void *ioctx);
+    kv_result kv_purge( uint8_t ks_id, kv_purge_option option, void *ioctx);
+    kv_result kv_delete(uint8_t ks_id, const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx);
+    kv_result kv_exist(uint8_t ks_id, const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx);
+    kv_result kv_retrieve(uint8_t ks_id, const kv_key *key, uint8_t option, kv_value *value, void *ioctx);
+    kv_result kv_store(uint8_t ks_id, const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx);
+    kv_result kv_open_iterator(uint8_t ks_id, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_iterator_handle *iter_hdl, void *ioctx);
     kv_result kv_close_iterator(kv_iterator_handle iter_hdl, void *ioctx);
     kv_result kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key, kv_value *value, void *ioctx);
     kv_result kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, void *ioctx);
     kv_result kv_list_iterators(kv_iterator *kv_iters, uint32_t *iter_cnt, void *ioctx);
-    kv_result kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx);
+    kv_result kv_delete_group( uint8_t ks_id, kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx);
 
     kv_result set_interrupt_handler(const kv_interrupt_handler int_hdl);
     kv_interrupt_handler get_interrupt_handler();

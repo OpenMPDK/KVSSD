@@ -33,7 +33,6 @@
 
 #define ITER_BUFSIZE 32768
 
-
 class KvsTransContext;
 class KvsReadContext;
 class KvsSyncWriteContext;
@@ -82,6 +81,7 @@ enum nvme_kv_opcode {
     nvme_cmd_kv_exist	= 0xB3,
     nvme_cmd_kv_capacity = 0x06
 };
+
 
 /*
 typedef struct {
@@ -197,7 +197,7 @@ public:
     uint64_t capacity;
     typedef std::list<std::pair<kv_key *, kv_value *> >::iterator aio_iter;
     typedef struct {
-        int index;
+        unsigned int index;
         kv_key* key = 0;
         kv_value *value = 0;
         void *buf = 0;
@@ -232,7 +232,7 @@ private:
     std::condition_variable cmdctx_cond;
 
     std::vector<aio_cmd_ctx *>   free_cmdctxs;
-    std::map<int, aio_cmd_ctx *> pending_cmdctxs;
+    std::map<unsigned, aio_cmd_ctx *> pending_cmdctxs;
 
     int qdepth;
     
@@ -253,20 +253,20 @@ private:
 public:
 
     uint32_t  get_dev_waf();
-    kv_result kv_store(kv_key *key, kv_value *value, nvme_kv_store_option option, const kv_postprocess_function* cb);
-    kv_result kv_retrieve(kv_key *key, kv_value *value, const kv_postprocess_function* cb);
-    kv_result kv_retrieve_sync(kv_key *key, kv_value *value);
-    kv_result kv_delete(kv_key *key, const kv_postprocess_function* cb, int check_exist = 0);
-    kv_result iter_open(kv_iter_context *iter_handle, nvme_kv_iter_req_option option);
+    kv_result kv_store(uint8_t ks_id, kv_key *key, kv_value *value, nvme_kv_store_option option, const kv_postprocess_function* cb);
+    kv_result kv_retrieve(uint8_t ks_id, kv_key *key, kv_value *value, const kv_postprocess_function* cb);
+    kv_result kv_retrieve_sync(uint8_t ks_id, kv_key *key, kv_value *value);
+    kv_result kv_delete(uint8_t ks_id, kv_key *key, const kv_postprocess_function* cb, int check_exist = 0);
+    kv_result iter_open(uint8_t ks_id, kv_iter_context *iter_handle, nvme_kv_iter_req_option option);
     kv_result iter_close(kv_iter_context *iter_handle);
     kv_result iter_read(kv_iter_context *iter_handle);
     kv_result iter_read_async(kv_iter_context *iter_handle, const kv_postprocess_function *cb);
-    kv_result iter_readall(kv_iter_context *iter_ctx, nvme_kv_iter_req_option option,
-                             std::list<std::pair<void*, int> > &buflist);
+    kv_result iter_readall(uint8_t ks_id, kv_iter_context *iter_ctx,
+      nvme_kv_iter_req_option option, std::list<std::pair<void*, int> > &buflist);
     kv_result iter_list(kv_iterator *iter_list, uint32_t *count);
     kv_result poll_completion(uint32_t &num_events, uint32_t timeout_us);
-    bool exist(kv_key *key, const kv_postprocess_function *cb = 0);
-    bool exist(void *key, int length, const kv_postprocess_function *cb = 0);
+    bool exist(uint8_t ks_id, kv_key *key, const kv_postprocess_function *cb = 0);
+    bool exist(uint8_t ks_id, void *key, int length, const kv_postprocess_function *cb = 0);
     int open(std::string &devpath);
     int close();
     int fill_ioresult(const aio_cmd_ctx &ioctx, const struct nvme_aioevent &event, kv_io_context &result);
@@ -307,7 +307,6 @@ public:
 #define KADI_ERR_TUPLE_EXIST	(-21)
 #define KADI_ERR_TUPLE_NOT_EXIST	(-22)
 #define KADI_ERR_VALUE	(-23)
-
 
 #endif
 

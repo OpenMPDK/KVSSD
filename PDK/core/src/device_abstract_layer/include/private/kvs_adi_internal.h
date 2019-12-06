@@ -48,19 +48,19 @@ class kv_device_api {
 public:
     virtual ~kv_device_api() {}
     //basic operations
-    virtual kv_result kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) =0;
-    virtual kv_result kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx) =0;
-    virtual kv_result kv_exist(const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) =0;
-    virtual kv_result kv_purge(kv_purge_option option, void *ioctx) =0;
-    virtual kv_result kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) =0;
+    virtual kv_result kv_store(uint8_t ks_id, const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) =0;
+    virtual kv_result kv_retrieve(uint8_t ks_id, const kv_key *key, uint8_t option, kv_value *value, void *ioctx) =0;
+    virtual kv_result kv_exist(uint8_t ks_id, const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) =0;
+    virtual kv_result kv_purge(uint8_t ks_id, kv_purge_option option, void *ioctx) =0;
+    virtual kv_result kv_delete(uint8_t ks_id, const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) =0;
 
     // iterator
-    virtual kv_result kv_open_iterator(const kv_iterator_option opt, const kv_group_condition *cond, bool_t keylen_fixed, kv_iterator_handle *iter_hdl, void *ioctx) =0;
+    virtual kv_result kv_open_iterator(uint8_t ks_id, const kv_iterator_option opt, const kv_group_condition *cond, bool_t keylen_fixed, kv_iterator_handle *iter_hdl, void *ioctx) =0;
     virtual kv_result kv_close_iterator(kv_iterator_handle iter_hdl, void *ioctx) =0;
     virtual kv_result kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, void *ioctx) =0;
     virtual kv_result kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key, kv_value *value, void *ioctx) =0;
     virtual kv_result kv_list_iterators(kv_iterator *iter_list, uint32_t *count, void *ioctx) =0;
-    virtual kv_result kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) =0;
+    virtual kv_result kv_delete_group(uint8_t ks_id, kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) =0;
 
     // device setup related
     // Only good for physical devices.
@@ -117,6 +117,7 @@ struct _kv_iterator_handle {
     int keylength;
 
     uint32_t nsid;
+    int8_t ksid;
 
     kv_iterator_option it_op;
     kv_group_condition it_cond;

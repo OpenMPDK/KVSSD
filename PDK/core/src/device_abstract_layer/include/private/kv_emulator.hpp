@@ -88,19 +88,18 @@ public:
     virtual ~kv_noop_emulator() {}
 
     // basic operations
-    kv_result kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) { return KV_SUCCESS; }
-    kv_result kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx) { return KV_SUCCESS; }
-    kv_result kv_exist(const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) { return KV_SUCCESS; }
-    kv_result kv_purge(kv_purge_option option, void *ioctx) { return KV_SUCCESS; }
-    kv_result kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) { return KV_SUCCESS; }
-
+    kv_result kv_store(uint8_t ks_id, const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) { return KV_SUCCESS; }
+    kv_result kv_retrieve(uint8_t ks_id, const kv_key *key, uint8_t option, kv_value *value, void *ioctx) { return KV_SUCCESS; }
+    kv_result kv_exist(uint8_t ks_id, const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx) { return KV_SUCCESS; }
+    kv_result kv_purge( uint8_t ks_id, kv_purge_option option, void *ioctx) { return KV_SUCCESS; }
+    kv_result kv_delete(uint8_t ks_id, const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) { return KV_SUCCESS; }
     // iterator
-    kv_result kv_open_iterator(const kv_iterator_option opt, const kv_group_condition *cond, bool_t keylen_fixed, kv_iterator_handle *iter_hdl, void *ioctx) { return KV_SUCCESS; }
+    kv_result kv_open_iterator(uint8_t ks_id, const kv_iterator_option opt, const kv_group_condition *cond, bool_t keylen_fixed, kv_iterator_handle *iter_hdl, void *ioctx) { return KV_SUCCESS; }
     kv_result kv_close_iterator(kv_iterator_handle iter_hdl, void *ioctx) { return KV_SUCCESS; }
     kv_result kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key, kv_value *value, void *ioctx) { return KV_SUCCESS; }
     kv_result kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, void *ioctx) { return KV_SUCCESS; }
     kv_result kv_list_iterators(kv_iterator *iter_list, uint32_t *count, void *ioctx) { return KV_SUCCESS; }
-    kv_result kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) { return KV_SUCCESS; }
+    kv_result kv_delete_group( uint8_t ks_id, kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) { return KV_SUCCESS; }
 
     kv_result set_interrupt_handler(const kv_interrupt_handler int_hdl) { return KV_SUCCESS; }
     kv_interrupt_handler get_interrupt_handler() { return NULL; }
@@ -116,19 +115,18 @@ public:
     virtual ~kv_emulator();
 
     // basic operations
-    kv_result kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx);
-    kv_result kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx);
-    kv_result kv_exist(const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx);
-    kv_result kv_purge(kv_purge_option option, void *ioctx);
-    kv_result kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx);
-
+    kv_result kv_store(uint8_t ks_id, const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx);
+    kv_result kv_retrieve(uint8_t ks_id, const kv_key *key, uint8_t option, kv_value *value, void *ioctx);
+    kv_result kv_exist(uint8_t ks_id, const kv_key *key, uint32_t keycount, uint8_t *value, uint32_t &valuesize, void *ioctx);
+    kv_result kv_purge( uint8_t ks_id, kv_purge_option option, void *ioctx);
+    kv_result kv_delete(uint8_t ks_id, const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx);
     // iterator
-    kv_result kv_open_iterator(const kv_iterator_option opt, const kv_group_condition *cond, bool_t keylen_fixed, kv_iterator_handle *iter_hdl, void *ioctx);
+    kv_result kv_open_iterator(uint8_t ks_id, const kv_iterator_option opt, const kv_group_condition *cond, bool_t keylen_fixed, kv_iterator_handle *iter_hdl, void *ioctx);
     kv_result kv_close_iterator(kv_iterator_handle iter_hdl, void *ioctx);
     kv_result kv_iterator_next_set(kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, void *ioctx);
     kv_result kv_iterator_next(kv_iterator_handle iter_hdl, kv_key *key, kv_value *value, void *ioctx);
     kv_result kv_list_iterators(kv_iterator *iter_list, uint32_t *count, void *ioctx);
-    kv_result kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx);
+    kv_result kv_delete_group( uint8_t ks_id, kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx);
 
     uint64_t get_total_capacity();
     uint64_t get_available();
@@ -151,7 +149,7 @@ private:
 
     typedef std::map<kv_key*, std::string, CmpEmulPrefix> emulator_map_t;
     //std::map<uint32_t, std::unordered_map<kv_key*, std::string> > m_map;
-    std::map<kv_key*, std::string, CmpEmulPrefix> m_map;
+    std::map<kv_key*, std::string, CmpEmulPrefix> m_map[SAMSUNG_MAX_KEYSPACE_CNT];
     std::mutex m_map_mutex;
 
     std::map<int32_t, _kv_iterator_handle *> m_it_map;

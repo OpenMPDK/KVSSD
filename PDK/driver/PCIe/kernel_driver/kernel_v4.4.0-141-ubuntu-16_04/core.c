@@ -1064,7 +1064,7 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
 			c.kv_store.offset = cpu_to_le32(cmd.cdw5);
 			/* validate key length */
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
-                    cmd.key_length < KVCMD_MIN_KEY_SIZE) {
+                cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
 				status = -EINVAL;
 				goto exit;
@@ -1090,7 +1090,7 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
 			c.kv_retrieve.offset = cpu_to_le32(cmd.cdw5);
 			/* validate key length */
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
-                    cmd.key_length < KVCMD_MIN_KEY_SIZE) {
+                cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
 				status = -EINVAL;
 				goto exit;
@@ -1116,7 +1116,7 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
 		case nvme_cmd_kv_delete:
             option = cpu_to_le32(cmd.cdw4);
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
-                    cmd.key_length < KVCMD_MIN_KEY_SIZE) {
+                cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
 				status = -EINVAL;
 				goto exit;
@@ -1133,7 +1133,7 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
 		case nvme_cmd_kv_exist:
             option = cpu_to_le32(cmd.cdw4);
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
-                    cmd.key_length < KVCMD_MIN_KEY_SIZE) {
+                cmd.key_length < KVCMD_MIN_KEY_SIZE) {
 				cmd.result = KVS_ERR_VALUE;
 				status = -EINVAL;
 				goto exit;
@@ -1162,11 +1162,11 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
             c.kv_iter_read.iter_handle = iter_handle & 0xff;
             c.kv_iter_read.option = option & 0xff;
 			c.kv_iter_read.value_len = cpu_to_le32((cmd.data_length >> 2));
-		break;
+			break;
 		default:
-				cmd.result = KVS_ERR_IO;
-				status = -EINVAL;
-				goto exit;
+			cmd.result = KVS_ERR_IO;
+			status = -EINVAL;
+			goto exit;
 	}
 
 //    if (cmd.data_addr) {
@@ -1500,6 +1500,7 @@ static int nvme_user_cmd(struct nvme_ctrl *ctrl, struct nvme_ns *ns,
 
     if (cmd.timeout_ms)
         timeout = msecs_to_jiffies(cmd.timeout_ms);
+
 #if 1
     if (ns == NULL && cmd.opcode == nvme_admin_format_nvm)
         timeout = (120 * HZ);
@@ -2788,11 +2789,6 @@ int __init nvme_core_init(void)
 	else if (result > 0)
 		nvme_char_major = result;
 
-	nvme_class = class_create(THIS_MODULE, "nvme");
-	if (IS_ERR(nvme_class)) {
-		result = PTR_ERR(nvme_class);
-		goto unregister_chrdev;
-	}
 #if 1
 	result = aio_service_init();
 	if (result)
@@ -2802,14 +2798,22 @@ int __init nvme_core_init(void)
     if (result)
 		goto unregister_aio_service;
 #endif
+
+	nvme_class = class_create(THIS_MODULE, "nvme");
+	if (IS_ERR(nvme_class)) {
+		result = PTR_ERR(nvme_class);
+		goto unregister_aio_worker;
+	}
 	return 0;
 #if 1
- unregister_aio_service:
+unregister_aio_worker:
+	aio_worker_exit();
+unregister_aio_service:
     aio_service_exit();
 #endif
- unregister_chrdev:
+unregister_chrdev:
 	__unregister_chrdev(nvme_char_major, 0, NVME_MINORS, "nvme");
- unregister_blkdev:
+unregister_blkdev:
 	unregister_blkdev(nvme_major, "nvme");
 	return result;
 }

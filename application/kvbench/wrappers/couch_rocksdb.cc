@@ -245,6 +245,7 @@ couchstore_error_t couchstore_save_documents(Db *db, Doc* const docs[], DocInfo 
     status = db->db->Write(*db->write_options, &wb);
     if (!status.ok()) {
         printf("ERR %s\n", status.ToString().c_str());
+        return COUCHSTORE_ERROR_WRITE;
     }
     assert(status.ok());
 #endif

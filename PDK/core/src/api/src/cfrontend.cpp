@@ -86,8 +86,17 @@ kvs_result kvs_close_container (kvs_container_handle cont_hd) {
   return (kvs_result)api_private::kvs_close_container( (api_private::kvs_container_handle)cont_hd);
 }
 
+kvs_result kvs_list_containers(kvs_device_handle dev_hd, uint32_t index,
+  uint32_t buffer_size, kvs_container_name *names, uint32_t *cont_cnt) {
+  return (kvs_result)api_private::kvs_list_containers(
+    (api_private::kvs_device_handle)dev_hd, index, buffer_size,
+    (api_private::kvs_container_name*)names, cont_cnt);
+}
+
 kvs_result kvs_get_container_info (kvs_container_handle cont_hd, kvs_container *cont) {
-  return (kvs_result)api_private::kvs_get_container_info( (api_private::kvs_container_handle)cont_hd, (api_private::kvs_container*)cont);
+  return (kvs_result)api_private::kvs_get_container_info(
+    (api_private::kvs_container_handle)cont_hd,
+    (api_private::kvs_container*)cont);
 }
 
 int32_t kvs_get_ioevents(kvs_container_handle cont_hd, int maxevents) {
@@ -238,7 +247,7 @@ api_private::kvs_key* _get_private_key(kvs_key* k) {
   return key;
 }
 
-kvs_result result_mapping[api_private::KVS_ERR_CONT_OPEN + 1];  // mapping table of kvs_result
+kvs_result result_mapping[api_private::KVS_ERR_CONT_MAX + 1];  // mapping table of kvs_result
 void init_result_mapping() {
 #define RES_MAP(res1, res2) (result_mapping[api_private::res1] = res2)
   RES_MAP(KVS_SUCCESS, KVS_SUCCESS);
@@ -276,7 +285,7 @@ void init_result_mapping() {
   RES_MAP(KVS_ERR_UNCORRECTIBLE, KVS_ERR_SYS_IO);
   RES_MAP(KVS_ERR_VALUE_LENGTH_INVALID, KVS_ERR_VALUE_LENGTH_INVALID);
   RES_MAP(KVS_ERR_VALUE_LENGTH_MISALIGNED, KVS_ERR_PARAM_INVALID);
-  RES_MAP(KVS_ERR_VALUE_OFFSET_INVALID, KVS_ERR_VALUE_OFFSET_MISALIGNED);
+  RES_MAP(KVS_ERR_VALUE_OFFSET_INVALID, KVS_ERR_VALUE_OFFSET_INVALID);
   RES_MAP(KVS_ERR_VALUE_UPDATE_NOT_ALLOWED, KVS_ERR_VALUE_UPDATE_NOT_ALLOWED);
   RES_MAP(KVS_ERR_VENDOR, KVS_ERR_SYS_IO);
   RES_MAP(KVS_ERR_PERMISSION, KVS_ERR_SYS_IO);
@@ -316,7 +325,10 @@ void init_result_mapping() {
   RES_MAP(KVS_ERR_CONT_NAME, KVS_ERR_KS_NAME);
   RES_MAP(KVS_ERR_CONT_NOT_EXIST, KVS_ERR_KS_NOT_EXIST);
   RES_MAP(KVS_ERR_CONT_OPEN, KVS_ERR_KS_OPEN);
+  RES_MAP(KVS_ERR_CONT_PATH_TOO_LONG, KVS_ERR_PARAM_INVALID);
+  RES_MAP(KVS_ERR_CONT_MAX, KVS_ERR_SYS_IO);
   RES_MAP(KVS_ERR_ITERATOR_BUFFER_SIZE, KVS_ERR_BUFFER_SMALL);
+  RES_MAP(KVS_ERR_CONT_INDEX, KVS_ERR_KS_INDEX);
 }
 
 static void filter2context(kvs_key_group_filter* fltr, api_private::kvs_iterator_context* ctx) {
@@ -336,7 +348,7 @@ void init_default_option(api_private::kvs_init_options &options) {
   options.aio.queuedepth = 64;
   options.memory.use_dpdk = 0;
   const char* configfile = "../kvssd_emul.conf";
-  options.emul_config_file = malloc(PATH_MAX);
+  options.emul_config_file = (char*)malloc(PATH_MAX);
   strncpy(options.emul_config_file, configfile, strlen(configfile) + 1);
   char* core;
   core = options.udd.core_mask_str;
@@ -373,9 +385,9 @@ void init_env_from_cfgfile(api_private::kvs_init_options &options) {
   }
 #ifdef WITH_SPDK
   options.memory.use_dpdk = 1;
-  if (cfg.getkv("udd", "core_mask_str").c_str() != "")
+  if (strcmp(cfg.getkv("udd", "core_mask_str").c_str(), ""))
     strcpy(options.udd.core_mask_str, cfg.getkv("udd", "core_mask_str").c_str());
-  if (cfg.getkv("udd", "cq_thread_mask").c_str() != "")
+  if (strcmp(cfg.getkv("udd", "cq_thread_mask").c_str(), ""))
     strcpy(options.udd.cq_thread_mask, cfg.getkv("udd", "cq_thread_mask").c_str());
   int mem_size = atoi(cfg.getkv("udd", "memory_size").c_str());
   options.udd.mem_size_mb = mem_size == 0 ? options.udd.mem_size_mb : (uint32_t)mem_size;
@@ -538,24 +550,52 @@ kvs_result kvs_get_optimal_value_length(kvs_device_handle dev_hd, uint32_t *opt_
   return convert_res(ret);
 }
 
-kvs_result kvs_create_key_space(kvs_device_handle dev_hd, kvs_key_space_name *key_space_name, uint64_t size, kvs_option_key_space opt) {
-  return KVS_SUCCESS;
+kvs_result kvs_create_key_space(kvs_device_handle dev_hd,
+  kvs_key_space_name *key_space_name, uint64_t size, kvs_option_key_space opt) {
+  if(key_space_name == NULL || key_space_name->name == NULL){
+    return KVS_ERR_PARAM_INVALID;
+  }
+  if(strlen(key_space_name->name) != key_space_name->name_len){
+    return KVS_ERR_KS_NAME;
+  }
+  api_private::kvs_container_context ctx;
+  ctx.option.ordering = (api_private::kvs_key_order)opt.ordering;
+  api_private::kvs_device_handle dev_handle = (api_private::kvs_device_handle)dev_hd;
+  api_private::kvs_result ret = api_private::kvs_create_container(dev_handle,
+    key_space_name->name, size, &ctx);
+  return convert_res(ret);
 }
 
-kvs_result kvs_delete_key_space(kvs_device_handle dev_hd, kvs_key_space_name *key_space_name) {
-  return KVS_SUCCESS;
+kvs_result kvs_delete_key_space(kvs_device_handle dev_hd,
+  kvs_key_space_name *key_space_name) {
+  if(!key_space_name){
+    return KVS_ERR_PARAM_INVALID;
+  }
+  api_private::kvs_device_handle dev_handle = (api_private::kvs_device_handle)dev_hd;
+  api_private::kvs_result ret = api_private::kvs_delete_container(dev_handle,
+    key_space_name->name);
+  return convert_res(ret);
 }
 
-kvs_result kvs_list_key_spaces(kvs_device_handle dev_hd, uint32_t index, uint32_t buffer_size, kvs_key_space_name *names, uint32_t *ks_cnt) {
-  return KVS_ERR_KS_EXIST;
+kvs_result kvs_list_key_spaces(kvs_device_handle dev_hd, uint32_t index,
+  uint32_t buffer_size, kvs_key_space_name *names, uint32_t *ks_cnt) {
+  api_private::kvs_device_handle dev_handle = (api_private::kvs_device_handle)dev_hd;
+  api_private::kvs_container_name* names_ptr = (api_private::kvs_container_name*)names;
+  api_private::kvs_result ret = api_private::kvs_list_containers(dev_handle,
+    index, buffer_size, names_ptr, ks_cnt);
+  return convert_res(ret);
 }
 
 kvs_result kvs_open_key_space(kvs_device_handle dev_hd, char *name, kvs_key_space_handle *ks_hd) {
+  if(!ks_hd){
+    return KVS_ERR_PARAM_INVALID;
+  }
   api_private::kvs_container_handle cont_handle;
-
   api_private::kvs_device_handle dev_handle = (api_private::kvs_device_handle)dev_hd;
   api_private::kvs_result ret = api_private::kvs_open_container(dev_handle, name, &cont_handle);
-  *ks_hd = (kvs_key_space_handle)cont_handle;
+  if (ret == KVS_SUCCESS) {
+    *ks_hd = (kvs_key_space_handle)cont_handle;
+  }
   return convert_res(ret);
 }
 
@@ -565,21 +605,18 @@ kvs_result kvs_close_key_space(kvs_key_space_handle ks_hd) {
 }
 
 kvs_result kvs_get_key_space_info(kvs_key_space_handle ks_hd, kvs_key_space *ks) {
-  return KVS_ERR_UNSUPPORTED;
-  api_private::kvs_container cont;
-  api_private::kvs_container_handle cont_handle = (api_private::kvs_container_handle)ks_hd;
-
   if (ks == NULL)
     return KVS_ERR_PARAM_INVALID;
 
+  api_private::kvs_container cont;
+  cont.name = (api_private::kvs_container_name*)ks->name;
+  api_private::kvs_container_handle cont_handle = (api_private::kvs_container_handle)ks_hd;
   api_private::kvs_result ret = api_private::kvs_get_container_info(cont_handle, &cont);
   ks->capacity = cont.capacity;
   ks->count = cont.count;
   ks->free_size = cont.free_size;
   ks->opened = cont.opened;
-  // ks->name = (kvs_key_space_name*)malloc(sizeof(kvs_key_space_name));
-  ks->name->name_len = cont.name->name_len;
-  ks->name->name = cont.name->name;
+
   return convert_res(ret);
 }
 
@@ -623,7 +660,9 @@ kvs_result kvs_retrieve_kvp(kvs_key_space_handle ks_hd, kvs_key *key, kvs_option
 }
 
 static kvs_context op2context(uint8_t op) {
-  static kvs_context op_code[KVS_CMD_STORE + 1] = {0, KVS_CMD_STORE, KVS_CMD_RETRIEVE, KVS_CMD_DELETE, KVS_CMD_EXIST, KVS_CMD_ITER_CREATE, KVS_CMD_ITER_DELETE, KVS_CMD_ITER_NEXT};
+  static kvs_context op_code[KVS_CMD_STORE + 1] = {(kvs_context)0, KVS_CMD_STORE,
+    KVS_CMD_RETRIEVE, KVS_CMD_DELETE, KVS_CMD_EXIST, KVS_CMD_ITER_CREATE,
+    KVS_CMD_ITER_DELETE, KVS_CMD_ITER_NEXT};
   return op_code[op];
 }
 
@@ -631,8 +670,8 @@ void private_callback_func(api_private::kvs_callback_context* ioctx) {
   kvs_postprocess_context postctx;
 
   postctx.context = op2context(ioctx->opcode);
-  postctx.iter_hd = (kvs_iterator_handle*)ioctx->iter_hd;
-  postctx.ks_hd = (kvs_key_space_handle*)ioctx->cont_hd;
+  postctx.iter_hd = (kvs_iterator_handle*)(&ioctx->iter_hd);
+  postctx.ks_hd = (kvs_key_space_handle*)(&ioctx->cont_hd);
   postctx.value = (kvs_value*)ioctx->value;
   // key is in private1
   postprocess_data* pd = (postprocess_data*)ioctx->private1;
@@ -766,6 +805,12 @@ kvs_result kvs_create_iterator(kvs_key_space_handle ks_hd, kvs_option_iterator *
 
   ctx.option.iter_type = (api_private::kvs_iterator_type)iter_op->iter_type;
   filter2context(iter_fltr, &ctx);
+  /* the Samsung iterator needs to convert the little endian to the big end in the adi layer,
+   and the snia does not need to be converted When the cpu is a little endian.  
+   In order to ensure that the result of snia iterator read is correct, 
+   the snia iterator is reversed in the API layer.*/
+  ctx.bitmask = htobe32(ctx.bitmask);
+  ctx.bit_pattern = htobe32(ctx.bit_pattern);
 
   return convert_res(api_private::kvs_open_iterator(cont_hd, &ctx, (api_private::kvs_iterator_handle*)iter_hd));
 }
@@ -807,9 +852,12 @@ kvs_result kvs_iterate_next_async(kvs_key_space_handle ks_hd, kvs_iterator_handl
   api_private::kvs_iterator_handle it_hd = (api_private::kvs_iterator_handle)iter_hd;
   api_private::kvs_iterator_context ctx;
   iterator_data *iter_data = (iterator_data*)malloc(sizeof(iterator_data));
-
-  if (iter_list == NULL || post_fn == NULL)
+  if(iter_data == NULL){
+    return KVS_ERR_SYS_IO;
+  }
+  if (iter_list == NULL || post_fn == NULL){
     return KVS_ERR_PARAM_INVALID;
+  }
 
   iter_data->iter_list = iter_list;
   iter_data->pri_list.it_list = iter_list->it_list;
@@ -861,6 +909,9 @@ kvs_result kvs_exist_kv_pairs_async(kvs_key_space_handle ks_hd, uint32_t key_cnt
   list->num_keys = key_cnt;
 
   exist_data* ed = (exist_data*)malloc(sizeof(exist_data));
+  if(ed == NULL){
+    return KVS_ERR_SYS_IO;
+  }
   ed->list = list;
   ed->key = key_list;
   ctx.private1 = (void*)(new postprocess_data(post_fn, keys));

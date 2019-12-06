@@ -91,7 +91,7 @@ enum kvs_op {
   IOCB_ASYNC_CHECK_KEY_EXIST_CMD=4,
   IOCB_ASYNC_ITER_OPEN_CMD=5,
   IOCB_ASYNC_ITER_CLOSE_CMD=6,
-  IOCB_ASYNC_ITER_NEXT_CMD=7
+  IOCB_ASYNC_ITER_NEXT_CMD=7,
 };
 
 /**
@@ -250,7 +250,7 @@ typedef struct {
 
 typedef struct {
   uint8_t  opcode;                /*!< operation opcode */
-  kvs_container_handle *cont_hd;  /*!< container handle */
+  kvs_container_handle cont_hd;  /*!< container handle */
   kvs_key *key;                   /*!< key data structure */
   kvs_value *value;               /*!< value data structure */
   uint32_t key_cnt;               /*!< kvs_exist_tuple_async */
@@ -259,9 +259,8 @@ typedef struct {
   void *private1;                 /*!< a pointer passed from a user */
   void *private2;                 /*!< a pointer passed from a user */
   kvs_result result;              /*!< IO result */
-  kvs_iterator_handle *iter_hd;   /*!< iterator handle */
+  kvs_iterator_handle iter_hd;   /*!< iterator handle */
 } kvs_callback_context;
-
 
   /** A function prototype for I/O callback function
    *
@@ -300,7 +299,7 @@ typedef struct {
     uint32_t mem_size_mb;
     int syncio;
   } udd;
-    const char *emul_config_file;
+    char *emul_config_file;
   } kvs_init_options;
   
   /** Device information
@@ -317,5 +316,5 @@ typedef struct {
   int  deviceid;                    /*!< device ID */
   char ven_dev_id[128];             /*!< vendor + device ID */
 } kv_device_info;
-}
+}// namespace api_private
 #endif

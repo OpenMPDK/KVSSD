@@ -133,24 +133,28 @@ kv_result _kv_bypass_namespace(const kv_device_handle dev_hdl, const kv_namespac
 }
 
 // IO APIs
-kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_purge_option option, kv_postprocess_function *post_fn) {
+kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, kv_purge_option option, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
-    return (dev->kv_purge(que_hdl, ns_hdl, option, post_fn));
+    return (dev->kv_purge(que_hdl, ns_hdl, ks_id, option, post_fn));
 }
 
-kv_result kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_postprocess_function *post_fn) {
+kv_result kv_open_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_iterator_option it_op, const kv_group_condition *it_cond, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL || it_cond == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
+    // Change to big end When current cpu is little end
+    kv_group_condition it_cond_new;
+    it_cond_new.bitmask = htobe32(it_cond->bitmask); 
+    it_cond_new.bit_pattern = htobe32(it_cond->bit_pattern);
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
-    return (dev->kv_open_iterator(que_hdl, ns_hdl, it_op, it_cond, post_fn));
+    return (dev->kv_open_iterator(que_hdl, ns_hdl, ks_id, it_op, &it_cond_new, post_fn));
 }
 
 kv_result kv_close_iterator(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_postprocess_function *post_fn) {
@@ -182,57 +186,57 @@ kv_result kv_list_iterators(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
     return (dev->kv_list_iterators(que_hdl, ns_hdl, post_fn, kv_iters, iter_cnt));
 }
 
-kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_delete_option option, kv_postprocess_function *post_fn) {
+kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, kv_delete_option option, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
-    return (dev->kv_delete(que_hdl, ns_hdl, key, option, post_fn));
+    return (dev->kv_delete(que_hdl, ns_hdl, ks_id, key, option, post_fn));
 }
 
-kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_group_condition *grp_cond, kv_postprocess_function *post_fn) {
+kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, kv_group_condition *grp_cond, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL || grp_cond == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
-    return (dev->kv_delete_group(que_hdl, ns_hdl, grp_cond, post_fn));
+    return (dev->kv_delete_group(que_hdl, ns_hdl, ks_id, grp_cond, post_fn));
 
 }
 
-kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, uint32_t key_cnt, uint32_t buffer_size, uint8_t *buffer, kv_postprocess_function *post_fn) {
+kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, uint32_t key_cnt, uint32_t buffer_size, uint8_t *buffer, kv_postprocess_function *post_fn) {
 
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL || buffer == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
-    return (dev->kv_exist(que_hdl, ns_hdl, key, key_cnt, post_fn, buffer_size, buffer));
+    return (dev->kv_exist(que_hdl, ns_hdl, ks_id, key, key_cnt, post_fn, buffer_size, buffer));
 }
 
-kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_retrieve_option option, kv_value *value, const kv_postprocess_function *post_fn) {
+kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, uint8_t ks_id, const kv_key *key, kv_retrieve_option option, kv_value *value, const kv_postprocess_function *post_fn) {
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL || value == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
-    return (dev->kv_retrieve(que_hdl, ns_hdl, key, option, post_fn, value));
+    return (dev->kv_retrieve(que_hdl, ns_hdl, ks_id, key, option, post_fn, value));
 
 }
 
-kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, const kv_value *value, kv_store_option option, const kv_postprocess_function *post_fn) {
-
+kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  uint8_t ks_id, const kv_key *key, const kv_value *value, kv_store_option option,
+  const kv_postprocess_function *post_fn) {
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL || value == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
 
     kv_device_internal *dev = (kv_device_internal *) que_hdl->dev;
-    return (dev->kv_store(que_hdl, ns_hdl, key, value, option, post_fn));
+    return (dev->kv_store(que_hdl, ns_hdl, ks_id, key, value, option, post_fn));
 }
-
 
 kv_result kv_poll_completion(kv_queue_handle que_hdl, uint32_t timeout_usec, uint32_t *num_events) {
     if (que_hdl == NULL || num_events == NULL) {

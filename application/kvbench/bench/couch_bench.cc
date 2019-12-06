@@ -11,6 +11,10 @@
 #include <malloc.h>
 #endif
 #include <signal.h>
+#include <limits.h>
+#include <string>
+#include <regex>
+
 #include <dirent.h>
 
 #include "libcouchstore/couch_db.h"
@@ -43,6 +47,15 @@
 #include "thpool.h"
 #endif
 
+bool is_valide_path_name(char* str){
+  if(strnlen(str, PATH_MAX+1)>PATH_MAX){
+    return false;
+  }
+  std::ostringstream pattern;
+  pattern << "^(/[a-zA-Z0-9_.]{1," << NAME_MAX << "})+/?$";
+  return std::regex_match(std::string(str),
+                          std::regex(pattern.str()));
+}
 
 couchstore_error_t couchstore_close_db(Db *db);
 
@@ -189,6 +202,7 @@ struct bench_info {
 
     // synchronous write
     uint8_t sync_write;
+    uint8_t key_existing;
 };
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
@@ -196,6 +210,7 @@ struct bench_info {
 static uint32_t rnd_seed;
 static int print_term_ms = 100;
 static int filesize_chk_term = 4;
+static std::atomic<std::uint64_t> max_key_id;
 
 FILE *log_fp = NULL;
 FILE *insert_latency_fp = NULL;
@@ -303,6 +318,10 @@ uint64_t print_proc_io_stat(char *buf, int print)
     unsigned long temp;
     uint64_t val=0;
     FILE *fp = fopen(buf, "r");
+    if(fp == NULL) {
+      fprintf(stderr, "open %s failed\n", buf);
+      return 0;
+    }
     while(!feof(fp)) {
         ret = fscanf(fp, "%s %lu", str, &temp);
         if (!strcmp(str, "write_bytes:")) {
@@ -332,18 +351,18 @@ int get_value_size_by_ratio(struct bench_info *binfo, size_t idx) {
 
   int value_size = 0;
   if(idx % 100 < binfo->value_size_ratio[0]){
-    value_size = binfo->value_size[0] == 0 ? 4096 : binfo->value_size[0];
+    value_size = binfo->value_size[0];
   } else if (idx % 100 <  binfo->value_size_ratio[0] + binfo->value_size_ratio[1] ) {
-    value_size  = binfo->value_size[1] == 0 ? 4096 : binfo->value_size[1];
+    value_size  = binfo->value_size[1];
   } else if (idx % 100 <  binfo->value_size_ratio[0] + binfo->value_size_ratio[1] + binfo->value_size_ratio[2]){
-    value_size  = binfo->value_size[2] == 0 ? 4096 : binfo->value_size[2];
+    value_size  = binfo->value_size[2];
   } else if (idx % 100 <  binfo->value_size_ratio[0] + binfo->value_size_ratio[1] + binfo->value_size_ratio[2] + binfo->value_size_ratio[3]) {
-    value_size  = binfo->value_size[3] == 0 ? 4096 : binfo->value_size[3];
+    value_size  = binfo->value_size[3];
   } else {
-    value_size  = binfo->value_size[4] == 0 ? 4096 : binfo->value_size[4];
+    value_size  = binfo->value_size[4];
   }
   
-  return value_size == 0 ? 4096 : value_size; 
+  return value_size; 
 }
 
 void _create_doc(struct bench_info *binfo,
@@ -376,7 +395,10 @@ void _create_doc(struct bench_info *binfo,
       //doc->id.buf = (char *)malloc(16);
     }
 
-    if(doc->id.buf == NULL){ fprintf(stderr, "No pool elem available for key - %d\n", kp->num_freeblocks); exit(1);}
+    if(doc->id.buf == NULL){
+      fprintf(stderr, "No pool elem available for key - %d\n", kp->num_freeblocks);
+      exit(1);
+    }
     
     if (binfo->keyfile) {
       doc->id.size = keyloader_get_key(&binfo->kl, idx, doc->id.buf);
@@ -403,7 +425,11 @@ void _create_doc(struct bench_info *binfo,
 	
 	doc->data.buf = (char *)Allocate(vp);
 	//doc->data.buf = (char *)malloc(4096);
-	if(doc->data.buf == NULL){ fprintf(stderr, "No pool elem available for value - %d\n", vp->num_freeblocks); exit(1);}
+  if(doc->data.buf == NULL) { 
+    fprintf(stderr,
+            "No pool elem available for value - %d\n", vp->num_freeblocks);
+    exit(1);
+  }
 	//doc->data.buf = (char*)malloc(4096);
 	//memcpy(doc->data.buf + doc->data.size - 5, (void*)"<end>", 5);
       }
@@ -804,8 +830,12 @@ void * pop_print_time(void *voidargs)
 	  elapsed_ms = (uint64_t)tv.tv_sec * 1000 +
 	    (uint64_t)tv.tv_usec / 1000;
 	  remain_sec = (binfo->ndocs * binfo->nfiles - counter);
-	  remain_sec = remain_sec / MAX(1, (counter / elapsed_ms));
-	  remain_sec = remain_sec / 1000;
+    if(elapsed_ms != 0){
+      remain_sec = remain_sec / MAX(1, (counter / elapsed_ms));
+      remain_sec = remain_sec / 1000;
+    }else{
+      remain_sec = 0;
+    }
 	}
 
 	iops = (double)counter / (tv.tv_sec + tv.tv_usec/1000000.0);
@@ -1018,7 +1048,7 @@ void population(Db **db, struct bench_info *binfo)
     //thpool_wait(thpool);
     thpool_destroy(thpool);
 #endif
-    
+    max_key_id = binfo->ndocs;
     fprintf(stdout, "population done \n");
 
 }
@@ -1128,6 +1158,10 @@ void _bench_result_print(struct bench_result *result)
          sizeof(struct bench_result_hit), _bench_result_cmp);
 
     fp = fopen("result.txt", "w");
+    if(fp == NULL) {
+      fprintf(stderr, "open %s failed\n", "result.txt");
+      return;
+    }
     fprintf(fp, "== files ==\n");
     cum = 0;
     for (i=0;i<result->nfiles;++i){
@@ -1464,7 +1498,21 @@ void * bench_thread(void *voidargs)
   int keylen = (binfo->keylen.type == RND_FIXED)? binfo->keylen.a : 0;
   long int total_entries = 0;
   int iterator_send = 0;
-  
+  uint64_t max_key_index = 0;
+  int singledb_thread_num = binfo->nreaders + binfo->niterators + binfo->nwriters + binfo->ndeleters;
+  uint64_t key_offset = 0;
+
+  if (binfo->key_existing) {
+    if (args->mode == 0) {
+      max_key_index = binfo->ndocs;
+      if ((max_key_index % singledb_thread_num) > (args->id % singledb_thread_num)) {
+        max_key_index = max_key_index / singledb_thread_num + 1;
+      } else {
+        max_key_index = max_key_index / singledb_thread_num;
+      }
+      key_offset = args->id % singledb_thread_num;
+    }
+  }
 #if defined(__BLOBFS_ROCKS_BENCH)
   // Set up SPDK-specific stuff for this thread
   rocksdb::SpdkInitializeThread();
@@ -1479,7 +1527,6 @@ void * bench_thread(void *voidargs)
 #if defined __KV_BENCH 
   db_idx = args->id % binfo->nfiles; // for kvssd, # files = # devices, single thread pre device
 #elif defined __BLOBFS_ROCKS_BENCH
-  int singledb_thread_num = binfo->nreaders + binfo->niterators + binfo->nwriters + binfo->ndeleters;
   db_idx = args->id / singledb_thread_num;
 #else
   db_idx = 0; 
@@ -1517,7 +1564,7 @@ void * bench_thread(void *voidargs)
   //int use_udd;
   if(binfo->with_iterator > 0) {
     if(binfo->kv_write_mode == 1) {
-      fprintf(stdout, "WARN: Only support iterator under ASYNC mode\n");
+      fprintf(stdout, "\nWARN: Only support iterator under ASYNC mode\n");
       exit(0);
     }
     couchstore_iterator_open(db[db_idx], binfo->iterator_mode);
@@ -1608,6 +1655,8 @@ void * bench_thread(void *voidargs)
       } else {
 	if(cur_op_idx % 100 < binfo->ratio[1] + binfo->ratio[2]){
 	  write_mode = 1; // write: update/insert
+      if (binfo->key_existing && cur_op_idx % 100 < binfo->ratio[1])
+        write_mode = 5; // update
 	} else if(cur_op_idx % 100 < binfo->ratio[0] + binfo->ratio[1] + binfo->ratio[2]){
 	  write_mode = 2; // read
 	} else {
@@ -1616,7 +1665,22 @@ void * bench_thread(void *voidargs)
 	cur_op_idx++;
       }
       
-      if(write_mode == 1) { // write
+      if(write_mode == 1 || write_mode == 5) { // write
+        if (binfo->key_existing) {
+          if (args->mode == 0) {
+            if (write_mode == 5 && max_key_index != 0) { //update
+              r = r % max_key_index;
+            } else { //insert
+              r = max_key_index++;
+            }
+            r = r * singledb_thread_num + key_offset;
+            write_mode = 1;
+          } else {
+             if (r > max_key_id) {
+               r = max_key_id++;
+             }
+          }
+        }
 	_create_doc(binfo, r, &rq_doc, NULL, binfo->seq_fill,
 		    args->socketid, args->keypool, args->valuepool);
 
@@ -1665,10 +1729,26 @@ void * bench_thread(void *voidargs)
       } else if (write_mode == 2) { // read
 
 #if defined __ROCKS_BENCH || defined(__KVDB_BENCH)
-	if(rq_id.buf == NULL) rq_id.buf = (char *)Allocate(args->keypool);
+	if(rq_id.buf == NULL) {
+    rq_id.buf = (char *)Allocate(args->keypool);
+    if(rq_id.buf == NULL){
+       fprintf(stderr,
+       "Allocate buffer from  keypool failed. "
+       "Please set 'key_pool_size' bigger\n");
+       exit(1);
+    }
+  }
 	if(binfo->keyfile) {
 	  rq_id.size = keyloader_get_key(&binfo->kl, r, rq_doc->id.buf);
 	}else{
+      if (binfo->key_existing) {
+        if (args->mode == 0 && max_key_index != 0) {
+          r = r % max_key_index;
+          r = r * singledb_thread_num + key_offset;
+        } else if (args->mode > 0 && max_key_id != 0) {
+          r = r % max_key_id;
+        }
+      }
 	  if (binfo->seq_fill){
 	    rq_id.size = binfo->keylen.a;
 	    keygen_seqfill(r, rq_id.buf, binfo->keylen.a);
@@ -1685,6 +1765,14 @@ void * bench_thread(void *voidargs)
 	if (binfo->keyfile) {
 	  rq_doc->id.size = keyloader_get_key(&binfo->kl, r, rq_doc->id.buf);
 	} else {
+      if (binfo->key_existing) {
+        if (args->mode == 0 && max_key_index != 0) {
+          r = r % max_key_index;
+          r = r * singledb_thread_num + key_offset;
+        } else if (args->mode > 0 && max_key_id != 0) {
+          r = r % max_key_id;
+        }
+      }
 	  if (binfo->seq_fill){
 	    rq_doc->id.size = binfo->keylen.a;
 	    keygen_seqfill(r, rq_doc->id.buf, binfo->keylen.a);
@@ -1760,12 +1848,23 @@ void * bench_thread(void *voidargs)
 	}
 	
       } else { // delete
-	if(rq_doc == NULL) rq_doc = (Doc *)malloc(sizeof(Doc));
+	if(rq_doc == NULL) {
+	  rq_doc = (Doc *)malloc(sizeof(Doc));
+	  memset(rq_doc, 0, sizeof(Doc));
+	}
 	if(rq_doc->id.buf == NULL)
 	  rq_doc->id.buf = (char *)Allocate(args->keypool);
 	if (binfo->keyfile) {
 	  rq_doc->id.size = keyloader_get_key(&binfo->kl, r, rq_doc->id.buf);
 	} else {
+          if (binfo->key_existing) {
+            if (args->mode == 0 && max_key_index != 0) {
+              r = --max_key_index;
+              r = r * singledb_thread_num + key_offset;
+            } else if (args->mode > 0 && max_key_id != 0) {
+              r = --max_key_id;
+            }
+          }
 	  if (binfo->seq_fill){
 	    rq_doc->id.size = binfo->keylen.a;
 	    keygen_seqfill(r, rq_doc->id.buf, binfo->keylen.a);
@@ -1874,16 +1973,16 @@ void * bench_thread(void *voidargs)
 	if(binfo->with_iterator == 1 && iterator_send == 0 && args->cur_qdepth < binfo->queue_depth - 1) {
 	  // Do one iterator operation first if (curr qdepth + 1 < max qdepth) 
 	  if (!couchstore_iterator_check_status(db[db_idx])) {
-	    if(couchstore_iterator_has_finish) {
+	    if(couchstore_iterator_has_finish(db[db_idx])) {
 	      couchstore_iterator_next(db[db_idx]);
 	      args->cur_qdepth++;
 	      iterator_send = 1;
 	    }
-	  } else {
+	  }  /*else {
 	    fprintf(stdout, "Iteration Done \n");
 	    got_signal = 1;
 	    break;
-	  }
+	  }*/
 	}
 #endif
 	
@@ -1892,6 +1991,8 @@ void * bench_thread(void *voidargs)
 	} else {
 	  if(cur_op_idx % 100 < binfo->ratio[1] + binfo->ratio[2]){
 	    write_mode = 1; // write: update/insert
+	    if (binfo->key_existing && cur_op_idx % 100 < binfo->ratio[1])
+          write_mode = 5;
 	  } else if(cur_op_idx % 100 < binfo->ratio[0] + binfo->ratio[1] + binfo->ratio[2]){
 	    write_mode = 2; // read
 	  } else {
@@ -1900,7 +2001,21 @@ void * bench_thread(void *voidargs)
 	  cur_op_idx++;
 	}
 	
-	if(write_mode == 1) { // write
+	if(write_mode == 1 || write_mode == 5) { // write
+      if (binfo->key_existing) {
+        if (args->mode == 0) {
+          if (write_mode == 5 && max_key_index != 0) {
+            r = r % max_key_index;
+          } else {
+            r = max_key_index++;
+          }
+          r = r * singledb_thread_num + key_offset;
+          write_mode = 1;
+        } else if (args->mode > 0) {
+          if (r > max_key_id)
+            r = max_key_id++;
+        }
+      }
 	  if(rq_doc == NULL) rq_doc = (Doc *)malloc(sizeof(Doc));
 	  _create_doc(binfo, r, &rq_doc, NULL, binfo->seq_fill,
 		      args->socketid, args->keypool, args->valuepool);
@@ -1928,6 +2043,14 @@ void * bench_thread(void *voidargs)
 	  if (binfo->keyfile) {
 	    rq_doc->id.size = keyloader_get_key(&binfo->kl, r, rq_doc->id.buf);
 	  } else {
+        if (binfo->key_existing) {
+          if (args->mode == 0 && max_key_index != 0) {
+            r = r % max_key_index;
+            r = r * singledb_thread_num + key_offset;
+          } else if (args->mode > 0 && max_key_id != 0) {
+            r = r % max_key_id;
+          }
+        }
 	    if (binfo->seq_fill){
 	      rq_doc->id.size = binfo->keylen.a;
 	      keygen_seqfill(r, rq_doc->id.buf, binfo->keylen.a);
@@ -1969,6 +2092,14 @@ void * bench_thread(void *voidargs)
 	  if (binfo->keyfile) {
 	    rq_doc->id.size = keyloader_get_key(&binfo->kl, r, rq_doc->id.buf);
 	  } else {
+        if (binfo->key_existing) {
+          if (args->mode == 0 && max_key_index != 0) {
+            r = --max_key_index;
+            r = r * singledb_thread_num + key_offset;
+          } else if (args->mode > 0 && max_key_id != 0) {
+            r = --max_key_id;
+          }
+        }
 	    if (binfo->seq_fill){
 	      rq_doc->id.size = binfo->keylen.a;
 	      keygen_seqfill(r, rq_doc->id.buf, binfo->keylen.a);
@@ -2024,11 +2155,11 @@ void * bench_thread(void *voidargs)
 	  total_entries += couchstore_iterator_get_numentries(db[db_idx]);
 	  if(couchstore_iterator_has_finish(db[db_idx]))
 	    iterator_send = 0;
-
+	  /*
 	  if(couchstore_iterator_check_status(db[db_idx])){
 	    got_signal = 1;
 	    break;
-	  }
+	  }*/
 	}
 #endif
       }
@@ -2116,6 +2247,10 @@ void _wait_leveldb_compaction(struct bench_info *binfo, Db **db)
 
     while(1) {
         fp = fopen(buf, "r");
+        if(fp == NULL) {
+          fprintf(stderr, "open %s failed\n", buf);
+          return;
+        }
         while(!feof(fp)) {
             ret = fscanf(fp, "%s %lu", str, &temp);
             if (!strcmp(str, "write_bytes:")) {
@@ -2176,6 +2311,7 @@ couchstore_error_t couchstore_kvs_set_aio_option(int queue_depth, char *core_mas
 couchstore_error_t couchstore_kvs_set_aiothreads(int aio_threads);
 couchstore_error_t couchstore_kvs_set_coremask(char *core_ids);
 couchstore_error_t couchstore_kvs_get_aiocompletion(int32_t *count);
+couchstore_error_t couchstore_kvs_set_max_sample(uint32_t sample_num);
 
 static int _does_file_exist(char *filename) {
     struct stat st;
@@ -2400,6 +2536,7 @@ void db_env_setup(struct bench_info *binfo){
     couchstore_kvs_set_aio_option(binfo->queue_depth, binfo->core_ids, binfo->cq_thread_ids, binfo->mem_size_mb);
     couchstore_kvs_set_aiothreads(binfo->aiothreads_per_device);
     couchstore_kvs_set_coremask(binfo->core_ids);
+    couchstore_kvs_set_max_sample(binfo->latency_max);
     //}
     couchstore_setup_device(binfo->kv_device_path, NULL, binfo->kv_emul_configfile, binfo->nfiles, binfo->kv_write_mode, 0/*binfo->is_polling*/);
 #endif
@@ -2793,11 +2930,9 @@ void do_bench(struct bench_info *binfo)
 
     b_args[i].keypool = (mempool_t *)malloc(sizeof(mempool_t));
     b_args[i].keypool->base = b_args[i].keypool->nextfreeblock = NULL;
-    pool_setup(&info_key, b_args[i].keypool, nodeid);
 
     b_args[i].valuepool = (mempool_t *)malloc(sizeof(mempool_t));
     b_args[i].valuepool->base = b_args[i].valuepool->nextfreeblock = NULL;
-    pool_setup(&info_value, b_args[i].valuepool, nodeid);
     
     //open db instances
 #if defined(__FDB_BENCH) || defined(__COUCH_BENCH) || defined(__WT_BENCH)
@@ -2859,6 +2994,9 @@ void do_bench(struct bench_info *binfo)
     //nodeid = 0;
     pthread_attr_init(&attr[i]);
     b_args[i].socketid = nodeid;
+    // initialize key/value pool when nodeid is valid value
+    pool_setup(&info_key, b_args[i].keypool, nodeid);
+    pool_setup(&info_value, b_args[i].valuepool, nodeid);
 
     int coreid[64] = { 0 };
     int core_count = 0;
@@ -3234,12 +3372,12 @@ void do_bench(struct bench_info *binfo)
 	    (double)op_count_delete / gap_double,
 	    gap_double * 1000000 / op_count_delete);
   }
-
-  lprintf("total %" _F64 " operations performed\n",
+  if (binfo->with_iterator != 2) {
+    lprintf("total %" _F64 " operations performed\n",
 	  op_count_read + op_count_write + op_count_delete);
 
-  lprintf("Throughput(Benchmark) %.2f ops/sec\n", (double)(op_count_read + op_count_write + op_count_delete) / gap_double);
-
+    lprintf("Throughput(Benchmark) %.2f ops/sec\n", (double)(op_count_read + op_count_write + op_count_delete) / gap_double);
+  }
   if(op_count_iter_key > 0) {
     lprintf("Throughput(Iterator)  %.2f keys/sec; total %ld keys\n", (double)(op_count_iter_key) / gap_double, op_count_iter_key);
   }
@@ -3929,10 +4067,20 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     binfo.kp_numunits = iniparser_getint(cfg, (char*)"system:key_pool_size", 128);
     binfo.kp_unitsize = iniparser_getint(cfg, (char*)"system:key_pool_unit", 16);
     binfo.kp_alignment = iniparser_getint(cfg, (char*)"system:key_pool_alignment", 4096);
+    if(binfo.kp_alignment <= 0) {
+      fprintf(stderr,
+      "ERROR: system:key_pool_alignment must be greater than 0\n");
+      exit(1);
+    }
+
     binfo.vp_numunits = iniparser_getint(cfg, (char*)"system:value_pool_size", 128);
     binfo.vp_unitsize = iniparser_getint(cfg, (char*)"system:value_pool_unit", 4096);
     binfo.vp_alignment = iniparser_getint(cfg, (char*)"system:value_pool_alignment", 4096);
-
+    if(binfo.vp_alignment <= 0) {
+      fprintf(stderr,
+      "ERROR: system:value_pool_alignment must be greater than 0\n");
+      exit(1);
+    }
     str = iniparser_getstring(cfg, (char*)"kvs:write_mode", (char*)"sync");
     binfo.kv_write_mode = (str[0]=='s')?(1):(0);
 
@@ -3944,15 +4092,18 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     strcpy(binfo.device_path, str);
 
     binfo.device_name = (char **)malloc(sizeof(char*) * 256);
+#ifndef __KV_BENCH
     i = 0;
     pt = strtok (str, ",");
     while(pt != NULL){// && i < binfo.nfiles) {
       binfo.device_name[i] = (char *)malloc(256);
       devname_ret = _get_filename_pos(pt);
-      strcpy(binfo.device_name[i++], devname_ret ? devname_ret : pt);
+      //strcpy(binfo.device_name[i++], devname_ret ? devname_ret : pt);
+      snprintf(binfo.device_name[i++], 256, "%s", devname_ret ? devname_ret : pt);
       pt = strtok(NULL, ",");
     }
     binfo.nfiles = i;
+#endif
 
 #if defined(__KV_BENCH) || defined (__AS_BENCH) || defined (__KVROCKS_BENCH)
     str = iniparser_getstring(cfg, (char*)"kvs:store_option", (char*)"post");
@@ -3967,7 +4118,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
 	iniparser_free(cfg);
 	exit(1);
       } else if (binfo.queue_depth > binfo.kp_numunits || binfo.queue_depth > binfo.vp_numunits) {
-	fprintf(stderr, "WARN: Please set key/value pool unit equal to or greater than the queue_depth: %d\n", binfo.queue_depth);
+	fprintf(stderr, "WARN: Please set key/value pool size equal to or greater than the queue_depth: %d\n", binfo.queue_depth);
 	iniparser_free(cfg);
 	exit(1);
       }
@@ -3984,7 +4135,18 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     binfo.mem_size_mb = iniparser_getint(cfg, (char*)"kvs:mem_size_mb", 1024);
     str = iniparser_getstring(cfg, (char*)"kvs:device_path", (char*)"");
     strcpy(binfo.kv_device_path, str);
-    
+#ifdef __KV_BENCH
+    i = 0;
+    pt = strtok (str, ",");
+    while(pt != NULL){
+      binfo.device_name[i] = (char *)malloc(256);
+      devname_ret = _get_filename_pos(pt);
+      //strcpy(binfo.device_name[i++], devname_ret ? devname_ret : pt);
+      snprintf(binfo.device_name[i++], 256, "%s", devname_ret ? devname_ret : pt);
+      pt = strtok(NULL, ",");
+    }
+    binfo.nfiles = i;
+#endif
     str = iniparser_getstring(cfg, (char*)"kvs:emul_configfile", (char*)"/tmp/kvemul.conf");
     strcpy(binfo.kv_emul_configfile, str);
     
@@ -4119,6 +4281,29 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
 
     str = iniparser_getstring(cfg, (char*)"db_file:filename",
                                    (char*)"./dummy");
+
+#if defined(__ROCKS_BENCH)
+    if(!is_valide_path_name(str)){
+      fprintf(stderr,
+        "ERROR: filename as below is invalid.\n[db_file]\nfilename = %s\n", str);
+      exit(1);
+    }
+    if(access(str, F_OK)){
+      fprintf(stderr,
+        "ERROR: file does not exist.\n[db_file]\nfilename = %s\n", str);
+      exit(1);
+    }
+
+    struct stat st;
+    stat(str,&st);
+    if (!S_ISDIR(st.st_mode)){
+      fprintf(stderr,
+        "ERROR: filename as below must be a directory for rocksdb_bench."
+        "\n[db_file]\nfilename = %s\n", str);
+      exit(1);
+    }
+#endif
+
     char dirname[256], *dirname_ret, *filename_ret;
     dirname_ret = _get_dirname(str, dirname);
     filename_ret = _get_filename_pos(str);
@@ -4348,7 +4533,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
       exit(1);
     }
     if(binfo.vp_unitsize == 0 || binfo.kp_unitsize == 0){
-      fprintf(stderr, "WARN: Invalide memory pool size, should be greater than 0\n");
+      fprintf(stderr, "WARN: Invalid memory pool size, should be greater than 0\n");
       iniparser_free(cfg);
       exit(1);
     }
@@ -4524,6 +4709,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     str = iniparser_getstring(cfg, (char*)"operation:write_type",
                                    (char*)"sync");
     binfo.sync_write = (str[0]=='s')?(1):(0);
+    binfo.key_existing = iniparser_getboolean(cfg, (char*)"operation:key_existing", false);
 
     binfo.compact_thres =
         iniparser_getint(cfg, (char*)"compaction:threshold", 30);
@@ -4554,10 +4740,20 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     }
     binfo.latency_max =
         iniparser_getint(cfg, (char*)"latency_monitor:max_samples", 1000000);
-
+    if (!binfo.latency_max) {
+      printf("WARN: max_sample cannot be 0\n");
+      iniparser_free(cfg);
+      exit(0);
+    }
     print_term_ms =
         iniparser_getint(cfg, (char*)"latency_monitor:print_term_ms", 100);
-
+    if (!print_term_ms) {
+      printf("WARN: print_term_ms cannot be 0\n");
+      iniparser_free(cfg);
+      exit(0);
+    }
+    if (binfo.bench_secs != 0 && print_term_ms > binfo.bench_secs * 1000)
+      print_term_ms = binfo.bench_secs * 1000;
     iniparser_free(cfg);
     return binfo;
 }

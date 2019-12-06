@@ -7,6 +7,9 @@ BUILD ==========================================================================
    0.1  sudo apt-get install libsnappy-dev libev-dev libbz2-dev liblz4-dev libzstd-dev libjemalloc-dev libnuma-dev libgflags-dev libssl-dev libz-dev
    0.2 (CentOS) sudo yum install snappy-devel libev-devel bzip2-devel lz4-devel gflags-devel jemalloc-devel openssl-devel zlib-devel
 
+   You can download and install zstd library from the following link:
+      https://github.com/facebook/zstd
+
 1. RocksDB (Linux filesystem)
   1.1 Build rocksdb from source code
     Download rocksdb source code: https://github.com/facebook/rocksdb
@@ -127,6 +130,9 @@ Step 4. run benchmark
     sudo LD_LIBRARY_PATH=<YOUR_AEROSPIKE_LIB_DIR> ./as_bench -f bench_config.ini
 
     # If you see a "Double allocated SPDK thread" message when running RocksDB on SPDK, it is harmless and can be ignored
+    # If you see a "ERR IO error: While open a file for appending: XXXXXX: Too many open files" message when running RocksDB,
+      it needs to use ulimit command to set the limitation of opening files.
+                  ulimit -Sn 204800
 
 CONFIGURATION =====================================================================
 0. Two phases during each run:

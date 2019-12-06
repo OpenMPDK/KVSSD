@@ -39,6 +39,7 @@
 #include "math.h"
 #include "stdint.h"
 #include <vector>
+#include <cmath>
 
 enum op_type {
     STAT_FIRST  =0,

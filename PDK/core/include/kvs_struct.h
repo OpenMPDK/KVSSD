@@ -96,7 +96,7 @@ enum kvs_op {
   IOCB_ASYNC_CHECK_KEY_EXIST_CMD=4,
   IOCB_ASYNC_ITER_OPEN_CMD=5,
   IOCB_ASYNC_ITER_CLOSE_CMD=6,
-  IOCB_ASYNC_ITER_NEXT_CMD=7
+  IOCB_ASYNC_ITER_NEXT_CMD=7,
 };
 
 /**
@@ -248,14 +248,14 @@ typedef struct {
   void *private1;
   void *private2;
 } kvs_exist_context;
-  
+
 typedef struct {
   kvs_container_option option;
 } kvs_container_context;
 
 typedef struct {
   uint8_t  opcode;                /*!< operation opcode */
-  kvs_container_handle *cont_hd;  /*!< container handle */
+  kvs_container_handle cont_hd;  /*!< container handle */
   kvs_key *key;                   /*!< key data structure */
   kvs_value *value;               /*!< value data structure */
   uint32_t key_cnt;               /*!< kvs_exist_tuple_async */
@@ -264,7 +264,7 @@ typedef struct {
   void *private1;                 /*!< a pointer passed from a user */
   void *private2;                 /*!< a pointer passed from a user */
   kvs_result result;              /*!< IO result */
-  kvs_iterator_handle *iter_hd;   /*!< iterator handle */
+  kvs_iterator_handle iter_hd;   /*!< iterator handle */
 } kvs_callback_context;
 
 

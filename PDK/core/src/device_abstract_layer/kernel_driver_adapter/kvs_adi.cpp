@@ -115,6 +115,9 @@ kv_result kv_initialize_device(void *dev_init, kv_device_handle *dev_hdl) {
     }
     
     KADI *dev = get_kadi_from_hdl(hnd);
+    if(dev == NULL){
+        return KV_ERR_DEV_NOT_EXIST;
+    }
     int ret = dev->open(devpath);
     if (ret == 0) {
         dev->update_capacity();
@@ -138,7 +141,7 @@ kv_result kv_initialize_device(void *dev_init, kv_device_handle *dev_hdl) {
 
 kv_result kv_cleanup_device(kv_device_handle dev_hdl) {
     FTRACE
-    if (!dev_hdl) return KVS_ERR_PARAM_INVALID;
+    if (!dev_hdl) return KV_ERR_PARAM_INVALID;
     if (dev_hdl->dev) {
         g_devices.remove(dev_hdl->dev);        
         delete (KADI*)dev_hdl->dev;
@@ -200,7 +203,7 @@ kv_result kv_get_device_stat(const kv_device_handle dev_hdl, kv_device_stat *dev
 
     dev_st->namespace_count = 1;
     dev_st->queue_count = 1;
-    dev_st->utilization = (uint16_t)(utilization * 10000);
+    dev_st->utilization = (uint16_t)round(utilization * 10000);
     dev_st->waf = 0;
     dev_st->extended_info = 0;
 
@@ -357,7 +360,8 @@ kv_result _kv_bypass_namespace(const kv_device_handle dev_hdl, const kv_namespac
 }
 
 // IO APIs
-kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_purge_option option, kv_postprocess_function *post_fn) {
+kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+    uint8_t ks_id, kv_purge_option option, kv_postprocess_function *post_fn) {
     FTRACE
 
     if (que_hdl == NULL || ns_hdl == NULL) {
@@ -367,10 +371,15 @@ kv_result kv_purge(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_purge
     return KV_ERR_DD_UNSUPPORTED_CMD;
 }
 
-kv_result kv_open_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_iterator_option it_op, const kv_group_condition *it_cond, uint8_t *iter_handle) {
+kv_result kv_open_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+    uint8_t ks_id, const kv_iterator_option it_op, const kv_group_condition *it_cond,
+    uint8_t *iter_handle) {
     kv_iter_context iter_ctx;
-    iter_ctx.prefix  = it_cond->bit_pattern;
-    iter_ctx.bitmask = it_cond->bitmask;
+    /* The bitpattern of the KV API is of big-endian mode. If the CPU is of little-
+endian mode, the bit pattern and bit mask should be transformed.
+ */
+    iter_ctx.prefix  = htobe32(it_cond->bit_pattern);  
+    iter_ctx.bitmask = htobe32(it_cond->bitmask);     
     iter_ctx.buflen  = ITER_BUFSIZE;
 
     KADI *dev = (KADI *) que_hdl->dev;
@@ -390,14 +399,15 @@ kv_result kv_open_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_
       default:
         return KV_ERR_OPTION_INVALID;
     }
-    kv_result ret = dev->iter_open(&iter_ctx, dev_option);
+    kv_result ret = dev->iter_open(ks_id, &iter_ctx, dev_option);
     if (ret == KV_SUCCESS) {
         *iter_handle = (uint8_t)iter_ctx.handle;
     }
     return ret;
 }
 
-kv_result kv_close_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl) {
+kv_result kv_close_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  kv_iterator_handle iter_hdl) {
     FTRACE
     if (que_hdl == NULL || ns_hdl == NULL || iter_hdl == 0) {
         return KV_ERR_PARAM_INVALID;
@@ -410,7 +420,8 @@ kv_result kv_close_iterator_sync(kv_queue_handle que_hdl, kv_namespace_handle ns
   
     return  dev->iter_close(&iter_ctx);
 }
-kv_result kv_iterator_next(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, kv_postprocess_function *post_fn)
+kv_result kv_iterator_next(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  kv_iterator_handle iter_hdl, kv_iterator_list *iter_list, kv_postprocess_function *post_fn)
 {
     if (que_hdl == NULL || ns_hdl == NULL || iter_hdl <= 0
         || iter_hdl > SAMSUNG_MAX_ITERATORS || iter_list == NULL) {
@@ -425,7 +436,8 @@ kv_result kv_iterator_next(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, 
     return dev->iter_read_async(&iter_ctx, post_fn);
 }
 
-kv_result kv_iterator_next_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator_handle iter_hdl, kv_iterator_list *iter_list) {
+kv_result kv_iterator_next_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  kv_iterator_handle iter_hdl, kv_iterator_list *iter_list) {
     FTRACE
     if (que_hdl == NULL || ns_hdl == NULL || iter_hdl <= 0
         || iter_hdl > SAMSUNG_MAX_ITERATORS || iter_list == NULL) {
@@ -458,11 +470,13 @@ kv_result kv_iterator_next_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_
     }
     return ret;
 }
-kv_result kv_list_iterators(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator *kv_iters, uint32_t *iter_cnt, kv_postprocess_function  *post_fn) {
+kv_result kv_list_iterators(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  kv_iterator *kv_iters, uint32_t *iter_cnt, kv_postprocess_function  *post_fn) {
     return KV_ERR_DD_UNSUPPORTED_CMD;
 }
 
-kv_result kv_list_iterators_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_iterator *kv_iters, uint32_t *iter_cnt) {
+kv_result kv_list_iterators_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  kv_iterator *kv_iters, uint32_t *iter_cnt) {
     FTRACE
     if (que_hdl == NULL || ns_hdl == NULL || kv_iters == NULL || iter_cnt == NULL) {
         return KV_ERR_PARAM_INVALID;
@@ -472,7 +486,8 @@ kv_result kv_list_iterators_sync(kv_queue_handle que_hdl, kv_namespace_handle ns
     return dev->iter_list(kv_iters, iter_cnt);
 }
 
-kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_delete_option option, kv_postprocess_function *post_fn) {
+kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  uint8_t ks_id, const kv_key *key, kv_delete_option option, kv_postprocess_function *post_fn) {
     FTRACE
 
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL) {
@@ -480,10 +495,11 @@ kv_result kv_delete(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const k
     }
     KADI *dev = (KADI *) que_hdl->dev;
     
-    return dev->kv_delete((kv_key *)key, post_fn, (int)option);
+    return dev->kv_delete(ks_id, (kv_key *)key, post_fn, (int)option);
 }
 
-kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, kv_group_condition *grp_cond, kv_postprocess_function *post_fn) {
+kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  uint8_t ks_id, kv_group_condition *grp_cond, kv_postprocess_function *post_fn) {
     FTRACE
     if (que_hdl == NULL || ns_hdl == NULL || grp_cond == NULL) {
         return KV_ERR_PARAM_INVALID;
@@ -492,9 +508,10 @@ kv_result kv_delete_group(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, k
     return KV_ERR_DD_UNSUPPORTED_CMD;
 }
 
-kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *keys, uint32_t key_cnt, uint32_t buffer_size, uint8_t *buffer, kv_postprocess_function *post_fn) {
+kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  uint8_t ks_id, const kv_key *keys, uint32_t key_cnt, uint32_t buffer_size,
+  uint8_t *buffer, kv_postprocess_function *post_fn) {
     FTRACE
-
     if (que_hdl == NULL || ns_hdl == NULL || key_cnt < 1 ) {
         return KV_ERR_PARAM_INVALID;
     }
@@ -510,39 +527,43 @@ kv_result kv_exist(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv
     }
 
     KADI *dev = (KADI *) que_hdl->dev;
-    bool e =  dev->exist((kv_key *)&keys[0], post_fn);
-    if (post_fn == 0) {
+    bool e =  dev->exist(ks_id, (kv_key *)&keys[0], post_fn);
+    if (post_fn == NULL) {
         // sync 
         if (buffer && buffer_size > 0) buffer[0] = (e)? 1:0;
     } else if (e == false){
         // async submit failed 
-        return KVS_ERR_SYS_IO;
+        return KV_ERR_SYS_IO;
     }
     
     return KV_SUCCESS;
 }
 
-kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_retrieve_option option, kv_value *value, const kv_postprocess_function *post_fn) {
+kv_result kv_retrieve(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  uint8_t ks_id, const kv_key *key, kv_retrieve_option option, kv_value *value,
+  const kv_postprocess_function *post_fn) {
     FTRACE
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL || value == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
     KADI *dev = (KADI *) que_hdl->dev;
-    return dev->kv_retrieve((kv_key*)key, value, post_fn);
+    return dev->kv_retrieve(ks_id, (kv_key*)key, value, post_fn);
 }
 
-kv_result kv_retrieve_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, kv_retrieve_option option, kv_value *value) {
+kv_result kv_retrieve_sync(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  uint8_t ks_id, const kv_key *key, kv_retrieve_option option, kv_value *value) {
     FTRACE
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL || value == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
     KADI *dev = (KADI *) que_hdl->dev;
-    return dev->kv_retrieve_sync((kv_key*)key, value);
+    return dev->kv_retrieve_sync(ks_id, (kv_key*)key, value);
 }
 
-kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv_key *key, const kv_value *value, kv_store_option option, const kv_postprocess_function *post_fn) {
+kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl,
+  uint8_t ks_id, const kv_key *key, const kv_value *value, kv_store_option option,
+  const kv_postprocess_function *post_fn) {
     FTRACE
-
     if (que_hdl == NULL || ns_hdl == NULL || key == NULL || value == NULL) {
         return KV_ERR_PARAM_INVALID;
     }
@@ -564,9 +585,8 @@ kv_result kv_store(kv_queue_handle que_hdl, kv_namespace_handle ns_hdl, const kv
       default:
         return KV_ERR_OPTION_INVALID;
     }
-    return dev->kv_store((kv_key*)key, (kv_value*)value, dev_option, post_fn);
+    return dev->kv_store(ks_id, (kv_key*)key, (kv_value*)value, dev_option, post_fn);
 }
-
 
 kv_result kv_poll_completion(kv_queue_handle que_hdl, uint32_t timeout_usec, uint32_t *num_events) {
     FTRACE

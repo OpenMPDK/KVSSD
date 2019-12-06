@@ -68,7 +68,8 @@ void usage(char *program)
   printf("-d      device_path  :  kvssd device path. e.g. emul: /dev/kvemul; kdd: /dev/nvme0n1; udd: 0000:06:00.0\n");
   printf("-n      num_ios      :  total number of ios (ignore this for iterator)\n");
   printf("-q      queue_depth  :  queue depth (ignore this for iterator)\n");
-  printf("-o      op_type      :  1: write; 2: read; 3: delete; 4: iterator; 5: check key exist\n");
+  printf("-o      op_type      :  1: write; 2: read; 3: delete; 4: iterator;"
+                                  "5: check key exist;\n");
   printf("-k      klen         :  key length (ignore this for iterator)\n");
   printf("-v      vlen         :  value length (ignore this for iterator)\n");
   printf("==============\n");
@@ -125,11 +126,11 @@ bool _malloc_str_pool(uint32_t pool_size, std::queue<char *> *pool,
   pthread_mutex_t *pool_lock, uint32_t str_len){
   for (uint32_t i = 0; i < pool_size; i++) {
     char *keymem = (char*)kvs_malloc(str_len, 4096);
-    memset(keymem, 0, str_len);
     if(!keymem) {
       _free_str_pool(pool, pool_lock);
       return false;
     }
+    memset(keymem, 0, str_len);  
     pool->push(keymem);
   }
   return true;
@@ -255,7 +256,7 @@ void _iterator_complete_handle(kvs_callback_context* ioctx) {
     fprintf(stderr, "ERROR io_complete: iterator result=0x%x, err= %s\n",
        ioctx->result, kvs_errstr(ioctx->result));
     return;
-  }
+  } 
   struct iterator_info *iter_info;
   iter_info = (struct iterator_info *)ioctx->private1;
 #if DEBUG_ON
@@ -360,7 +361,7 @@ int perform_iterator(kvs_container_handle cont_hd,
   char prefix_str[5] = "0000";
   unsigned int PREFIX_KV = 0;
   for (int i = 0; i < 4; i++){
-    PREFIX_KV |= (prefix_str[i] << i*8);
+    PREFIX_KV |= (prefix_str[i] << (3-i)*8);
   }
 
   iter_ctx_open.bit_pattern = PREFIX_KV;
@@ -493,7 +494,7 @@ int perform_read(kvs_container_handle cont_hd, int count, int maxdepth, kvs_key_
           ret = FAILED;
           goto exit;
         }
-        sprintf(key, "%0*ld", klen - 1, seq++);
+        snprintf(key, klen, "%0*ld", klen - 1, seq++);
         memset(value, 0, vlen);
 
         kvs_retrieve_option option;
@@ -567,8 +568,8 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, kvs
         ret = FAILED;
         goto exit;
       }
-      sprintf(key, "%0*ld", klen - 1, seq++);
-      sprintf(value, "value%ld", seq);
+      snprintf(key,  klen, "%0*ld", klen - 1, seq++);
+      snprintf(value, vlen, "value%ld", seq);
 
       kvs_store_option option;
       memset(&option, 0, sizeof(kvs_store_option));
@@ -599,7 +600,7 @@ int perform_insertion(kvs_container_handle cont_hd, int count, int maxdepth, kvs
     }
   }
 
-exit:
+exit: 
   // wait until commands that has succussfully submitted finish
   while(completed < num_submitted) {
     usleep(1);
@@ -639,7 +640,7 @@ int perform_delete(kvs_container_handle cont_hd, int count, int maxdepth, kvs_ke
         ret = FAILED;
         goto exit;
       }
-      sprintf(key, "%0*ld", klen - 1, seq++);
+      snprintf(key, klen, "%0*ld", klen - 1, seq++);
       kvs_key *kvskey = _allocate_kvskey(key, klen);
       if(!kvskey) {
         _free_kv_buff(key, NULL, &keypool, NULL, &lock);
@@ -707,7 +708,7 @@ int perform_key_exist(kvs_container_handle cont_hd, int count, int maxdepth, kvs
         ret = FAILED;
         goto exit;
       }
-      sprintf(key, "%0*ld", klen - 1, seq++);
+      snprintf(key,  klen, "%0*ld", klen - 1, seq++);
       kvs_key *kvskey = _allocate_kvskey(key, klen);
       if(!kvskey) {
         _free_kv_buff(key, NULL, &keypool, NULL, &lock);
@@ -743,6 +744,105 @@ exit:
   fprintf(stdout, "Total time %.2f sec; Throughput %.2f ops/sec\n",
     timespan_sec, (double)count /timespan_sec );
   _free_str_pool(&keypool, &lock);
+  return SUCCESS;
+}
+
+int _env_exit(kvs_device_handle dev, const char* cont_name,
+  kvs_container_handle cont_handle) {
+  int32_t dev_util = 0;
+  kvs_get_device_utilization(dev, &dev_util);
+  fprintf(stdout, "After: Total used is %d\n", dev_util);
+  kvs_close_container(cont_handle);
+  kvs_delete_container(dev, cont_name);
+  kvs_close_device(dev);
+  kvs_result ret = kvs_exit_env();
+  return ret;
+}
+
+int _env_init(kvs_init_options* options, char* dev_path, kvs_device_handle* dev,
+  const char *cont_name, kvs_container_handle* cont_handle) {
+  // initialize the environment
+  kvs_init_env(options);
+  kvs_result ret = kvs_open_device(dev_path, dev);
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "Device open failed\n");
+    return FAILED;
+  }
+
+  //container list before create "test"
+  uint32_t valid_cnt = 0;
+  const uint32_t retrieve_cnt = 2;
+  kvs_container_name names[retrieve_cnt];
+  for(uint8_t idx = 0; idx < retrieve_cnt; idx++) {
+    names[idx].name_len = MAX_CONT_PATH_LEN;
+    names[idx].name = (char*)malloc(MAX_CONT_PATH_LEN);
+  }
+  ret = kvs_list_containers(*dev, 1, retrieve_cnt*sizeof(kvs_container_name),
+    names, &valid_cnt);
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "List current containers failed. error:0x%x.\n", ret);
+    kvs_close_device(*dev);
+    return FAILED;
+  }
+  for (uint8_t idx = 0; idx < valid_cnt; idx++) {
+    kvs_delete_container(*dev, names[idx].name);
+  }
+
+  kvs_container_context ctx;
+  // Initialize key order to KVS_KEY_ORDER_NONE
+  ctx.option.ordering = KVS_KEY_ORDER_NONE;
+  ret = kvs_create_container(*dev, cont_name, 0, &ctx);
+  if (ret != KVS_SUCCESS) {
+    fprintf(stderr, "Create containers failed. error:0x%x.\n", ret);
+    kvs_close_device(*dev);
+    return FAILED;
+  }
+
+  ret = kvs_open_container(*dev, cont_name, cont_handle);
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "Open containers %s failed. error:0x%x.\n", cont_name, ret);
+    kvs_delete_container(*dev, cont_name);
+    kvs_close_device(*dev);
+    return FAILED;
+  }
+
+  char *name_buff = (char*)malloc(MAX_CONT_PATH_LEN);
+  kvs_container_name name = {MAX_CONT_PATH_LEN, name_buff};
+  kvs_container cont = {false, 0, 0, 0, 0, &name};
+  ret = kvs_get_container_info(*cont_handle, &cont);
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "Get info of containers %s failed. error:0x%x.\n", name.name, ret);
+    _env_exit(*dev, cont_name, *cont_handle);
+    return FAILED;
+  }
+
+  fprintf(stdout, "Container information get name: %s\n", cont.name->name);
+  fprintf(stdout, "open:%d, scale:%d, capacity:%ld, free_size:%ld count:%ld.\n", 
+    cont.opened, cont.scale, cont.capacity, cont.free_size, cont.count);
+  free(name_buff);
+
+  int32_t dev_util = 0;
+  int64_t dev_capa = 0;
+  kvs_get_device_utilization(*dev, &dev_util);
+
+  float waf = 0.0;
+  kvs_get_device_waf(*dev, &waf);
+  kvs_get_device_capacity(*dev, &dev_capa);
+  fprintf(stdout, "Before: Total size is %ld bytes, used is %d, waf is %.2f\n", dev_capa, dev_util, waf);
+  
+  kvs_device *dev_info = (kvs_device*)malloc(sizeof(kvs_device));
+  if(dev_info){
+    kvs_get_device_info(*dev, dev_info);
+    fprintf(stdout, "Total size: %.2f GB\nMax value size: %d\nMax key size: %d\n"
+      "Optimal value size: %d\n", (float)dev_info->capacity/1000/1000/1000,
+    dev_info->max_value_len, dev_info->max_key_len, dev_info->optimal_value_len);
+    free(dev_info);
+  }else{
+    fprintf(stderr, "dev_info malloc failed\n");
+    _env_exit(*dev, cont_name, *cont_handle);
+    return FAILED;
+  }
+
   return SUCCESS;
 }
 
@@ -823,40 +923,12 @@ int main(int argc, char *argv[]) {
     options.memory.use_dpdk = 0;
   }
 
-  // initialize the environment
-  kvs_init_env(&options);
-
+  const char *cont_name = "test";
   kvs_device_handle dev;
-  ret = kvs_open_device(dev_path, &dev);
-  if(ret != KVS_SUCCESS) {
-    fprintf(stderr, "Device open failed %s\n", kvs_errstr(ret));
-    return FAILED;
-  }
-  
-  kvs_container_context ctx;
-  kvs_create_container(dev, "test", 4, &ctx);
-  
   kvs_container_handle cont_handle;
-  kvs_open_container(dev, "test", &cont_handle);
+  if(_env_init(&options, dev_path, &dev, cont_name, &cont_handle) != SUCCESS)
+    return FAILED;
 
-  int32_t dev_util = 0;
-  int64_t dev_capa = 0;
-  kvs_device *dev_info = (kvs_device*)malloc(sizeof(kvs_device));
-
-  kvs_get_device_utilization(dev, &dev_util);
-
-  float waf = 0.0;
-
-  kvs_get_device_waf(dev, &waf);
-  kvs_get_device_capacity(dev, &dev_capa);
-  fprintf(stdout, "Before: Total size is %ld bytes, used is %d, waf is %.2f\n", dev_capa, dev_util, waf);
-
-  kvs_get_device_info(dev, dev_info);
-  fprintf(stdout, "Total size: %.2f GB\nMax value size: %d\nMax key size: %d\nOptimal value size: %d\n",
-    (float)dev_info->capacity/1000/1000/1000, dev_info->max_value_len,
-    dev_info->max_key_len, dev_info->optimal_value_len);
-  free(dev_info);
-  
   switch(op_type) {
   case WRITE_OP:
     perform_insertion(cont_handle, num_ios, qdepth, klen, vlen);
@@ -879,17 +951,12 @@ int main(int argc, char *argv[]) {
     break;
   default:
     fprintf(stderr, "Please specify a correct op_type for testing\n");
-    return FAILED;
+    ret = FAILED;
   }
 
-  kvs_get_device_utilization(dev, &dev_util);
-  fprintf(stdout, "After: Total size is %ld bytes, used is %d\n", dev_capa, dev_util);  
-  
-  kvs_close_container(cont_handle);
-  kvs_delete_container(dev, "test");
-  kvs_exit_env();
+  _env_exit(dev, cont_name, cont_handle);
 
-  return SUCCESS;
+  return ret;
 }
 
 #else
@@ -1034,20 +1101,16 @@ int perform_iterator(kvs_key_space_handle ks_hd, kvs_option_iterator iter_op={KV
   kvs_key_group_filter iter_fltr;
   kvs_iterator_handle iter_hd;
 
-  iter_fltr.bitmask[0] = 0;
-  iter_fltr.bitmask[1] = 0;
-  iter_fltr.bitmask[2] = 0xff;
-  iter_fltr.bitmask[3] = 0xff;
-  char prefix_str[5] = "0000";
-  unsigned int PREFIX_KV = 0;
-  for (int i = 0; i < 4; i++){
-    PREFIX_KV |= (prefix_str[i] << i*8);
-  }
+  iter_fltr.bitmask[0] = 0xff;
+  iter_fltr.bitmask[1] = 0xff;
+  iter_fltr.bitmask[2] = 0;
+  iter_fltr.bitmask[3] = 0;
 
-  iter_fltr.bit_pattern[0] = PREFIX_KV & 0xff;
-  iter_fltr.bit_pattern[1] = PREFIX_KV & 0xff00 >> 8;
-  iter_fltr.bit_pattern[2] = PREFIX_KV & 0xff0000 >> 16;
-  iter_fltr.bit_pattern[3] = PREFIX_KV & 0xff000000 >> 24;
+  iter_fltr.bit_pattern[0] = '0';
+  iter_fltr.bit_pattern[1] = '0';
+  iter_fltr.bit_pattern[2] = '0';
+  iter_fltr.bit_pattern[3] = '0';
+
 
   submitted = completed = 0;
 
@@ -1060,6 +1123,9 @@ int perform_iterator(kvs_key_space_handle ks_hd, kvs_option_iterator iter_op={KV
   
   /* Do iteration */
   kvs_iterator_list* iter_list = (kvs_iterator_list*)malloc(sizeof(kvs_iterator_list));
+  if(iter_list == NULL){
+    return FAILED;
+  }
   iter_list->size = ITER_BUFFER_SIZE;
   uint8_t *buffer;
   buffer =(uint8_t*) kvs_malloc(ITER_BUFFER_SIZE, 4096);
@@ -1145,7 +1211,7 @@ int perform_read(kvs_key_space_handle ks_hd, int count, int maxdepth, uint16_t k
           ret = FAILED;
           goto exit;
         }
-        sprintf(key, "%0*ld", klen - 1, seq++);
+        snprintf(key,  klen, "%0*ld", klen - 1, seq++);
         memset(value, 0, vlen);
 
         kvs_option_retrieve option = {false};
@@ -1213,8 +1279,8 @@ int perform_insertion(kvs_key_space_handle ks_hd, int count, int maxdepth, uint1
         ret = FAILED;
         goto exit;
       }
-      sprintf(key, "%0*ld", klen - 1, seq++);
-      sprintf(value, "value%ld", seq);
+      snprintf(key,  klen, "%0*ld", klen - 1, seq++);
+      snprintf(value, vlen, "value%ld", seq);
 
       kvs_option_store option = {KVS_STORE_POST, NULL};
 
@@ -1280,7 +1346,7 @@ int perform_delete(kvs_key_space_handle ks_hd, int count, int maxdepth, uint16_t
         ret = FAILED;
         goto exit;
       }
-      sprintf(key, "%0*ld", klen - 1, seq++);
+      snprintf(key, klen, "%0*ld", klen - 1, seq++);
       kvs_key *kvskey = _allocate_kvskey(key, klen);
       if(!kvskey) {
         _free_kv_buff(key, NULL, &keypool, NULL, &lock);
@@ -1344,7 +1410,7 @@ int perform_key_exist(kvs_key_space_handle ks_hd, int count, int maxdepth, uint1
         ret = FAILED;
         goto exit;
       }
-      sprintf(key, "%0*ld", klen - 1, seq++);
+      snprintf(key, klen, "%0*ld", klen - 1, seq++);
       kvs_key *kvskey = _allocate_kvskey(key, klen);
       if(!kvskey) {
         _free_kv_buff(key, NULL, &keypool, NULL, &lock);
@@ -1354,10 +1420,12 @@ int perform_key_exist(kvs_key_space_handle ks_hd, int count, int maxdepth, uint1
 
       uint8_t *status = (uint8_t*)malloc(sizeof(uint8_t));
       kvs_exist_list *list = (kvs_exist_list*)malloc(sizeof(kvs_exist_list));
-      list->keys = kvskey;
-      list->length = 1;
-      list->num_keys = 1;
-      list->result_buffer = status;
+      if(list){
+        list->keys = kvskey;
+        list->length = 1;
+        list->num_keys = 1;
+        list->result_buffer = status;
+      }
       ret = kvs_exist_kv_pairs_async(ks_hd, 1, kvskey, list, complete);
       if (ret != KVS_SUCCESS) {
         fprintf(stderr, "exit tuple failed with err 0x%x\n", ret);
@@ -1389,6 +1457,115 @@ exit:
   return SUCCESS;
 }
 
+int _env_exit(kvs_device_handle dev, char* keyspace_name,
+  kvs_key_space_handle ks_hd) {
+  uint32_t dev_util = 0;
+  kvs_get_device_utilization(dev, &dev_util);
+  fprintf(stdout, "After: Total used is %d\n", dev_util);  
+  kvs_close_key_space(ks_hd);
+  kvs_key_space_name ks_name;
+  ks_name.name_len = strlen(keyspace_name) + 1;
+  ks_name.name = keyspace_name;
+  kvs_delete_key_space(dev, &ks_name);
+  kvs_result ret = kvs_close_device(dev);
+  return ret;
+}
+
+int _env_init(char* dev_path, kvs_device_handle* dev, char *keyspace_name,
+  kvs_key_space_handle* ks_hd) {
+  kvs_result ret = kvs_open_device(dev_path, dev);
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "Device open failed 0x%x\n", ret);
+    return FAILED;
+  }
+
+  //keyspace list after create "test"
+  const uint32_t retrieve_cnt = 2;
+  kvs_key_space_name names[retrieve_cnt];
+  for(uint8_t idx = 0; idx < retrieve_cnt; idx++) {
+    names[idx].name_len = MAX_KEYSPACE_NAME_LEN;
+    names[idx].name = (char*)malloc(MAX_KEYSPACE_NAME_LEN);
+  }
+
+  uint32_t valid_cnt = 0;
+  ret = kvs_list_key_spaces(*dev, 1, retrieve_cnt*sizeof(kvs_key_space_name),
+    names, &valid_cnt);
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "List current keyspace failed. error:0x%x.\n", ret);
+    kvs_close_device(*dev);
+    return FAILED;
+  }
+  for (uint8_t idx = 0; idx < valid_cnt; idx++) {
+    kvs_delete_key_space(*dev, &names[idx]);
+  }
+
+  //create key spaces
+  kvs_key_space_name ks_name;
+  kvs_option_key_space option = { KVS_KEY_ORDER_NONE };
+  ks_name.name = keyspace_name;
+  ks_name.name_len = strlen(keyspace_name);
+  //currently size of keyspace is not support specify
+  ret = kvs_create_key_space(*dev, &ks_name, 0, option);
+  if (ret != KVS_SUCCESS) {
+    kvs_close_device(*dev);
+    fprintf(stderr, "Create keyspace failed. error:0x%x.\n", ret);
+    return FAILED;
+  }
+
+  ret = kvs_open_key_space(*dev, keyspace_name, ks_hd);
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "Open keyspace %s failed. error:0x%x.\n", keyspace_name, ret);
+    kvs_delete_key_space(*dev, &ks_name);
+    kvs_close_device(*dev);
+    return FAILED;
+  }
+
+  kvs_key_space ks_info;
+  ks_info.name = (kvs_key_space_name *)malloc(sizeof(kvs_key_space_name));
+  if(!ks_info.name) {
+    fprintf(stderr, "Malloc resource failed.\n");
+    _env_exit(*dev, keyspace_name, *ks_hd);
+    return FAILED;
+  }
+  ks_info.name->name = (char*)malloc(MAX_CONT_PATH_LEN);
+  if(!ks_info.name->name) {
+    fprintf(stderr, "Malloc resource failed.\n");
+    free(ks_info.name);
+    _env_exit(*dev, keyspace_name, *ks_hd);
+    return FAILED;
+  }
+  ks_info.name->name_len = MAX_CONT_PATH_LEN;
+  ret = kvs_get_key_space_info(*ks_hd, &ks_info);
+  if(ret != KVS_SUCCESS) {
+    fprintf(stderr, "Get info of keyspace failed. error:0x%x.\n", ret);
+    free(ks_info.name->name);
+    free(ks_info.name);
+    return FAILED;
+  }
+  fprintf(stdout, "Keyspace information get name: %s\n", ks_info.name->name);
+  fprintf(stdout, "open:%d, count:%ld, capacity:%ld, free_size:%ld.\n", 
+    ks_info.opened, ks_info.count, ks_info.capacity, ks_info.free_size);
+  free(ks_info.name->name);
+  free(ks_info.name);
+
+  uint32_t dev_util = 0;
+  uint64_t dev_capa = 0;
+  kvs_get_device_utilization(*dev, &dev_util);
+  kvs_get_device_capacity(*dev, &dev_capa);
+  fprintf(stdout, "Before: Total size is %ld bytes, used is %d\n", dev_capa, dev_util);
+  kvs_device *dev_info = (kvs_device*)malloc(sizeof(kvs_device));
+  if(dev_info) {
+    kvs_get_device_info(*dev, dev_info);
+    fprintf(stdout, "Total size: %.2f GB\nMax value size: %d\nMax key size: %d\nOptimal value size: %d\n",
+    (float)dev_info->capacity/1000/1000/1000, dev_info->max_value_len,
+    dev_info->max_key_len, dev_info->optimal_value_len);
+    free(dev_info);
+  }
+
+  return SUCCESS;
+}
+
+
 int main(int argc, char *argv[]) {
   char* dev_path = NULL;
   int num_ios = 10;
@@ -1398,7 +1575,7 @@ int main(int argc, char *argv[]) {
   uint32_t vlen = 4096;
   //int is_polling = 0;
   int c;
-  int ret;
+  int ret = SUCCESS;
 
   while ((c = getopt(argc, argv, "d:n:q:o:k:v:h")) != -1) {
     switch(c) {
@@ -1434,40 +1611,14 @@ int main(int argc, char *argv[]) {
     usage(argv[0]);
     return SUCCESS;
   }
-
+  
+  char ks_name[MAX_KEYSPACE_NAME_LEN];
+  snprintf(ks_name, MAX_KEYSPACE_NAME_LEN, "%s", "keyspace_test");
   kvs_device_handle dev;
-  ret = kvs_open_device(dev_path, &dev);
-  if(ret != KVS_SUCCESS) {
-    fprintf(stderr, "Device open failed 0x%x\n", ret);
-    return FAILED;
-  }
-  
-  const char* name = "test";
-  kvs_key_space_name ks_name;
-  kvs_option_key_space option = {KVS_KEY_ORDER_ASCEND};
-  ks_name.name = name;
-  ks_name.name_len = strlen(name);
-  
-  kvs_create_key_space(dev, &ks_name, 0, option);
-  
   kvs_key_space_handle ks_hd;
-  kvs_open_key_space(dev, name, &ks_hd);
+  if(_env_init(dev_path, &dev, ks_name, &ks_hd) != SUCCESS)
+    return FAILED;
 
-  uint32_t dev_util = 0;
-  uint64_t dev_capa = 0;
-  kvs_device *dev_info = (kvs_device*)malloc(sizeof(kvs_device));
-
-  kvs_get_device_utilization(dev, &dev_util);
-
-  kvs_get_device_capacity(dev, &dev_capa);
-  fprintf(stdout, "Before: Total size is %ld bytes, used is %d\n", dev_capa, dev_util);
-
-  kvs_get_device_info(dev, dev_info);
-  fprintf(stdout, "Total size: %.2f GB\nMax value size: %d\nMax key size: %d\nOptimal value size: %d\n",
-    (float)dev_info->capacity/1000/1000/1000, dev_info->max_value_len,
-    dev_info->max_key_len, dev_info->optimal_value_len);
-  free(dev_info);
-  
   switch(op_type) {
   case WRITE_OP:
     perform_insertion(ks_hd, num_ios, qdepth, klen, vlen);
@@ -1490,16 +1641,10 @@ int main(int argc, char *argv[]) {
     break;
   default:
     fprintf(stderr, "Please specify a correct op_type for testing\n");
-    return FAILED;
+    ret = FAILED;
   }
 
-  kvs_get_device_utilization(dev, &dev_util);
-  fprintf(stdout, "After: Total size is %ld bytes, used is %d\n", dev_capa, dev_util);  
-  
-  kvs_close_key_space(ks_hd);
-  kvs_delete_key_space(dev, &ks_name);
-  kvs_close_device(dev);
-
-  return SUCCESS;
+  _env_exit(dev, ks_name, ks_hd);
+  return ret;
 }
 #endif

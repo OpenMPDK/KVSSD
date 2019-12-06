@@ -39,7 +39,6 @@
 #include <time.h>
 #include "io_cmd.hpp"
 #include "kv_emulator.hpp"
-#include "private_result.h"
 
 uint64_t _kv_emul_queue_latency;
 
@@ -55,15 +54,17 @@ kv_emulator::kv_emulator(uint64_t capacity, std::vector<double> iops_model_coeff
 kv_emulator::~kv_emulator() {
     std::unique_lock<std::mutex> lock(m_map_mutex);
     emulator_map_t::iterator it_tmp;
-    auto it = m_map.begin();
-    while (it != m_map.end()) {
-        kv_key *key = it->first;
-        free(key->key);
-        delete key;
+    for(uint32_t i = 0 ; i < SAMSUNG_MAX_KEYSPACE_CNT ; i++){	
+      auto it = m_map[i].begin();
+      while (it != m_map[i].end()) {
+          kv_key *key = it->first;
+          free(key->key);
+          delete key;
 
-        it_tmp = it;
-        it++;
-        m_map.erase(it_tmp);
+          it_tmp = it;
+          it++;
+          m_map[i].erase(it_tmp);
+      }
     }
 }
 
@@ -79,10 +80,10 @@ inline kv_key *new_kv_key(const kv_key *key) {
 uint64_t counter = 0;
 // basic operations
 
-kv_result kv_emulator::kv_store(const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) {
+kv_result kv_emulator::kv_store(uint8_t ks_id, const kv_key *key, const kv_value *value, uint8_t option, uint32_t *consumed_bytes, void *ioctx) {
     (void) ioctx;
     // track consumed spaced
-    if (m_capacity != 0 && m_available < (value->length + key->length)) {
+    if (m_capacity <= 0 && m_available < (value->length + key->length)) {
         // fprintf(stderr, "No more device space left\n");
         return KV_ERR_DEV_CAPACITY;
     }
@@ -101,8 +102,8 @@ kv_result kv_emulator::kv_store(const kv_key *key, const kv_value *value, uint8_
         std::unique_lock<std::mutex> lock(m_map_mutex);
 
 
-        auto it = m_map.find((kv_key *)key);
-        if (it != m_map.end()) {
+        auto it = m_map[ks_id].find((kv_key *)key);
+        if (it != m_map[ks_id].end()) {
             if (option == KV_STORE_OPT_IDEMPOTENT) return KV_ERR_KEY_EXIST;
 
             // update space
@@ -118,7 +119,7 @@ kv_result kv_emulator::kv_store(const kv_key *key, const kv_value *value, uint8_
         }
         else {
             kv_key *new_key = new_kv_key(key);
-            m_map.emplace(std::make_pair(new_key, std::move(valstr)));
+            m_map[ks_id].emplace(std::make_pair(new_key, std::move(valstr)));
 
             m_available -= key->length + value->length;
 
@@ -139,7 +140,7 @@ kv_result kv_emulator::kv_store(const kv_key *key, const kv_value *value, uint8_
     return KV_SUCCESS;
 }
 
-kv_result kv_emulator::kv_retrieve(const kv_key *key, uint8_t option, kv_value *value, void *ioctx) {
+kv_result kv_emulator::kv_retrieve(uint8_t ks_id, const kv_key *key, uint8_t option, kv_value *value, void *ioctx) {
     (void) ioctx;
 
     kv_result ret = KV_ERR_KEY_NOT_EXIST;
@@ -157,10 +158,10 @@ kv_result kv_emulator::kv_retrieve(const kv_key *key, uint8_t option, kv_value *
     {
 
         std::unique_lock<std::mutex> lock(m_map_mutex);
-        auto it = m_map.find((kv_key*)key);
-        if (it != m_map.end()) {
+        auto it = m_map[ks_id].find((kv_key*)key);
+        if (it != m_map[ks_id].end()) {
             uint32_t dlen = it->second.length();
-            if (value->offset != 0 && value->offset >= dlen) {
+            if(value->offset != 0 && (value->offset >= dlen)){
                 return KV_ERR_VALUE_OFFSET_INVALID;
             }
             uint32_t copylen = std::min(dlen - value->offset, value->length);
@@ -190,7 +191,7 @@ kv_result kv_emulator::kv_retrieve(const kv_key *key, uint8_t option, kv_value *
 }
 
 
-kv_result kv_emulator::kv_exist(const kv_key *key, uint32_t keycount, uint8_t *buffers, uint32_t &buffer_size, void *ioctx) {
+kv_result kv_emulator::kv_exist(uint8_t ks_id, const kv_key *key, uint32_t keycount, uint8_t *buffers, uint32_t &buffer_size, void *ioctx) {
     (void) ioctx;
 
     int bitpos = 0;
@@ -213,8 +214,8 @@ kv_result kv_emulator::kv_exist(const kv_key *key, uint32_t keycount, uint8_t *b
         const int setidx     = (bitpos / 8);
         const int bitoffset  =  bitpos - setidx * 8;
 
-        auto it = m_map.find((kv_key*)&key[i]);
-        if (it != m_map.end()) {
+        auto it = m_map[ks_id].find((kv_key*)&key[i]);
+        if (it != m_map[ks_id].end()) {
             buffers[setidx] |= (1 << bitoffset);
         }
     }
@@ -224,27 +225,30 @@ kv_result kv_emulator::kv_exist(const kv_key *key, uint32_t keycount, uint8_t *b
     return KV_SUCCESS;
 }
 
-kv_result kv_emulator::kv_purge(kv_purge_option option, void *ioctx) {
+kv_result kv_emulator::kv_purge(uint8_t ks_id, kv_purge_option option, void *ioctx) {
     (void) ioctx;
-
+    emulator_map_t::iterator it_tmp;
     if (option != KV_PURGE_OPT_DEFAULT) {
         WRITE_WARN("only default purge option is supported");
         return KV_ERR_OPTION_INVALID;
     }
 
     std::unique_lock<std::mutex> lock(m_map_mutex);
-    for (auto it = m_map.begin(); it != m_map.end(); it++) {
+    for (auto it = m_map[ks_id].begin(); it != m_map[ks_id].end(); ) {
         kv_key *key = it->first;
-        m_map.erase(it);
         free(key->key);
         delete key;
+
+        it_tmp = it;
+        it++;
+        m_map[ks_id].erase(it_tmp);
     }
 
     m_available = m_capacity;
     return KV_SUCCESS;
 }
 
-kv_result kv_emulator::kv_delete(const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) {
+kv_result kv_emulator::kv_delete(uint8_t ks_id, const kv_key *key, uint8_t option, uint32_t *recovered_bytes, void *ioctx) {
     (void) ioctx;
 
     if (key == NULL || key->key == NULL) {
@@ -256,8 +260,8 @@ kv_result kv_emulator::kv_delete(const kv_key *key, uint8_t option, uint32_t *re
     }
 
     std::unique_lock<std::mutex> lock(m_map_mutex);
-    auto it = m_map.find((kv_key*)key);
-    if (it != m_map.end()) {
+    auto it = m_map[ks_id].find((kv_key*)key);
+    if (it != m_map[ks_id].end()) {
         kv_key *key = it->first;
 
         uint32_t len = key->length + it->second.length();
@@ -266,7 +270,7 @@ kv_result kv_emulator::kv_delete(const kv_key *key, uint8_t option, uint32_t *re
             *recovered_bytes = len;
         }
 
-        m_map.erase(it);
+        m_map[ks_id].erase(it);
         free(key->key);
         delete key;
     } else {
@@ -279,7 +283,7 @@ kv_result kv_emulator::kv_delete(const kv_key *key, uint8_t option, uint32_t *re
 }
 
 // iterator
-kv_result kv_emulator::kv_open_iterator(const kv_iterator_option opt, const kv_group_condition *cond, bool_t keylen_fixed, kv_iterator_handle *iter_hdl, void *ioctx) {
+kv_result kv_emulator::kv_open_iterator(uint8_t ks_id, const kv_iterator_option opt, const kv_group_condition *cond, bool_t keylen_fixed, kv_iterator_handle *iter_hdl, void *ioctx) {
     (void) ioctx;
 
     if (cond == NULL || iter_hdl == NULL || cond == NULL) {
@@ -299,12 +303,13 @@ kv_result kv_emulator::kv_open_iterator(const kv_iterator_option opt, const kv_g
             && m_iterator_list[i].bitmask == cond->bitmask
             && m_iterator_list[i].status == 1) {
             *iter_hdl = i+1;
-            return api_private::KVS_ERR_ITERATOR_OPEN;
+            return KV_ERR_ITERATOR_ALREADY_OPEN;
         }
     }
 
     _kv_iterator_handle *iH = new _kv_iterator_handle();
     iH->it_op = opt;
+    iH->ksid = ks_id;
     iH->it_cond.bitmask = cond->bitmask;
     iH->it_cond.bit_pattern = cond->bit_pattern;
     iH->has_fixed_keylen = keylen_fixed;
@@ -313,6 +318,7 @@ kv_result kv_emulator::kv_open_iterator(const kv_iterator_option opt, const kv_g
     memcpy((void*)iH->current_key, (char *)&prefix, 4);
     iH->keylength = 4;
     iH->end = FALSE;
+    iH->ksid = ks_id;
 
     //std::bitset<32> set0 (*(uint32_t*)iH->current_key);
     //std::cerr << "minkey = " << set0 << std::endl;
@@ -331,7 +337,7 @@ kv_result kv_emulator::kv_open_iterator(const kv_iterator_option opt, const kv_g
     m_iterator_list[itid - 1].handle_id = itid;
     m_iterator_list[itid - 1].status = 1;
     m_iterator_list[itid - 1].type = opt;
-    m_iterator_list[itid - 1].keyspace_id = m_nsid;
+    m_iterator_list[itid - 1].keyspace_id = ks_id;
     m_iterator_list[itid - 1].prefix = cond->bit_pattern;
     m_iterator_list[itid - 1].bitmask = cond->bitmask;
     m_iterator_list[itid - 1].is_eof = 0;
@@ -377,8 +383,9 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_handle_id, k
 
 
     uint32_t prefix = 0;
-    auto it = m_map.lower_bound(&key);
-    while (it != m_map.end()) {
+    int8_t ks_id = iter_hdl->ksid;
+    auto it = m_map[ks_id].lower_bound(&key);
+    while (it != m_map[ks_id].end()) {
         const int klength = it->first->length;
         const int vlength = it->second.length();
 
@@ -388,14 +395,14 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_handle_id, k
             memcpy(&prefix, it->first->key, 4);
 
             // if no more match, which means we reached the end of matching list
-            if ((prefix & iter_hdl->it_cond.bitmask) != iter_hdl->it_cond.bit_pattern) {
+            if ((prefix & iter_hdl->it_cond.bitmask) != 
+                (iter_hdl->it_cond.bit_pattern & iter_hdl->it_cond.bitmask)) {
                 iter_list->end = TRUE;
                 end = TRUE;
                 break;
             }
         }
 
-        // printf("matched 0x%X, current key prefix 0x%X, -- %d\n", to_match, prefix, i);
         // found a key
         size_t datasize = klength;
         if (!iter_hdl->has_fixed_keylen) {
@@ -433,12 +440,12 @@ kv_result kv_emulator::kv_iterator_next_set(kv_iterator_handle iter_handle_id, k
         counter++;
 
         if (delete_value) {
-            it = m_map.erase(it);
+            it = m_map[ks_id].erase(it);
         } else {
             it++;
         }
     }
-    // printf("emulator internal iterator: XXX got entries %d\n", counter);
+    //printf("Emulator internal iterator: XXX got entries %d\n", counter);
     iter_list->num_entries = counter;
     iter_list->size = buffer_pos;
     if (end != TRUE) {
@@ -481,10 +488,11 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_handle_id, kv_ke
     }
 
     uint32_t prefix = 0;
-    auto it = m_map.lower_bound(&key1);
+    int8_t ks_id = iter_hdl->ksid;
+    auto it = m_map[ks_id].lower_bound(&key1);
 
     // the end
-    if (it == m_map.end()) {
+    if (it == m_map[ks_id].end()) {
         iter_hdl->end = TRUE;
         return KV_SUCCESS;
     }
@@ -535,12 +543,12 @@ kv_result kv_emulator::kv_iterator_next(kv_iterator_handle iter_handle_id, kv_ke
 
     // delete the identified key, it points to next element
     if (delete_value) {
-        it = m_map.erase(it);
+        it = m_map[ks_id].erase(it);
     } else {
         it++;
     }
     // save next key for next iteration
-    if (it != m_map.end()) {
+    if (it != m_map[ks_id].end()) {
         key->length = klength;
         iter_hdl->keylength = klength;
         memcpy(iter_hdl->current_key, it->first->key, klength);
@@ -590,6 +598,11 @@ kv_result kv_emulator::kv_list_iterators(kv_iterator *iter_list, uint32_t *count
         iter_list[i].prefix = m_iterator_list[i].prefix;
         iter_list[i].bitmask = m_iterator_list[i].bitmask;
         iter_list[i].is_eof = m_iterator_list[i].is_eof;
+
+        /*The bitpattern of the KV API is of big-endian mode. If the CPU is of little-endian mode,
+              the bit pattern and bit mask should be transformed.*/
+        iter_list[i].prefix = htobe32(iter_list[i].prefix);
+        iter_list[i].bitmask = htobe32(iter_list[i].bitmask);
     }
     *count = min;
 
@@ -602,7 +615,7 @@ kv_result kv_emulator::kv_list_iterators(kv_iterator *iter_list, uint32_t *count
     return KV_SUCCESS;
 }
 
-kv_result kv_emulator::kv_delete_group(kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) {
+kv_result kv_emulator::kv_delete_group(uint8_t ks_id, kv_group_condition *grp_cond, uint64_t *recovered_bytes, void *ioctx) {
     (void) ioctx;
 
     uint32_t minkey = grp_cond->bitmask & grp_cond->bit_pattern;
@@ -617,8 +630,8 @@ kv_result kv_emulator::kv_delete_group(kv_group_condition *grp_cond, uint64_t *r
 
     std::unique_lock<std::mutex> lock(m_map_mutex);
 
-    auto it = m_map.lower_bound(&key);
-    while (it != m_map.end()) {
+    auto it = m_map[ks_id].lower_bound(&key);
+    while (it != m_map[ks_id].end()) {
         uint32_t prefix = 0;
         memcpy(&prefix, it->first->key, 4);
 
@@ -635,7 +648,7 @@ kv_result kv_emulator::kv_delete_group(kv_group_condition *grp_cond, uint64_t *r
 
         it_tmp = it;
         it++;
-        m_map.erase(it_tmp);
+        m_map[ks_id].erase(it_tmp);
     }
 
     return KV_SUCCESS;

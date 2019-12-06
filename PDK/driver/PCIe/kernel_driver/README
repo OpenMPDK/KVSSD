@@ -12,6 +12,7 @@ kernel_driver
       | - kernel_v3.10_depreciated (linux vanilla kernel 3.10 based - was depreciated : not support anymore)
       | - kernel_v3.10.0-327-centos_7_2 (centos 7.2 based)
       | - kernel_v3.10.0-693-centos_7_4 (centos 7.4 based)
+      | - kernel_v3.10.0-1062-centos_7_7 (centos 7.7 based)
       | - kernel_v4.4.0-98-ubuntu-16_04 (ubuntu 16.04 based)
       | - kernel_v4.4.0-141-ubuntu-16_04 (ubuntu 16.04 based)
       | - kernel_v4.9.5 (linux vanilla kernel 4.9 based)

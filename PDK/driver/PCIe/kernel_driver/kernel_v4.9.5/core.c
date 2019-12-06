@@ -1626,53 +1626,53 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
 //    }
 
 	switch(cmd.opcode) {
-		case nvme_cmd_kv_store:
+        case nvme_cmd_kv_store:
         case nvme_cmd_kv_append:
             option = cpu_to_le32(cmd.cdw4);
-			c.kv_store.offset = cpu_to_le32(cmd.cdw5);
-			/* validate key length */
+            c.kv_store.offset = cpu_to_le32(cmd.cdw5);
+            /* validate key length */
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
-                    cmd.key_length < KVCMD_MIN_KEY_SIZE) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
+                cmd.key_length < KVCMD_MIN_KEY_SIZE) {
+                cmd.result = KVS_ERR_VALUE;
+                status = -EINVAL;
+                goto exit;
             }
-			c.kv_store.key_len = cpu_to_le32(cmd.key_length -1); /* key len -1 */
+            c.kv_store.key_len = cpu_to_le32(cmd.key_length -1); /* key len -1 */
             c.kv_store.option = (option & 0xff);
             /* set value size */
             if (cmd.data_length % 4) {
-			    c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2) + 1);
+                c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2) + 1);
                 c.kv_store.invalid_byte = 4 - (cmd.data_length % 4);
             } else {
-			    c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2));
+                c.kv_store.value_len = cpu_to_le32((cmd.data_length >> 2));
             }
-			if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
-				metadata = (void __user*)cmd.key_addr;
-				meta_len = cmd.key_length;
-			} else {
-				memcpy(c.kv_store.key, cmd.key, cmd.key_length);
-			}
-		break;
-		case nvme_cmd_kv_retrieve:
+            if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
+                metadata = (void __user*)cmd.key_addr;
+                meta_len = cmd.key_length;
+            } else {
+                memcpy(c.kv_store.key, cmd.key, cmd.key_length);
+            }
+        break;
+        case nvme_cmd_kv_retrieve:
             option = cpu_to_le32(cmd.cdw4);
-			c.kv_retrieve.offset = cpu_to_le32(cmd.cdw5);
-			/* validate key length */
+            c.kv_retrieve.offset = cpu_to_le32(cmd.cdw5);
+            /* validate key length */
             if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
-                    cmd.key_length < KVCMD_MIN_KEY_SIZE) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
+                cmd.key_length < KVCMD_MIN_KEY_SIZE) {
+                cmd.result = KVS_ERR_VALUE;
+                status = -EINVAL;
+                goto exit;
             }
-			c.kv_retrieve.key_len = cpu_to_le32(cmd.key_length -1); /* key len - 1 */
+            c.kv_retrieve.key_len = cpu_to_le32(cmd.key_length -1); /* key len - 1 */
             c.kv_retrieve.option = (option & 0xff);
-			c.kv_retrieve.value_len = cpu_to_le32((cmd.data_length >> 2));
+            c.kv_retrieve.value_len = cpu_to_le32((cmd.data_length >> 2));
 
-			if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
-				metadata = (void __user*)cmd.key_addr;
-				meta_len = cmd.key_length;
-			} else {
-				memcpy(c.kv_retrieve.key, cmd.key, cmd.key_length);
-			}
+            if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
+                metadata = (void __user*)cmd.key_addr;
+                meta_len = cmd.key_length;
+            } else {
+                memcpy(c.kv_retrieve.key, cmd.key, cmd.key_length);
+            }
 #if 0
             if (aio && offset_in_page(cmd.data_addr)) {
                 /* aio does not support unaligned memory*/
@@ -1680,62 +1680,62 @@ static int nvme_user_kv_cmd(struct nvme_ctrl *ctrl,
 				goto exit;
             }
 #endif
-		break;
-		case nvme_cmd_kv_delete:
+            break;
+        case nvme_cmd_kv_delete:
             option = cpu_to_le32(cmd.cdw4);
-            if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
-                    cmd.key_length < KVCMD_MIN_KEY_SIZE) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
+            if (cmd.key_length > KVCMD_MAX_KEY_SIZE ||
+                cmd.key_length < KVCMD_MIN_KEY_SIZE) {
+                cmd.result = KVS_ERR_VALUE;
+                status = -EINVAL;
+                goto exit;
             }
-			c.kv_delete.key_len = cpu_to_le32(cmd.key_length -1);
-		    c.kv_delete.option = (option & 0xff);	
-			if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
-				metadata = (void __user *)cmd.key_addr;
-				meta_len = cmd.key_length;
-			} else {
-				memcpy(c.kv_delete.key, cmd.key, cmd.key_length);
-			}
-			break;
-		case nvme_cmd_kv_exist:
+            c.kv_delete.key_len = cpu_to_le32(cmd.key_length -1);
+            c.kv_delete.option = (option & 0xff);	
+            if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
+                metadata = (void __user *)cmd.key_addr;
+                meta_len = cmd.key_length;
+            } else {
+                memcpy(c.kv_delete.key, cmd.key, cmd.key_length);
+            }
+            break;
+        case nvme_cmd_kv_exist:
             option = cpu_to_le32(cmd.cdw4);
-            if (cmd.key_length >  KVCMD_MAX_KEY_SIZE ||
-                    cmd.key_length < KVCMD_MIN_KEY_SIZE) {
-				cmd.result = KVS_ERR_VALUE;
-				status = -EINVAL;
-				goto exit;
+            if (cmd.key_length > KVCMD_MAX_KEY_SIZE ||
+                cmd.key_length < KVCMD_MIN_KEY_SIZE) {
+                cmd.result = KVS_ERR_VALUE;
+                status = -EINVAL;
+                goto exit;
             }
-			c.kv_exist.key_len = cpu_to_le32(cmd.key_length -1);
-		    c.kv_exist.option = (option & 0xff);	
-			if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
-				metadata = (void __user *)cmd.key_addr;
-				meta_len = cmd.key_length;
-			} else {
-				memcpy(c.kv_exist.key, cmd.key, cmd.key_length);
-			}
-			break;
+            c.kv_exist.key_len = cpu_to_le32(cmd.key_length -1);
+            c.kv_exist.option = (option & 0xff);	
+            if (cmd.key_length > KVCMD_INLINE_KEY_MAX) {
+                metadata = (void __user *)cmd.key_addr;
+                meta_len = cmd.key_length;
+            } else {
+                memcpy(c.kv_exist.key, cmd.key, cmd.key_length);
+            }
+            break;
 
-		case nvme_cmd_kv_iter_req:
+        case nvme_cmd_kv_iter_req:
             option = cpu_to_le32(cmd.cdw4);
             iter_handle = cpu_to_le32(cmd.cdw5);
             c.kv_iter_req.iter_handle = iter_handle & 0xff;
             c.kv_iter_req.option = option & 0xff;
             c.kv_iter_req.iter_val = cpu_to_le32(cmd.cdw12);
             c.kv_iter_req.iter_bitmask = cpu_to_le32(cmd.cdw13);
-			break;
-		case nvme_cmd_kv_iter_read:
+            break;
+        case nvme_cmd_kv_iter_read:
             option = cpu_to_le32(cmd.cdw4);
             iter_handle = cpu_to_le32(cmd.cdw5);
             c.kv_iter_read.iter_handle = iter_handle & 0xff;
             c.kv_iter_read.option = option & 0xff;
-			c.kv_iter_read.value_len = cpu_to_le32((cmd.data_length >> 2));
-		break;
-		default:
-				cmd.result = KVS_ERR_IO;
-				status = -EINVAL;
-				goto exit;
-	}
+            c.kv_iter_read.value_len = cpu_to_le32((cmd.data_length >> 2));
+            break;
+        default:
+            cmd.result = KVS_ERR_IO;
+            status = -EINVAL;
+            goto exit;
+        }
 
 //    if (cmd.data_addr) {
 //        u32 *c_data = c.common.cdw2;

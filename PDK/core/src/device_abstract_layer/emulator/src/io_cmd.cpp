@@ -114,14 +114,14 @@ kv_result io_cmd::execute_cmd() {
         case KV_OPC_GET: {
                 // set result into value
                 op_get_struct_t info = ioctx.command.get_info;
-                ioctx.retcode = ns->kv_retrieve(ioctx.key, info.option, ioctx.value, (void *) this);
+                ioctx.retcode = ns->kv_retrieve(ioctx.ks_id, ioctx.key, info.option, ioctx.value, (void *) this);
                 break;
             }
 
         case KV_OPC_STORE: {
                 uint32_t consumed_bytes = 0;
                 op_store_struct_t info = ioctx.command.store_info;
-                ioctx.retcode = ns->kv_store(ioctx.key, ioctx.value, info.option, &consumed_bytes, (void *) this);
+                ioctx.retcode = ns->kv_store(ioctx.ks_id, ioctx.key, ioctx.value, info.option, &consumed_bytes, (void *) this);
 
                 // kv_namespace_stat ns_st;
                 // ns->kv_get_namespace_stat(&ns_st);
@@ -133,7 +133,7 @@ kv_result io_cmd::execute_cmd() {
         case KV_OPC_DELETE: {
                 uint32_t reclaimed_bytes = 0;
                 op_delete_struct_t info = ioctx.command.delete_info;
-                ioctx.retcode = ns->kv_delete(ioctx.key, info.option, &reclaimed_bytes, (void *) this);
+                ioctx.retcode = ns->kv_delete(ioctx.ks_id, ioctx.key, info.option, &reclaimed_bytes, (void *) this);
                 // fprintf(stderr, "reclaimed: %llu\n", reclaimed_bytes);
                 break;
             }
@@ -141,19 +141,19 @@ kv_result io_cmd::execute_cmd() {
         case KV_OPC_DELETE_GROUP: {
                 uint64_t reclaimed_bytes = 0;
                 op_delete_group_struct_t info = ioctx.command.delete_group_info;
-                ioctx.retcode = ns->kv_delete_group(info.grp_cond, &reclaimed_bytes, (void *) this);
+                ioctx.retcode = ns->kv_delete_group(ioctx.ks_id, info.grp_cond, &reclaimed_bytes, (void *) this);
                 break;
             }
 
         case KV_OPC_PURGE: {
                 op_purge_struct_t info = ioctx.command.purge_info;
-                ioctx.retcode = ns->kv_purge(info.option, (void *) this);
+                ioctx.retcode = ns->kv_purge(ioctx.ks_id, info.option, (void *) this);
                 break;
             }
 
         case KV_OPC_CHECK_KEY_EXIST: {
                 op_key_exist_struct_t &info  = ioctx.command.key_exist_info;
-                ioctx.retcode = ns->kv_exist(ioctx.key, info.keycount, info.result, info.result_size, (void *) this);
+                ioctx.retcode = ns->kv_exist(ioctx.ks_id, ioctx.key, info.keycount, info.result, info.result_size, (void *) this);
                 ioctx.result.buffer_size = info.result_size;
                 ioctx.result.buffer_count = info.keycount;
                 break;
@@ -161,7 +161,7 @@ kv_result io_cmd::execute_cmd() {
 
         case KV_OPC_OPEN_ITERATOR: {
                 op_iterator_open_struct_t info = ioctx.command.iterator_open_info;
-                ioctx.retcode = ns->kv_open_iterator(info.it_op, &info.it_cond, &ioctx.result.hiter, (void *) this);
+                ioctx.retcode = ns->kv_open_iterator(ioctx.ks_id, info.it_op, &info.it_cond, &ioctx.result.hiter, (void *) this);
                 break;
             }
 
@@ -187,7 +187,7 @@ kv_result io_cmd::execute_cmd() {
         case KV_OPC_SANITIZE_DEVICE: {
                 //op_sanitize_struct_t info = ioctx.command.sanitize_info;
                 // XXX can't do much, just call purge function
-                ioctx.retcode = ns->kv_purge(KV_PURGE_OPT_DEFAULT, (void *) this);
+                ioctx.retcode = ns->kv_purge(ioctx.ks_id, KV_PURGE_OPT_DEFAULT, (void *) this);
                 break;
             }
 
@@ -196,7 +196,6 @@ kv_result io_cmd::execute_cmd() {
                 ioctx.retcode = ns->kv_list_iterators(info.kv_iters, info.iter_cnt, (void *) this);
                 break;
             }
-
         default:
             WRITE_WARN("OPCODE %d not recognized", ioctx.opcode);
             ioctx.retcode = KV_ERR_SYS_IO;
