@@ -424,8 +424,10 @@ kvs_result kvs_open_device(char *URI, kvs_device_handle *dev_hd) {
   api_private::kvs_result ret;
   pthread_mutex_lock(&env_mutex);
   ret = init_env();
-  if (ret != api_private::KVS_SUCCESS)
+  if (ret != api_private::KVS_SUCCESS) {
+    pthread_mutex_unlock(&env_mutex);
     return convert_res(ret);
+  }
 
   ret = api_private::kvs_open_device(URI, (api_private::kvs_device_handle*)dev_hd);
   if (ret == api_private::KVS_SUCCESS)

@@ -671,6 +671,8 @@ int perform_read(int id, kvs_key_space_handle ks_hd, int count, uint16_t klen, u
   char *value = (char*)kvs_malloc(vlen, 4096);
   if(key == NULL || value == NULL) {
     fprintf(stderr, "failed to allocate\n");
+    if(key)  kvs_free(key);
+    if(value)  kvs_free(value);
     return FAILED;
   }
 
@@ -702,6 +704,8 @@ int perform_insertion(int id, kvs_key_space_handle ks_hd, int count, uint16_t kl
   char *value = (char*)kvs_malloc(vlen, 4096);
   if(key == NULL || value == NULL) {
     fprintf(stderr, "failed to allocate\n");
+    if(key)  kvs_free(key);
+    if(value)  kvs_free(value);
     return FAILED;
   }
 

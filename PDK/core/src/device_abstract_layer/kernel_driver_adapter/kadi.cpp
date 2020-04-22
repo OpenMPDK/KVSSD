@@ -180,12 +180,14 @@ int KADI::close()
 
 KADI::aio_cmd_ctx *KADI::get_cmd_ctx(const kv_postprocess_function *cb)
 {
+    bool print_log_flag = true;
     std::unique_lock<std::mutex> lock(cmdctx_lock);
     while (free_cmdctxs.empty())
     {
-        if (cmdctx_cond.wait_for(lock, std::chrono::seconds(5)) == std::cv_status::timeout)
-        {
+        if (cmdctx_cond.wait_for(lock, std::chrono::seconds(5)) == 
+          std::cv_status::timeout && print_log_flag == true) {
             std::cerr << "max queue depth has reached. wait..." << std::endl;
+            print_log_flag = false;
         }
     }
 

@@ -1,12 +1,15 @@
 
 Release History
+---   v1.5.0
+   Support multiple-thread for KVBench (RocksDB and KVAPI)
+
 ---   v1.4.0
-     Add container support
-     Add support for CentOS 6.6 kernel driver v2.6.32, Centos7.1 kernel driver v3.10.0-229, kernel driver v4.14.81, and Centos7.7 kernel driver v3.10.0-1062
-     Add partial retrieve support
-     New key generator in kv_bench to guarantees the keys to be read existed
-     Multiple bug fix
-     Remove the sample code and test
+   Add container support
+   Add support for CentOS 6.6 kernel driver v2.6.32, Centos7.1 kernel driver v3.10.0-229, kernel driver v4.14.81, and Centos7.7 kernel driver v3.10.0-1062
+   Add partial retrieve support
+   New key generator in kv_bench to guarantees the keys to be read existed
+   Multiple bug fix
+   Remove the sample code and test
 
 ---   v1.3.0
    Support SNIA KV API
@@ -36,7 +39,7 @@ Release History
 ---   v0.7.0
    KV API support for user space driver (uNVMe) v18.11
    Support options for retrieve/store/delete/iterator (refer to Samsung API spec).
-   
+
 
 ---   v0.6.0
    Revised KV API based on SNIA standard

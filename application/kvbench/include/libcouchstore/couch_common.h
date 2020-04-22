@@ -55,12 +55,14 @@ extern "C" {
 
     /** A generic data blob. Nothing is implied about ownership of the block pointed to. */
     typedef struct _sized_buf {
+        int tid;
         char *buf;
         size_t size;
     } sized_buf;
 
     /** A CouchStore document, consisting of an ID (key) and data, each of which is a blob. */
     typedef struct _doc {
+        int tid;
         sized_buf id;
         sized_buf data;
     } Doc;

@@ -47,7 +47,7 @@ struct _db {
 
   std::queue<IoContext*> *iocontexts;
   std::queue<IoContext*> *iodone;
-  // only used for async 
+  // only used for async
   latency_stat *l_read;
   latency_stat *l_write;
   latency_stat *l_delete;
@@ -56,7 +56,7 @@ struct _db {
   std::queue<kvs_key*> *kvs_key_pool;
   std::queue<kvs_value*> *kvs_value_pool;
   std::mutex lock_k;
-  
+
   /* For iterator  */
   kvs_iterator_handle iter_handle;
   int has_iter_finish;
@@ -77,8 +77,13 @@ uint32_t udd_mem_size_mb = 1024;
 
 #ifdef SAMSUNG_API
 static kvs_iterator_option g_iter_mode;
+typedef struct {
+  int tid;
+  _db *db;
+} kv_bench_data;
 #else
 typedef struct {
+  int tid;
   _db *db;
   uint64_t *time;
 } kv_bench_data;
@@ -103,12 +108,12 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list){
     for(int i = 0;i < iter_list->num_entries; i++) {
       fprintf(stdout, "Iterator get %dth key: %s\n", i, it_buffer);
       it_buffer += 16;
-      
+
       uint8_t *addr = (uint8_t *)&vlen_value;
       for (unsigned int i = 0; i < vlen; i++) {
-	*(addr + i) = *(it_buffer + i);
+	      *(addr + i) = *(it_buffer + i);
       }
-    
+
       it_buffer += vlen;
       it_buffer += vlen_value;
     }
@@ -133,7 +138,7 @@ void print_iterator_keyvals(kvs_iterator_list *iter_list){
       //fprintf(stdout, "%dth key --> %s\n", i, key);
       it_buffer += key_size;
     }
-    
+
   }
 }
 
@@ -149,7 +154,6 @@ void release_kvskeyvalue(Db *db, kvs_key *key, kvs_value *value){
 void add_event(Db *db, IoContext *ctx) {
   std::unique_lock<std::mutex> lock(db->lock_k);
   db->iodone->push(ctx);
-
 }
 
 void print_coremask(uint64_t x)
@@ -170,14 +174,14 @@ uint64_t coreid_to_mask(char *core_ids)
 
     for (i = 0; i < strlen(core_ids); i++) {
       if((core_ids[i] == ',' || core_ids[i] == '}') && found == 1) {
-	const int coreid = tmp;
-	coremask |= (1ULL << coreid);
-	tmp = 0;
-	found = 0;
+      	const int coreid = tmp;
+      	coremask |= (1ULL << coreid);
+      	tmp = 0;
+      	found = 0;
       }
       else if (core_ids[i] <= '9' && core_ids[i] >= '0'){
-	tmp = tmp * 10 + core_ids[i] - '0';
-	found = 1;
+      	tmp = tmp * 10 + core_ids[i] - '0';
+      	found = 1;
       }
     }
     return coremask;
@@ -185,7 +189,7 @@ uint64_t coreid_to_mask(char *core_ids)
 
 void free_doc(Doc *doc)
 {
-  if (doc->id.buf) free(doc->id.buf); 
+  if (doc->id.buf) free(doc->id.buf);
   if (doc->data.buf) free(doc->data.buf);
 }
 
@@ -201,14 +205,18 @@ void on_io_complete(kvs_callback_context* ioctx) {
       exit(1);
     }
   }
+  auto bench_data = (kv_bench_data*)ioctx->private1;
+  struct _db* owner = bench_data->db;
+  int tid = bench_data->tid;
+  free(bench_data);
 
-  auto owner = (struct _db*)ioctx->private1;
   const auto context_idx = owner->context_idx;
   latency_stat *l_stat;
 
   if(use_udd) {
     std::unique_lock<std::mutex> lock(owner->lock_k);
     IoContext *ctx = owner->iocontexts->front();
+    ctx->tid = tid;
     owner->iocontexts->pop();
     lock.unlock();
     if(ctx == NULL) {
@@ -222,21 +230,21 @@ void on_io_complete(kvs_callback_context* ioctx) {
       ctx->value = ioctx->value->value;
       ctx->key = ioctx->key->key;
       l_stat = owner->l_write;
-      release_kvskeyvalue(owner, ioctx->key, ioctx->value); 
+      release_kvskeyvalue(owner, ioctx->key, ioctx->value);
       break;
     case IOCB_ASYNC_GET_CMD:
       //ctx->op= OP_GET;
       ctx->value = ioctx->value->value;
       ctx->key = ioctx->key->key;
       l_stat = owner->l_read;
-      release_kvskeyvalue(owner, ioctx->key, ioctx->value); 
+      release_kvskeyvalue(owner, ioctx->key, ioctx->value);
       break;
     case IOCB_ASYNC_DEL_CMD:
       //ctx->op= OP_DEL;
       ctx->key = ioctx->key->key;
       ctx->value = NULL;
       l_stat = owner->l_delete;
-      release_kvskeyvalue(owner, ioctx->key, 0); 
+      release_kvskeyvalue(owner, ioctx->key, 0);
       break;
     case IOCB_ASYNC_ITER_NEXT_CMD:
       //ctx->op = OP_ITER_NEXT;
@@ -245,7 +253,7 @@ void on_io_complete(kvs_callback_context* ioctx) {
       owner->has_iter_finish = 1;
       break;
     }
-  
+
     //ctx->key = ioctx->key->key;
     add_event(owner, ctx);
   } else {  // kdd
@@ -297,51 +305,52 @@ void on_io_complete(kvs_callback_context* ioctx) {
       //IoContext *ctx = pop_ctx(owner, 0);
       std::unique_lock<std::mutex> lock(owner->lock_k);
       IoContext *ctx = owner->iocontexts->front();
+      ctx->tid = tid;
       owner->iocontexts->pop();
       lock.unlock();
       if(ctx == NULL) {
-	fprintf(stderr, "Not enough context, outstanding %ld\n", owner->iodone->size());
-	exit(1);
+      	fprintf(stderr, "Not enough context, outstanding %ld\n", owner->iodone->size());
+      	exit(1);
       }
 
       switch(ioctx->opcode) {
       case IOCB_ASYNC_PUT_CMD:
-	//ctx->op = OP_INSERT;
-	ctx->value = ioctx->value->value;
-	ctx->key = ioctx->key->key;
-	l_stat = owner->l_write;
-	release_kvskeyvalue(owner, ioctx->key, ioctx->value);
-	break;
+      	//ctx->op = OP_INSERT;
+      	ctx->value = ioctx->value->value;
+      	ctx->key = ioctx->key->key;
+      	l_stat = owner->l_write;
+      	release_kvskeyvalue(owner, ioctx->key, ioctx->value);
+      	break;
       case IOCB_ASYNC_GET_CMD:
-	//ctx->op= OP_GET;
-	ctx->value = ioctx->value->value;
-	ctx->key = ioctx->key->key;
-	l_stat = owner->l_read;
-	release_kvskeyvalue(owner, ioctx->key, ioctx->value);
-	break;
+      	//ctx->op= OP_GET;
+      	ctx->value = ioctx->value->value;
+      	ctx->key = ioctx->key->key;
+      	l_stat = owner->l_read;
+      	release_kvskeyvalue(owner, ioctx->key, ioctx->value);
+      	break;
       case IOCB_ASYNC_DEL_CMD:
-	//ctx->op= OP_DEL;
-	ctx->value = NULL;
-	ctx->key = ioctx->key->key;
-	l_stat = owner->l_delete;
-	release_kvskeyvalue(owner, ioctx->key, 0);
-	break;
+      	//ctx->op= OP_DEL;
+      	ctx->value = NULL;
+      	ctx->key = ioctx->key->key;
+      	l_stat = owner->l_delete;
+      	release_kvskeyvalue(owner, ioctx->key, 0);
+      	break;
       case IOCB_ASYNC_ITER_NEXT_CMD:
-	//print_iterator_keyvals(&owner->iter_list);
-	//ctx->op= OP_ITER_NEXT;
-	ctx->key = NULL;
-	ctx->value = NULL;
-	std::unique_lock<std::mutex> lock(owner->lock_k);
-	owner->has_iter_finish = 1;
-	lock.unlock();
-	break;
+      	//print_iterator_keyvals(&owner->iter_list);
+      	//ctx->op= OP_ITER_NEXT;
+      	ctx->key = NULL;
+      	ctx->value = NULL;
+      	std::unique_lock<std::mutex> lock(owner->lock_k);
+      	owner->has_iter_finish = 1;
+      	lock.unlock();
+      	break;
       }
 
       add_event(owner, ctx);
     } // end of interrupt mode
 
   }
-  
+
 #if defined LATENCY_CHECK
   if(ioctx->private2){
     struct timespec t11;
@@ -356,7 +365,7 @@ void on_io_complete(kvs_callback_context* ioctx) {
       l_stat->cursor = l_stat->cursor % max_sample;
       l_stat->nsamples = max_sample;
     } else {
-      l_stat->nsamples = l_stat->cursor + 1; 
+      l_stat->nsamples = l_stat->cursor + 1;
     }
     cur_sample = l_stat->cursor;
     l_stat->cursor++;
@@ -364,18 +373,24 @@ void on_io_complete(kvs_callback_context* ioctx) {
     free(ioctx->private2);
   }
 #endif
-  
+
 }
 
-int getevents(Db *db, int min, int max, IoContext_t **context)
+int getevents(Db *db, int min, int max, IoContext_t **context, int tid)
 {
   if(use_udd || kdd_is_polling == 0) {
     int i = 0;
     std::unique_lock<std::mutex> lock(db->lock_k);
-    while(!db->iodone->empty() && i < max) {
+    int queue_size = db->iodone->size();
+    while(queue_size>0 && i < max) {
       context[i] = db->iodone->front();
       db->iodone->pop();
-      i++;
+      if(context[i]->tid!=tid){
+        db->iodone->push(context[i]);
+      }else{
+        i++;
+      }
+      queue_size--;
     }
     lock.unlock();
     return i;
@@ -391,7 +406,7 @@ int getevents(Db *db, int min, int max, IoContext_t **context)
 
     return ret;
   }
-  
+
 }
 
 couchstore_error_t couchstore_setup_device(const char *dev_path,
@@ -400,7 +415,7 @@ couchstore_error_t couchstore_setup_device(const char *dev_path,
 					   int num_devices, int write_mode,
 					   int is_polling)
 
-{  
+{
   kvs_init_options options;
   kvs_init_env_opts(&options);
 
@@ -417,7 +432,7 @@ couchstore_error_t couchstore_setup_device(const char *dev_path,
   //options.aio.is_polling = is_polling;
   options.emul_config_file = config_file;
   kdd_is_polling = is_polling;
-  
+
   if(dev_path[1] == 'd'){ // /dev/kvemul or /dev/nvme kernel driver
     options.memory.use_dpdk = 0;
     use_udd = 0;
@@ -425,20 +440,20 @@ couchstore_error_t couchstore_setup_device(const char *dev_path,
     options.memory.use_dpdk = 1;
     use_udd = 1;
   }
-  
+
   /* udd options */
   strcpy(options.udd.core_mask_str, udd_core_masks);
   strcpy(options.udd.cq_thread_mask, udd_cq_thread_masks);
 
   options.udd.mem_size_mb = udd_mem_size_mb;
   options.udd.syncio = write_mode;
-  
+
   kvs_init_env(&options);
   kv_write_mode = write_mode;
-  
+
   fprintf(stdout, "device init done\n");
 
-  return COUCHSTORE_SUCCESS; 
+  return COUCHSTORE_SUCCESS;
 }
 
 LIBCOUCHSTORE_API
@@ -457,7 +472,7 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
     fprintf(stderr, "Device open failed %s\n", kvs_errstr(ret));
     exit(1);
   }
-  
+
   ppdb->id = id;
   ppdb->context_idx = 0;
   //ppdb->iter_handle = NULL;
@@ -469,30 +484,31 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
     IoContext *context = NULL;
     ppdb->iocontexts = new std::queue<IoContext*>;
     ppdb->iodone = new std::queue<IoContext*>;
-    
+
     ppdb->kvs_key_pool = new std::queue<kvs_key*>;
     ppdb->kvs_value_pool = new std::queue<kvs_value*>;
-    
+
     kvs_key *key = NULL;
     kvs_value *value = NULL;
     for (int i =0; i < 36000; i++) {
       context = (IoContext *)malloc(sizeof(IoContext));
+      memset(context, 0, sizeof(IoContext));
       if(context == NULL){
-	fprintf(stderr, "Can not allocate db context\n");
-	exit(0);
+      	fprintf(stderr, "Can not allocate db context\n");
+      	exit(0);
       }
 
       ppdb->iocontexts->push(context);
-      
+
       key = (kvs_key*)malloc(sizeof(kvs_key));
       ppdb->kvs_key_pool->push(key);
 
       value = (kvs_value*)malloc(sizeof(kvs_value));
       ppdb->kvs_value_pool->push(value);
-      
+
     }
   }
-    
+
   /* Container related op */
   uint32_t valid_cnt = 0;
   const uint32_t retrieve_cnt = 2;
@@ -512,7 +528,7 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
   ctx.option = {KVS_KEY_ORDER_NONE};
   kvs_create_container(ppdb->dev, g_container_name, 4, &ctx);
   kvs_open_container(ppdb->dev, g_container_name, &ppdb->cont_hd);
-  
+
   fprintf(stdout, "device open %s\n", dev_path);
 
   return COUCHSTORE_SUCCESS;
@@ -542,7 +558,7 @@ couchstore_error_t couchstore_close_db(Db *db)
       free(key);
     }
     delete db->kvs_key_pool;
-    
+
     while(!db->kvs_value_pool->empty()) {
       value = db->kvs_value_pool->front();
       db->kvs_value_pool->pop();
@@ -552,19 +568,19 @@ couchstore_error_t couchstore_close_db(Db *db)
   }
 
   kvs_close_container(db->cont_hd);
-  
+
   kvs_delete_container(db->dev, g_container_name);
   kvs_close_device(db->dev);
   free(db);
-    
+
   return COUCHSTORE_SUCCESS;
 }
 
 couchstore_error_t couchstore_exit_env(){
-  
+
   kvs_exit_env();
 
-  return COUCHSTORE_SUCCESS; 
+  return COUCHSTORE_SUCCESS;
 }
 
 couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
@@ -610,8 +626,8 @@ couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
   uint8_t *buffer;
   buffer =(uint8_t*) kvs_malloc(iter_read_size, 4096);
   db->iter_list.it_list = (uint8_t*)buffer;
-  
-  return COUCHSTORE_SUCCESS; 
+
+  return COUCHSTORE_SUCCESS;
 }
 
 couchstore_error_t couchstore_iterator_close(Db *db) {
@@ -631,14 +647,18 @@ couchstore_error_t couchstore_iterator_close(Db *db) {
 
 couchstore_error_t couchstore_iterator_next(Db *db) {
   kvs_iterator_context iter_ctx;
-  kvs_iterator_option option;
+  kvs_iterator_option option = g_iter_mode;
   iter_ctx.option = option;//KVS_ITER_DEFAULT;
-  iter_ctx.private1 = db;
+
+  kv_bench_data* bench_data = (kv_bench_data*)malloc(sizeof(kv_bench_data));
+  bench_data->db = db;
+  bench_data->tid = 0;
+  iter_ctx.private1 = bench_data;
   iter_ctx.private2 = NULL;
 
   kvs_iterator_list *iter_list = &db->iter_list;
   iter_list->size = iter_read_size;
-  
+
   //  if(use_udd){
   std::unique_lock<std::mutex> lock(db->lock_k);
   db->has_iter_finish = 0;
@@ -646,7 +666,7 @@ couchstore_error_t couchstore_iterator_next(Db *db) {
     //}
 
   memset(iter_list->it_list, 0, iter_read_size);
-  
+
   kvs_iterator_next_async(db->cont_hd, db->iter_handle, iter_list, &iter_ctx, on_io_complete);
 
   return COUCHSTORE_SUCCESS;
@@ -665,21 +685,25 @@ couchstore_error_t kvs_get_async(Db *db, sized_buf *key, sized_buf *value,
   kvs_value *kvsvalue = db->kvs_value_pool->front();
   db->kvs_value_pool->pop();
   lock.unlock();
-  
+
   if(kvskey == NULL || kvsvalue == NULL) {fprintf(stdout, "No elem in the kvs key/value_pool\n"); exit(0);}
-  
+
   kvskey->key = key->buf;
   kvskey->length = (kvs_key_t)key->size;
 
   kvsvalue->value = value->buf;
   kvsvalue->length = (uint32_t)value->size;
   kvsvalue->actual_value_size = kvsvalue->offset = 0;
-  
+
   kvs_retrieve_option option;
-  ret_ctx.option = option; 
-  ret_ctx.private1 = db;
+  ret_ctx.option = option;
+
+  kv_bench_data* bench_data = (kv_bench_data*)malloc(sizeof(kv_bench_data));
+  bench_data->db = db;
+  bench_data->tid = key->tid;
+  ret_ctx.private1 = bench_data;
   ret_ctx.private2 = NULL;
-    
+
 #if defined LATENCY_CHECK
   if(options == 1){
     struct timespec t11;
@@ -692,7 +716,7 @@ couchstore_error_t kvs_get_async(Db *db, sized_buf *key, sized_buf *value,
     *p1 = nanosec;
   }
 #endif
-  
+
   ret = kvs_retrieve_tuple_async(db->cont_hd, kvskey, kvsvalue, &ret_ctx, on_io_complete);
   if (ret) {
     fprintf(stderr, "KVBENCH: retrieve tuple async failed for %s, err 0x%x\n", (char*)key->buf, ret);
@@ -701,7 +725,7 @@ couchstore_error_t kvs_get_async(Db *db, sized_buf *key, sized_buf *value,
     exit(1);
   }
 
-  return COUCHSTORE_SUCCESS; 
+  return COUCHSTORE_SUCCESS;
 }
 
  couchstore_error_t kvs_get_sync(Db *db, sized_buf *key, sized_buf *value,
@@ -712,16 +736,16 @@ couchstore_error_t kvs_get_async(Db *db, sized_buf *key, sized_buf *value,
   const kvs_retrieve_context ret_ctx = { option,db, NULL };
   const kvs_key  kvskey = { key->buf, (kvs_key_t)key->size };
   kvs_value kvsvalue = { value->buf, (uint32_t)value->size , 0, 0 /*offset */};
-  
+
   ret = kvs_retrieve_tuple(db->cont_hd, &kvskey, &kvsvalue, &ret_ctx);
 
   if(ret != KVS_SUCCESS && ret != KVS_ERR_KEY_NOT_EXIST &&
     ret != KVS_ERR_BUFFER_SMALL) {
     fprintf(stderr, "KVBENCH: retrieve tuple sync failed for %s, err 0x%x\n", (char*)key->buf, ret);
     exit(1);
-  } 
-    
-  return COUCHSTORE_SUCCESS; 
+  }
+
+  return COUCHSTORE_SUCCESS;
 }
 
 couchstore_error_t kvs_store_sync(Db *db, Doc* const docs[],
@@ -773,11 +797,15 @@ couchstore_error_t kvs_store_async(Db *db, Doc* const docs[],
   kvsvalue->value = docs[0]->data.buf;
   kvsvalue->length = (uint32_t)docs[0]->data.size;
   kvsvalue->actual_value_size = kvsvalue->offset = 0;
-  
+
   put_ctx.option = option;
-  put_ctx.private1 = db;
+
+  kv_bench_data* bench_data = (kv_bench_data*)malloc(sizeof(kv_bench_data));
+  bench_data->db = db;
+  bench_data->tid = docs[0]->tid;
+  put_ctx.private1 = bench_data;
   put_ctx.private2 = NULL;
-  
+
 #if defined LATENCY_CHECK
   if(options == 1){
     struct timespec t11;
@@ -800,7 +828,7 @@ couchstore_error_t kvs_store_async(Db *db, Doc* const docs[],
   }
 
   return COUCHSTORE_SUCCESS;
-  
+
 }
 
 couchstore_error_t kvs_delete_sync(Db *db,
@@ -822,19 +850,23 @@ couchstore_error_t kvs_delete_sync(Db *db,
 {
 
   int ret;
-  kvs_delete_option option;
+  kvs_delete_option option = {false};
   kvs_delete_context del_ctx;// = { KVS_DELETE_TUPLE, 0, db, NULL };
 
-  std::unique_lock<std::mutex> lock(db->lock_k);  
+  std::unique_lock<std::mutex> lock(db->lock_k);
   kvs_key *kvskey = db->kvs_key_pool->front();
   db->kvs_key_pool->pop();
   lock.unlock();
   if(kvskey == NULL) {fprintf(stdout, "No elem in the kvs key/value_pool\n"); exit(0);}
   kvskey->key = key->buf;
   kvskey->length= (kvs_key_t)key->size;
-  
+
   del_ctx.option = option;//KVS_DELETE_TUPLE;
-  del_ctx.private1 = db;
+
+  kv_bench_data* bench_data = (kv_bench_data*)malloc(sizeof(kv_bench_data));
+  bench_data->db = db;
+  bench_data->tid = key->tid;
+  del_ctx.private1 = bench_data;
   del_ctx.private2 = NULL;
 
 #if defined LATENCY_CHECK
@@ -849,7 +881,7 @@ couchstore_error_t kvs_delete_sync(Db *db,
     *p1 = nanosec;
   }
 #endif
-  
+
   ret = kvs_delete_tuple_async(db->cont_hd, kvskey, &del_ctx, on_io_complete);
   if (ret) {
     fprintf(stderr, "KVBENCH: delete tuple async failed for %s, err 0x%x\n", (char*)key->buf, ret);
@@ -857,9 +889,9 @@ couchstore_error_t kvs_delete_sync(Db *db,
       free(del_ctx.private2);
     exit(1);
   }
-  
+
   return COUCHSTORE_SUCCESS;
- 
+
 }
 
 void on_iothread_ready(kvs_thread_t id) {}
@@ -919,12 +951,14 @@ void on_io_complete(kvs_postprocess_context* ioctx) {
     key_lock.unlock();
   }
   Db* owner = kvdata->db;
+  int tid = kvdata->tid;
   const auto context_idx = owner->context_idx;
   latency_stat *l_stat;
 
   if(use_udd) {
     std::unique_lock<std::mutex> lock(owner->lock_k);
     IoContext *ctx = owner->iocontexts->front();
+    ctx->tid = tid;
     owner->iocontexts->pop();
     lock.unlock();
     if(ctx == NULL) {
@@ -943,13 +977,13 @@ void on_io_complete(kvs_postprocess_context* ioctx) {
       ctx->value = ioctx->value->value;
       ctx->key = ioctx->key->key;
       l_stat = owner->l_read;
-      release_kvskeyvalue(owner, ioctx->key, ioctx->value); 
+      release_kvskeyvalue(owner, ioctx->key, ioctx->value);
       break;
     case KVS_CMD_DELETE:
       ctx->key = ioctx->key->key;
       ctx->value = NULL;
       l_stat = owner->l_delete;
-      release_kvskeyvalue(owner, ioctx->key, 0); 
+      release_kvskeyvalue(owner, ioctx->key, 0);
       break;
     case KVS_CMD_ITER_NEXT:
       //ctx->op = OP_ITER_NEXT;
@@ -958,7 +992,7 @@ void on_io_complete(kvs_postprocess_context* ioctx) {
       owner->has_iter_finish = 1;
       break;
     }
-  
+
     //ctx->key = ioctx->key->key;
     add_event(owner, ctx);
   } else {  // kdd
@@ -968,48 +1002,49 @@ void on_io_complete(kvs_postprocess_context* ioctx) {
       //IoContext *ctx = pop_ctx(owner, 0);
       std::unique_lock<std::mutex> lock(owner->lock_k);
       IoContext *ctx = owner->iocontexts->front();
+      ctx->tid = tid;
       owner->iocontexts->pop();
       lock.unlock();
       if(ctx == NULL) {
-	fprintf(stderr, "Not enough context, outstanding %ld\n", owner->iodone->size());
-	exit(1);
+      	fprintf(stderr, "Not enough context, outstanding %ld\n", owner->iodone->size());
+      	exit(1);
       }
 
       switch(ioctx->context) {
       case KVS_CMD_STORE:
-	ctx->value = ioctx->value->value;
-	ctx->key = ioctx->key->key;
-	l_stat = owner->l_write;
-	release_kvskeyvalue(owner, ioctx->key, ioctx->value);
-	break;
+      	ctx->value = ioctx->value->value;
+      	ctx->key = ioctx->key->key;
+      	l_stat = owner->l_write;
+      	release_kvskeyvalue(owner, ioctx->key, ioctx->value);
+      	break;
       case KVS_CMD_RETRIEVE:
-	ctx->value = ioctx->value->value;
-	ctx->key = ioctx->key->key;
-	l_stat = owner->l_read;
-	release_kvskeyvalue(owner, ioctx->key, ioctx->value);
-	break;
+      	ctx->value = ioctx->value->value;
+      	ctx->key = ioctx->key->key;
+      	l_stat = owner->l_read;
+      	release_kvskeyvalue(owner, ioctx->key, ioctx->value);
+      	break;
       case KVS_CMD_DELETE:
-	ctx->value = NULL;
-	ctx->key = ioctx->key->key;
-	l_stat = owner->l_delete;
-	release_kvskeyvalue(owner, ioctx->key, 0);
-	break;
+      	ctx->value = NULL;
+      	ctx->key = ioctx->key->key;
+      	l_stat = owner->l_delete;
+      	release_kvskeyvalue(owner, ioctx->key, 0);
+      	break;
       case KVS_CMD_ITER_NEXT:
-	//print_iterator_keyvals(&owner->iter_list);
-	//ctx->op= OP_ITER_NEXT;
-	ctx->key = NULL;
-	ctx->value = NULL;
-	std::unique_lock<std::mutex> lock(owner->lock_k);
-	owner->has_iter_finish = 1;
-	lock.unlock();
-	break;
+      	//print_iterator_keyvals(&owner->iter_list);
+      	//ctx->op= OP_ITER_NEXT;
+      	ctx->key = NULL;
+      	ctx->value = NULL;
+      	std::unique_lock<std::mutex> lock(owner->lock_k);
+      	owner->has_iter_finish = 1;
+      	lock.unlock();
+      	break;
       }
 
       add_event(owner, ctx);
     } // end of interrupt mode
 
   }
-  
+
 #if defined LATENCY_CHECK
   if (kvdata->time) {
     struct timespec t11;
@@ -1025,7 +1060,7 @@ void on_io_complete(kvs_postprocess_context* ioctx) {
       l_stat->cursor = l_stat->cursor % max_sample;
       l_stat->nsamples = max_sample;
     } else {
-      l_stat->nsamples = l_stat->cursor + 1; 
+      l_stat->nsamples = l_stat->cursor + 1;
     }
     cur_sample = l_stat->cursor;
     l_stat->cursor++;
@@ -1035,14 +1070,20 @@ void on_io_complete(kvs_postprocess_context* ioctx) {
   if (ioctx->context != KVS_CMD_ITER_NEXT) free(kvdata);
 }
 
-int getevents(Db *db, int min, int max, IoContext_t **context)
+int getevents(Db *db, int min, int max, IoContext_t **context, int tid)
 {
     int i = 0;
     std::unique_lock<std::mutex> lock(db->lock_k);
-    while(!db->iodone->empty() && i < max) {
+    int queue_size = db->iodone->size();
+    while(queue_size > 0 && i < max) {
       context[i] = db->iodone->front();
       db->iodone->pop();
-      i++;
+      if(context[i]->tid!=tid){
+        db->iodone->push(context[i]);
+      }else{
+        i++;
+      }
+      queue_size--;
     }
     lock.unlock();
     return i;
@@ -1085,7 +1126,7 @@ couchstore_error_t couchstore_setup_device(const char *dev_path,
   fprintf(fp, "cfg_file=%s\n\n", config_file);
 
   kdd_is_polling = 0;
-  
+
   if(dev_path[1] == 'd') { // /dev/kvemul or /dev/nvme kernel driver
     use_udd = 0;
   } else {
@@ -1098,10 +1139,10 @@ couchstore_error_t couchstore_setup_device(const char *dev_path,
   fprintf(fp, "cq_thread_mask=%s\n", udd_cq_thread_masks);
   fprintf(fp, "mem_size_mb=%u\n", udd_mem_size_mb);
   fprintf(fp, "syncio=%u\n", write_mode);
-  
+
   kv_write_mode = write_mode;
 
-  fclose(fp); 
+  fclose(fp);
   fprintf(stdout, "device init done\n");
 
   return COUCHSTORE_SUCCESS;
@@ -1122,7 +1163,7 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
     fprintf(stderr, "Device open failed %d\n", ret);
     exit(1);
   }
-  
+
   ppdb->id = id;
   ppdb->context_idx = 0;
   //ppdb->iter_handle = NULL;
@@ -1134,31 +1175,32 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
     IoContext *context = NULL;
     ppdb->iocontexts = new std::queue<IoContext*>;
     ppdb->iodone = new std::queue<IoContext*>;
-    
+
     ppdb->kvs_key_pool = new std::queue<kvs_key*>;
     ppdb->kvs_value_pool = new std::queue<kvs_value*>;
-    
+
     kvs_key *key = NULL;
     kvs_value *value = NULL;
     for (int i =0; i < 36000; i++) {
       context = (IoContext *)malloc(sizeof(IoContext));
-      if(context == NULL){    
+      memset(context, 0, sizeof(IoContext));
+      if(context == NULL){
         fprintf(stderr, "Can not allocate db context\n");
         kvs_close_device(ppdb->dev);
         exit(0);
       }
 
       ppdb->iocontexts->push(context);
-      
+
       key = (kvs_key*)malloc(sizeof(kvs_key));
       ppdb->kvs_key_pool->push(key);
 
       value = (kvs_value*)malloc(sizeof(kvs_value));
       ppdb->kvs_value_pool->push(value);
-      
+
     }
   }
-    
+
   /* Keyspace related op */
   uint32_t valid_cnt = 0;
   const uint32_t retrieve_cnt = 2;
@@ -1171,11 +1213,11 @@ couchstore_error_t couchstore_open_db_kvs(const char *dev_path,
 
   kvs_list_key_spaces(ppdb->dev, 1, retrieve_cnt*sizeof(kvs_key_space_name),
     names, &valid_cnt);
-  
+
   for (uint8_t idx = 0; idx < valid_cnt; idx++) {
     kvs_delete_key_space(ppdb->dev, &names[idx]);
   }
-  
+
   kvs_key_space_name ks_name;
   ks_name.name = (char *)g_container_name;
   ks_name.name_len = strlen(g_container_name);
@@ -1212,7 +1254,7 @@ couchstore_error_t couchstore_close_db(Db *db)
       free(key);
     }
     delete db->kvs_key_pool;
-    
+
     while(!db->kvs_value_pool->empty()) {
       value = db->kvs_value_pool->front();
       db->kvs_value_pool->pop();
@@ -1231,15 +1273,15 @@ couchstore_error_t couchstore_close_db(Db *db)
   kvs_close_device(db->dev);
 
   free(db);
-    
+
   return COUCHSTORE_SUCCESS;
 }
 
 couchstore_error_t couchstore_exit_env(){
-  
+
   remove(kv_conf_path);
 
-  return COUCHSTORE_SUCCESS; 
+  return COUCHSTORE_SUCCESS;
 }
 
 couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
@@ -1250,7 +1292,7 @@ couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
   iter_ctx.bitmask[1] = 0xff;
   iter_ctx.bitmask[2] = 0;
   iter_ctx.bitmask[3] = 0;
-  
+
   iter_ctx.bit_pattern[0] = '0';
   iter_ctx.bit_pattern[1] = '0';
   iter_ctx.bit_pattern[2] = '0';
@@ -1287,7 +1329,7 @@ couchstore_error_t couchstore_iterator_open(Db *db, int iterator_mode) {
   kviter_map.insert(std::make_pair<kvs_key_space_handle, kv_bench_data*>
     ((kvs_key_space_handle)db->cont_hd, (kv_bench_data*)kvdata));
   k_lock.unlock();
-  return COUCHSTORE_SUCCESS; 
+  return COUCHSTORE_SUCCESS;
 }
 
 couchstore_error_t couchstore_iterator_close(Db *db) {
@@ -1315,7 +1357,7 @@ couchstore_error_t couchstore_iterator_close(Db *db) {
 couchstore_error_t couchstore_iterator_next(Db *db) {
   kvs_iterator_list *iter_list = &db->iter_list;
   iter_list->size = iter_read_size;
-  
+
   std::unique_lock<std::mutex> lock(db->lock_k);
   db->has_iter_finish = 0;
   lock.unlock();
@@ -1344,9 +1386,9 @@ couchstore_error_t kvs_get_sync(Db *db, sized_buf *key, sized_buf *value,
     ret != KVS_ERR_BUFFER_SMALL) {
     fprintf(stderr, "KVBENCH: retrieve tuple sync failed for %s, err 0x%x\n", (char*)key->buf, ret);
     exit(1);
-  } 
-    
-  return COUCHSTORE_SUCCESS; 
+  }
+
+  return COUCHSTORE_SUCCESS;
 }
 
 couchstore_error_t kvs_get_async(Db *db, sized_buf *key, sized_buf *value,
@@ -1361,20 +1403,21 @@ couchstore_error_t kvs_get_async(Db *db, sized_buf *key, sized_buf *value,
   kvs_value *kvsvalue = db->kvs_value_pool->front();
   db->kvs_value_pool->pop();
   lock.unlock();
-  
+
   if(kvskey == NULL || kvsvalue == NULL) {fprintf(stdout, "No elem in the kvs key/value_pool\n"); exit(0);}
-  
+
   kvskey->key = key->buf;
   kvskey->length = (uint16_t)key->size;
 
   kvsvalue->value = value->buf;
   kvsvalue->length = (uint32_t)value->size;
   kvsvalue->actual_value_size = kvsvalue->offset = 0;
-  
+
   kvs_option_retrieve option = {false};
   kv_bench_data* data = (kv_bench_data*)malloc(sizeof(kv_bench_data));
   memset(data, 0, sizeof(kv_bench_data));
   data->db = db;
+  data->tid = key->tid;
 #if defined LATENCY_CHECK
   if(options == 1){
     struct timespec t11;
@@ -1397,7 +1440,7 @@ couchstore_error_t kvs_get_async(Db *db, sized_buf *key, sized_buf *value,
     exit(1);
   }
 
-  return COUCHSTORE_SUCCESS; 
+  return COUCHSTORE_SUCCESS;
 }
 
 couchstore_error_t kvs_store_sync(Db *db, Doc* const docs[],
@@ -1444,7 +1487,7 @@ couchstore_error_t kvs_store_async(Db *db, Doc* const docs[],
   kv_bench_data* data = (kv_bench_data*)malloc(sizeof(kv_bench_data));
   memset(data, 0, sizeof(kv_bench_data));
   data->db = db;
-
+  data->tid = docs[0]->tid;
 #if defined LATENCY_CHECK
   if(options == 1){
     struct timespec t11;
@@ -1468,7 +1511,7 @@ couchstore_error_t kvs_store_async(Db *db, Doc* const docs[],
   }
 
   return COUCHSTORE_SUCCESS;
-  
+
 }
 
 couchstore_error_t kvs_delete_sync(Db *db,
@@ -1491,7 +1534,7 @@ couchstore_error_t kvs_delete_async(Db *db, sized_buf *key,
   int ret;
   kvs_option_delete option = {false};
 
-  std::unique_lock<std::mutex> lock(db->lock_k);  
+  std::unique_lock<std::mutex> lock(db->lock_k);
   kvs_key *kvskey = db->kvs_key_pool->front();
   db->kvs_key_pool->pop();
   lock.unlock();
@@ -1501,7 +1544,7 @@ couchstore_error_t kvs_delete_async(Db *db, sized_buf *key,
   kv_bench_data* data = (kv_bench_data*)malloc(sizeof(kv_bench_data));
   memset(data, 0, sizeof(kv_bench_data));
   data->db = db;
-
+  data->tid = key->tid;
 #if defined LATENCY_CHECK
   if(options == 1){
     struct timespec t11;
@@ -1523,7 +1566,7 @@ couchstore_error_t kvs_delete_async(Db *db, sized_buf *key,
     fprintf(stderr, "KVBENCH: delete tuple async failed for %s, err 0x%x\n", (char*)key->buf, ret);
     exit(1);
   }
-  
+
   return COUCHSTORE_SUCCESS;
 }
 
@@ -1541,13 +1584,13 @@ int release_context(Db *db, IoContext **contexts, int nr){
   if(use_udd || kdd_is_polling == 0) {
     for (int i =0 ;i < nr ; i++) {
       if (contexts[i]) {
-	std::unique_lock<std::mutex> lock(db->lock_k);
-	db->iocontexts->push(contexts[i]);
-	//push_ctx(db, contexts[i], 0);
+      	std::unique_lock<std::mutex> lock(db->lock_k);
+      	db->iocontexts->push(contexts[i]);
+      	//push_ctx(db, contexts[i], 0);
       }
     }
   }
-  
+
   return 0;
 }
 
@@ -1601,7 +1644,7 @@ couchstore_error_t couchstore_db_info(Db *db, DbInfo* info)
     // TBD: need to get container information here, device usage
     return COUCHSTORE_SUCCESS;
 }
- 
+
 LIBCOUCHSTORE_API
 couchstore_error_t couchstore_save_documents(Db *db, Doc* const docs[], DocInfo *infos[],
 		   unsigned numdocs, couchstore_save_options options)
@@ -1611,8 +1654,8 @@ couchstore_error_t couchstore_save_documents(Db *db, Doc* const docs[], DocInfo 
   else
     return kvs_store_async(db, docs, numdocs, options);
 }
- 
- 
+
+
 LIBCOUCHSTORE_API
 couchstore_error_t couchstore_save_document(Db *db, const Doc *doc, DocInfo *info,
         couchstore_save_options options)
@@ -1648,7 +1691,7 @@ couchstore_error_t couchstore_open_document_kv (Db *db,
    return COUCHSTORE_SUCCESS;
 
 }
- 
+
 LIBCOUCHSTORE_API
 couchstore_error_t couchstore_open_document(Db *db,
                                             const void *id,
@@ -1656,7 +1699,7 @@ couchstore_error_t couchstore_open_document(Db *db,
                                             Doc **pDoc,
                                             couchstore_open_options options)
 {
-  
+
     return COUCHSTORE_SUCCESS;
 }
 
@@ -1669,14 +1712,14 @@ couchstore_error_t couchstore_delete_document_kv(Db *db,
   else
     return kvs_delete_async(db, key, options);
 }
- 
+
 LIBCOUCHSTORE_API
-couchstore_error_t couchstore_delete_document(Db *db, 
+couchstore_error_t couchstore_delete_document(Db *db,
 					      const void *id,
 					      size_t idlen,
 					      couchstore_open_options options)
 {
-  return COUCHSTORE_SUCCESS; 
+  return COUCHSTORE_SUCCESS;
 }
 
 LIBCOUCHSTORE_API
@@ -1698,7 +1741,7 @@ couchstore_error_t couchstore_kvs_malloc(size_t size_bytes, void **buf){
 LIBCOUCHSTORE_API
 void couchstore_free_document(Doc *doc)
 {
-  if (doc->id.buf) kvs_free(doc->id.buf); 
+  if (doc->id.buf) kvs_free(doc->id.buf);
   if (doc->data.buf) kvs_free(doc->data.buf);
   free(doc);
 }

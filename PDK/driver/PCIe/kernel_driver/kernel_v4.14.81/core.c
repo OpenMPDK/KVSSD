@@ -1302,7 +1302,7 @@ static struct aio_user_ctx *get_aio_user_ctx(void __user *addr, unsigned len, bo
 			src_data += PAGE_SIZE;
 		}
 	} else {
-		mapped_pages = get_user_pages_fast((unsigned long)addr, num_page, 0,
+		mapped_pages = get_user_pages_fast((unsigned long)addr, num_page, 1,
 				user_ctx->pages);
 		if (mapped_pages != num_page) {
 			user_ctx->nents = mapped_pages;

@@ -25,6 +25,7 @@ enum Operations  {
 };
 */
 typedef struct IoContext {
+  int tid;
   int op;
   void *key;
   uint8_t keylength;

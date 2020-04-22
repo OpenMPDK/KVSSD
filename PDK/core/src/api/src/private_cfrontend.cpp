@@ -472,6 +472,13 @@ bool _container_opened(kvs_container_handle cont_hd) {
   return true;
 }
 
+void _remove_container_from_g_env(kvs_container_handle cont_hd) {
+  auto t = find(g_env.list_open_container.begin(), g_env.list_open_container.end(), cont_hd);
+  if (t != g_env.list_open_container.end()) {
+    g_env.list_open_container.erase(t);
+  }
+}
+
 inline kvs_result _check_container_handle(kvs_container_handle cont_hd) {
   if (cont_hd == NULL) {
     return KVS_ERR_PARAM_INVALID;
@@ -1140,14 +1147,12 @@ kvs_result kvs_close_device(kvs_device_handle user_dev) {
     return KVS_ERR_DEV_NOT_OPENED;
   }
 
-  //free all opened container handle
+  //free all opened container handle in this device
   if(user_dev->meta_cont_hd)
     free(user_dev->meta_cont_hd);
 
-  for (auto it = g_env.list_open_container.begin(); it != g_env.list_open_container.end();) {
-    it = g_env.list_open_container.erase(it);
-  }
   for (const auto &t : user_dev->open_cont_hds) {
+    _remove_container_from_g_env(t);
     free(t);
   }
   

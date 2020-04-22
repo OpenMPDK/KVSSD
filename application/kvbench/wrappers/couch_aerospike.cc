@@ -41,7 +41,7 @@ struct _db {
   //std::queue<IoContext*> iodone;
   IoContext *iocontexts;
   IoContext *iodone;
-  spin_t lock;  
+  spin_t lock;
   long outstandingios;
   latency_stat *l_read;
   latency_stat *l_write;
@@ -92,10 +92,9 @@ IoContext *pop_ctx(Db *db, int is_iodone){
     db->iodone = ctx->next;
     pthread_spin_unlock(&db->lock);
   } else {
-    if(db->iocontexts == NULL)
-      { 
-	return NULL;
-      }
+    if(db->iocontexts == NULL) {
+	  return NULL;
+    }
     ctx = db->iocontexts;
     db->iocontexts = ctx->next;
   }
@@ -105,9 +104,7 @@ IoContext *pop_ctx(Db *db, int is_iodone){
 }
 
 bool is_empty(IoContext *ctx) {
-
   return (ctx == NULL);
-
 }
 
 void pass_lstat_to_db(Db *db, latency_stat *l_read, latency_stat *l_write, latency_stat *l_delete)
@@ -118,38 +115,33 @@ void pass_lstat_to_db(Db *db, latency_stat *l_read, latency_stat *l_write, laten
 }
 
 void add_event(Db *db, IoContext *ctx) {
-  
   push_ctx(db, ctx, 1);
-
 }
 
 int release_context(Db *db, IoContext **context, int length) {
-
   for (int i =0 ;i < length ; i++) {
     if (context[i]) {
       push_ctx(db, context[i], 0);
     }
   }
-
   return 0;
 }
 
 static void write_complete(as_error *err, void *udata, as_event_loop *loop)
 {
-
   IoContext *ioctx = (IoContext *)udata;
 
   if (err) {
     if (err->code == 18) {
       as_error err;
       if (aerospike_key_put_async(&as, &err, NULL, &ioctx->akey, &ioctx->arec, write_complete,ioctx, NULL, NULL) != AEROSPIKE_OK) {
-	fprintf(stderr, "aerospike_key_put (callback): %d, %s\n", err.code , err.message );
-	return ;
+      	fprintf(stderr, "aerospike_key_put (callback): %d, %s\n", err.code , err.message );
+      	return ;
       }
       return;
     }
 
-    if(err->code != 2)  // no print for 'not found' 
+    if(err->code != 2)  // no print for 'not found'
       fprintf(stderr,"Command failed: %d %s, key = %s\n", err->code, err->message, (char*)ioctx->key);
   }
 
@@ -159,14 +151,14 @@ static void write_complete(as_error *err, void *udata, as_event_loop *loop)
   ioctx->result = (err)? -1:0;
 
   add_event((Db*)ioctx->private1,ioctx);
-  
+
 #if defined LATENCY_CHECK
   if(ioctx->monitor == 1){
     struct timespec t11;
     unsigned long long start, end;
     uint64_t cur_sample;
     latency_stat *l_stat = ioctx->l_stat;
-    
+
     clock_gettime(CLOCK_REALTIME, &t11);
     end = t11.tv_sec * 1000000000L + t11.tv_nsec;
     end /= 1000L;
@@ -180,10 +172,10 @@ static void write_complete(as_error *err, void *udata, as_event_loop *loop)
     cur_sample = l_stat->cursor;
     l_stat->cursor++;
     l_stat->samples[cur_sample] = end - start;
-    
+
   }
 #endif
-  
+
 }
 
 static void read_complete(as_error *err, as_record *record, void *udata, as_event_loop *)
@@ -221,7 +213,7 @@ static void read_complete(as_error *err, as_record *record, void *udata, as_even
   }
 #endif
   //as_key_destroy(&ioctx->akey);
-  //as_record_destroy(&ioctx->arec);  
+  //as_record_destroy(&ioctx->arec);
 }
 static void delete_complete(as_error *err, void *udata, as_event_loop *loop)
 {
@@ -230,10 +222,10 @@ static void delete_complete(as_error *err, void *udata, as_event_loop *loop)
   } else {
 
   }
-  
+
   ioctx->result = (err)? -1:0;
   add_event((Db*)ioctx->private1, ioctx);
-  
+
 #if defined LATENCY_CHECK
   if(ioctx->monitor == 1){
     struct timespec t11;
@@ -254,12 +246,12 @@ static void delete_complete(as_error *err, void *udata, as_event_loop *loop)
     cur_sample = l_stat->cursor;
     l_stat->cursor++;
     l_stat->samples[cur_sample] = end - start;
-    
+
   }
 #endif
-}  
+}
 
-int getevents(Db *db, int min, int max, IoContext **context)
+int getevents(Db *db, int min, int max, IoContext **context, int tid)
 {
   int i = 0;
   while (!is_empty(db->iodone) && i < max) {
@@ -277,7 +269,7 @@ typedef struct fun {
   int a;
   std::queue<IoContext*> testq;
 }fun_t;
-  
+
 LIBCOUCHSTORE_API
 couchstore_error_t couchstore_open_db(const char *filename,
                                       couchstore_open_flags flags,
@@ -300,8 +292,8 @@ couchstore_error_t couchstore_open_db(const char *filename,
     }
     context->prev = context->next = NULL;
     push_ctx(ppdb, context, 0);
-   }
-  
+  }
+
   return COUCHSTORE_SUCCESS;
 }
 
@@ -320,7 +312,7 @@ couchstore_error_t couchstore_as_setup(const char *hosts,
 				       uint32_t loop_capacity,
 				       const char *name_space,
 				       int write_mode)
-  
+
 {
 
   kv_write_mode = write_mode;
@@ -350,7 +342,7 @@ couchstore_error_t couchstore_as_setup(const char *hosts,
   config.async_max_conns_per_node = 10000;
   config.max_conns_per_node = 5000;
   config.conn_pools_per_node = 6;
-  
+
   p->read.base.total_timeout = read_timeout;
   p->read.base.max_retries = max_retries;
   p->read.replica = num_replicas;
@@ -418,7 +410,7 @@ couchstore_error_t couchstore_close_device(int32_t ndocs)
   aerospike_destroy(&as);
 
   return COUCHSTORE_SUCCESS;
-  
+
 }
 
 LIBCOUCHSTORE_API
@@ -439,20 +431,20 @@ couchstore_error_t couchstore_save_documents(Db *db, Doc* const docs[], DocInfo 
     if(kv_write_mode == 0) { // async
       IoContext *ctx = pop_ctx(db, 0);
       if(ctx == NULL) {
-	fprintf(stderr, "Not enough context, outstanding %ld\n", db->outstandingios);
-	exit(1);
+      	fprintf(stderr, "Not enough context, outstanding %ld\n", db->outstandingios);
+      	exit(1);
       }
       //as_key akey;
       if (as_key_init_rawp(&ctx->akey, ns, "set", (const uint8_t *)docs[i]->id.buf, docs[i]->id.size, false) == 0) {
-	fprintf(stderr, "failed to initialize the key\n");
-	exit(-1);
+      	fprintf(stderr, "failed to initialize the key\n");
+      	exit(-1);
       }
 
       //as_record rec;
       as_record_init(&ctx->arec, 1);
       if (as_record_set_rawp(&ctx->arec, "bin", (const uint8_t*)docs[i]->data.buf, docs[i]->data.size, false) == 0) {
-	fprintf(stderr, "failed to initialize the value\n");
-	exit(-1);
+      	fprintf(stderr, "failed to initialize the value\n");
+      	exit(-1);
       }
 
       ctx->key = docs[i]->id.buf;
@@ -465,38 +457,38 @@ couchstore_error_t couchstore_save_documents(Db *db, Doc* const docs[], DocInfo 
 
 #if defined LATENCY_CHECK
       if(options == 1) {
-	struct timespec t11;
-	unsigned long long nanosec;
-	clock_gettime(CLOCK_REALTIME, &t11);
-	nanosec = t11.tv_sec * 1000000000L + t11.tv_nsec;
-	nanosec /= 1000L;
-	ctx->start = nanosec;
-	ctx->monitor = options;
+      	struct timespec t11;
+      	unsigned long long nanosec;
+      	clock_gettime(CLOCK_REALTIME, &t11);
+      	nanosec = t11.tv_sec * 1000000000L + t11.tv_nsec;
+      	nanosec /= 1000L;
+      	ctx->start = nanosec;
+      	ctx->monitor = options;
       }
 #endif
 
       if (aerospike_key_put_async(&as, &err, NULL, &ctx->akey, &ctx->arec, write_complete, ctx, NULL, NULL) != AEROSPIKE_OK) {
-	fprintf(stderr, "aerospike_key_put failed: %d, %s\n", err.code, err.message);
-	exit(-1);
+      	fprintf(stderr, "aerospike_key_put failed: %d, %s\n", err.code, err.message);
+      	exit(-1);
       }
       db->outstandingios++;
     }else { // sync
       as_key akey;
       if (as_key_init_rawp(&akey, ns, "set", (const uint8_t *)docs[i]->id.buf, docs[i]->id.size, false) == 0){
-	fprintf(stderr, "failed to initialize the key\n");
-	exit(-1);
+      	fprintf(stderr, "failed to initialize the key\n");
+      	exit(-1);
       }
 
       as_record rec;
       as_record_init(&rec, 1);
       if (as_record_set_rawp(&rec, "bin", (const uint8_t*)docs[i]->data.buf, docs[i]->data.size, false) == 0) {
-	fprintf(stderr, "failed to initialize the value\n");
-	exit(-1);
+      	fprintf(stderr, "failed to initialize the value\n");
+      	exit(-1);
       }
 
       if (aerospike_key_put(&as, &err, NULL, &akey, &rec) != AEROSPIKE_OK) {
-	fprintf(stderr, "aerospike_key_put failed: %d, %s\n",err.code, err.message);
-	exit(-1);
+      	fprintf(stderr, "aerospike_key_put failed: %d, %s\n",err.code, err.message);
+      	exit(-1);
       }
 
       as_key_destroy(&akey);
@@ -528,14 +520,14 @@ couchstore_error_t couchstore_open_document(Db *db,
   uint64_t cur_sample = 0;
   struct timespec t11;
   unsigned long long nanosec;
-  
+
   if(as_key_init_rawp(&akey, ns, "set", (const uint8_t*)id, idlen, false) == 0) {
     fprintf(stderr, "failed to initialize the key\n");
     exit(-1);
   }
 
   if(kv_write_mode == 0) {// async
-    IoContext *ctx = pop_ctx(db, 0); 
+    IoContext *ctx = pop_ctx(db, 0);
     ctx->key = (void *)id;
     ctx->keylength = idlen;
     ctx->value = 0;
@@ -559,18 +551,19 @@ couchstore_error_t couchstore_open_document(Db *db,
     if (aerospike_key_get_async(&as, &err, NULL, &akey, read_complete, ctx, NULL, NULL) != AEROSPIKE_OK) {
       fprintf(stderr, "aerospike_key_get failed: %d, %s\n", err.code, err.message);
       exit(-1);
-    }    
+    }
 
   } else { // sync
-
-    if (aerospike_key_get(&as, &err, NULL, &akey, &rec) != AEROSPIKE_OK) {
+    as_status ret = aerospike_key_get(&as, &err, NULL, &akey, &rec);
+    if(ret != AEROSPIKE_OK && ret != AEROSPIKE_ERR_RECORD_NOT_FOUND) {
       fprintf(stderr, "aerospike_key_get failed: %d, %s\n", err.code, err.message);
       exit(-1);
     }
 
     as_key_destroy(&akey);
+    as_record_destroy(rec);
   }
-  
+
   return COUCHSTORE_SUCCESS;
 }
 
@@ -587,7 +580,7 @@ couchstore_error_t couchstore_delete_document_kv(Db *db,sized_buf *key,
   }
 
   if(kv_write_mode == 0) {// async
-    IoContext *ctx = pop_ctx(db, 0); 
+    IoContext *ctx = pop_ctx(db, 0);
     ctx->key = key->buf;
     ctx->keylength = key->size;
     ctx->value = 0;
@@ -607,13 +600,14 @@ couchstore_error_t couchstore_delete_document_kv(Db *db,sized_buf *key,
       ctx->monitor = options;
     }
 #endif
-    
+
     if (aerospike_key_remove_async(&as, &err, NULL, &akey, delete_complete, ctx, NULL, NULL) != AEROSPIKE_OK) {
       fprintf(stderr, "aerospike_key_remove failed: %d, %s\n", err.code, err.message);
       exit(-1);
     }
   } else { // sync
-    if(aerospike_key_remove(&as, &err, NULL, &akey) != AEROSPIKE_OK) {
+    as_status ret = aerospike_key_remove(&as, &err, NULL, &akey);
+    if(ret != AEROSPIKE_OK && ret != AEROSPIKE_ERR_RECORD_NOT_FOUND) {
       fprintf(stderr, "aerospike_key_remove failed: %d, %s\n", err.code, err.message);
       exit(-1);
     }
@@ -628,7 +622,7 @@ couchstore_error_t couchstore_delete_document(Db *db,
 					      size_t idlen,
 					      couchstore_open_options options)
 {
-  
+
   return COUCHSTORE_SUCCESS;
 }
 
