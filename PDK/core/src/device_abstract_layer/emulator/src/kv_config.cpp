@@ -167,7 +167,7 @@ kv_config::kv_config(const std::string configfile) {
     load_config(configfile);
 }
 
-bool_t kv_config::load_config(const std::string configfile) {
+bool kv_config::load_config(const std::string configfile) {
 
     // load from default config file
     std::ifstream file(configfile.c_str());
@@ -197,7 +197,7 @@ bool_t kv_config::load_config(const std::string configfile) {
       m_config_kv.insert(std::make_pair(section_name + "/" + key, value));
     }
 
-    return TRUE;
+    return true;
 }
 
 

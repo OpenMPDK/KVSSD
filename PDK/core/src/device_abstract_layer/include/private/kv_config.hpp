@@ -33,12 +33,8 @@
 
 #ifndef _KV_CONFIG_INCLUDE_H_
 #define _KV_CONFIG_INCLUDE_H_
-
-#include <random>
-#include <cmath>
 #include <unordered_map>
-#include "kvs_adi_internal.h"
-
+#include <random>
 
 // define basic configuration
 namespace kvadi {
@@ -49,7 +45,7 @@ public:
     ~kv_config() {}
 
     // load from config file
-    bool_t load_config(std::string configfile);
+    bool load_config(std::string configfile);
      
     // based on configuration. generate a random latency in nanoseconds in normal
     // distribution

@@ -9,11 +9,9 @@ How to build:
        - gcc version should be newer than v5.0
     1. mkdir build
     2. cd build
-    3. Two types of API are available: Samsung KV API and SNIA KV Storage API
-       Three types of driver are available : kernel driver (KDD); emulator (EMU); user space driver (SPDK)
+    3. Three types of driver are available for SNIA KV Storage API: kernel driver (KDD); emulator (EMU); user space driver (SPDK)
        User can compile one of them with following options:
 
-       SNIA KV Storage API:
        Kernel Device Driver
        =======
        cmake -DWITH_KDD=ON ../
@@ -26,18 +24,6 @@ How to build:
        =======
        cmake -DWITH_SPDK=ON ../ 
 
-       Samsung KV API:
-       Kernel Device Driver
-       =======
-       cmake -DWITH_KDD=ON -DSAMSUNG_API=ON ../
-
-       Emulator
-       =======
-       cmake -DWITH_EMU=ON -DSAMSUNG_API=ON ../
-
-       User Space Driver
-       =======
-       cmake -DWITH_SPDK=ON -DSAMSUNG_API=ON ../
        * Replace <main_source_dir>/lib/libkvnvmedd.a if there is newer version of spdk driver available or if user wants to rebuild the driver
        * The pre-build library is on gcc version 5.4.0
        * https://github.com/OpenMPDK/uNVMe v18.11

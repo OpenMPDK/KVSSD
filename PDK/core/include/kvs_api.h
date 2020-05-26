@@ -83,264 +83,6 @@ void  _kvs_free(void * buf, const char *file);
 #define kvs_free(buf) _kvs_free(buf, _LOCATION)
 #define kvs_memstat() _kvs_report_memstat()
 
-#ifdef SAMSUNG_API
-
-/*! Initialize the library
- * 
- *  This function must be called once to initialize the environment for the library.
- *  \ref kvs_init_options includes all the available options.
- *  \ingroup KV_API
- */
-kvs_result kvs_init_env(kvs_init_options* options);
-
-/*! Set default options to \ref kvs_init_options 
- * 
- * \ingroup KV_API
- */
-kvs_result kvs_init_env_opts(kvs_init_options* options);
-
-/*! Deinitialize the library
- * 
- * It closes all opened devices and releases any the system resources assigned by the library.
- * 
- * \ingroup KV_API
- */
-kvs_result kvs_exit_env();
-
-/*! List KV devices 
- * 
- * It returns the list of KV devices in the system
- * 
- * \see kv_device_info for each information retrieved by this function
- * \ingroup KV_API
- */
-//int32_t kvs_list_kvdevices(kv_device_info **devs, int size);
-
-/*! Open a KV device 
- * 
- *  The device path can be either a kernel device path or a SPDK device path that 
- *  can be retrieved from \ref kv_device_info. The corresponding device driver will 
- *  be loaded internally. 
- * 
- *  TO open a KV emulator, please use the pseudo device path of "/dev/kvemul"
- *
- * \return \ref kv_device_handle : a device handle
- * 
- *\ingroup KV_API
- */
-kvs_result kvs_open_device(const char *dev_path, kvs_device_handle *dev_hd);
-
-/*! Close a KV device 
- * 
- *  \ingroup KV_API
- */
-kvs_result kvs_close_device(kvs_device_handle user_dev);
-
-
-/*! This API creates a new contrainer in a device. 
- * User needs to specify a unique container name as a null terminated string, and its capacity. 
- * The capacity is defined in 4KB units. 
- * A 0 (numeric zero) capacity of means no limitation where 
- * device capacity limits actual container capacity. 
- * The device assigns a unique id while a user assigns a unique name. 
- *
- * \param dev_hd kvs_device_handle data structure that includes unique device id 
- * \param name name of container
- * \param sz_4kb capacity of a container with respect to tuple size (key size + value size) in 4KB units 
- * \param ctx: group information to create container groups
- */
-
-  /* Container related features are not supported yet 
-   * A dummy container will be created after the call
-   */
-kvs_result kvs_create_container (kvs_device_handle dev_hd, const char *name, uint64_t size, const kvs_container_context *ctx);
-  
-kvs_result kvs_delete_container (kvs_device_handle dev_hd, const char *cont_name);
-
-kvs_result kvs_open_container (kvs_device_handle dev_hd, const char* name, kvs_container_handle *cont_hd);
-  
-kvs_result kvs_close_container (kvs_container_handle cont_hd);
-
-kvs_result kvs_list_containers(kvs_device_handle dev_hd, uint32_t index,
-  uint32_t buffer_size, kvs_container_name *names, uint32_t *cont_cnt);
-
-kvs_result kvs_get_container_info (kvs_container_handle cont_hd, kvs_container *cont);
-
-
-/*! Check and Process completed asynchronous I/Os
- * 
- *  It checks if there is any completed asynchronous I/Os and
- *  calls the user's callback function specified in \ref kvs_init_options.
- * 
- *  It should be called within the same thread that issued the I/O. 
- *
- *  \param cont_hd container handle  
- *  \param maxevents the maximum number of I/O events to process
- *  \return the number of events processed
- *  \ingroup KV_API
- */
-int32_t kvs_get_ioevents(kvs_container_handle cont_hd, int maxevents);
-
-kvs_result kvs_get_tuple_info (kvs_container_handle cont_hd, const kvs_key *key, kvs_tuple_info *info);
-
-  
-/*! Store a KV pair 
- *
- * It stores a KV pair to a device. Depending on the type of KV driver, different memory contraints can be applied.
- * 
- * e.g. when using SPDK drivers, the buffers in \ref kvs_key and \ref kvs_value need to be allocated using 
- * \ref kvs_malloc or \ref kvs_zalloc.
- * 
- * Currently no option flags specified in \ref kvs_io_options are supported. \ref KVS_SYNC_IO flag is supported to 
- * enable synchronous I/O while asynchrnous I/O is being used. 
- * 
- * \param cont_hd container handle
- * \param key key to retrieve
- * \param value value to store
- * \param ctx options 
- *\ingroup KV_API
- */
-kvs_result kvs_store_tuple(kvs_container_handle cont_hd, const kvs_key *key, const kvs_value *value, const kvs_store_context *ctx);
-
-kvs_result kvs_store_tuple_async (kvs_container_handle cont_hd, const kvs_key *key, const kvs_value *value, const kvs_store_context *ctx, kvs_callback_function cbfn);
-
-  
-/*! Retrieve a KV pair 
- *
- * Finds and returns the key-value pair. The value is an input/output parameter. It needs to provide an address of 
- * the value buffer and its size. The retreived data will be copied to the buffer. If the buffer size is not enough 
- * to store the results, it will return \ref KVS_ERR_VALUE.
- * 
- * Some memory constraints can be applied as described in \ref kvs_store_tuple. 
- * 
- * No retrieve options are supported yet except KVS_SYNC_IO. 
- * 
- * \param cont_hd container handle
- * \param key key to retrieve
- * \param value a value buffer where the output will be stored  [in/out]
- * \param ctx options 
- * \ingroup KV_API
- */
-kvs_result kvs_retrieve_tuple(kvs_container_handle cont_hd, const kvs_key *key, kvs_value *value, const kvs_retrieve_context *ctx);
-
-kvs_result kvs_retrieve_tuple_async(kvs_container_handle cont_hd, const kvs_key *key, kvs_value *value, const kvs_retrieve_context *ctx, kvs_callback_function cbfn);
-
-  
-/*! Delete a KV pair 
- * 
- * Deletes a key-value pair.
- * 
- * No delete options are supported yet except KVS_SYNC_IO. 
- * 
- * \param cont_hd container handle
- * \param key key to delete
- * \param ctx options 
- * \ingroup KV_API
- */
-kvs_result kvs_delete_tuple(kvs_container_handle cont_hd, const kvs_key *key, const kvs_delete_context *ctx);
-
-kvs_result kvs_delete_tuple_async(kvs_container_handle cont_hd, const kvs_key* key, const kvs_delete_context* ctx, kvs_callback_function cbfn);
-
-
-kvs_result kvs_exist_tuples(kvs_container_handle cont_hd, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, const kvs_exist_context *ctx);
-  
-kvs_result kvs_exist_tuples_async(kvs_container_handle cont_hd, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, const kvs_exist_context *ctx, kvs_callback_function cbfn);
-
-/*! Open an iterator
- *
- * \param cont_hd container handle
- * \param ctx options
- * \param iter_hd : a pointer to iterator handler
- * \ingroup KV_API
- */
-kvs_result kvs_open_iterator(kvs_container_handle cont_hd, const kvs_iterator_context *ctx, kvs_iterator_handle *iter_hd);
-  
-/*! close an iterator
- * 
- * \param cont_hd container handle
- * \param hiter the iterator handler
- * \param ctx options
- * \ingroup KV_API
- */
-kvs_result kvs_close_iterator(kvs_container_handle cont_hd, kvs_iterator_handle hiter, const kvs_iterator_context *ctx);
-
-/*! close all opened iterators
- *
- * \param cont_hd container handle
- * \ingroup KV_API
- */
-kvs_result kvs_close_iterator_all(kvs_container_handle cont_hd);
-
-/*! retrieves a list of iterators in this device
- * \param cont_hd container handle
- * \param kvs_iters an array of kvs_iterator_info
- * \param count the number of iterators to retrieve
- * \ingroup KV_API
- */
-kvs_result kvs_list_iterators(kvs_container_handle cont_hd, kvs_iterator_info *kvs_iters, int count);
-
-  
-/*! iterator next
- *
- * retrieve a next group of keys or key-value pairs in the iterator group 
- *
- * \param cont_hd container handle
- * \param hiter the iterator handler
- * \param iter_list output buffer for a set of keys or key-value pairs
- * \param ctx options
- * \ingroup KV_API
- */
-kvs_result kvs_iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle hiter, kvs_iterator_list *iter_list, const kvs_iterator_context *ctx);
-
-kvs_result kvs_iterator_next_async(kvs_container_handle cont_hd, kvs_iterator_handle iter_hd, kvs_iterator_list *iter_list, const kvs_iterator_context *ctx, kvs_callback_function cbfn);
-  
-/*! Get WAF (Write Amplificaton Factor) in a KV NMVe Device 
- * \param dev device handle
- * \return \ref float : WAF 
- * \ingroup KV_API 
- */
-kvs_result kvs_get_device_waf(kvs_device_handle dev_hd, float *waf);
-
-/* ! Get device info
- * \param: dev_hd device handle
- * return: kvs_device: device info
- */
-kvs_result kvs_get_device_info(kvs_device_handle dev_hd, kvs_device *dev_info);
-  
-/*! Get device used size in percentage in a KV NMVe Device
- * \param dev_hd device handle
- * \return int32_t : device space utilization in an integer form of 0(0.00%) to 10,000(100.00%).
- * \ingroup KV_API
- */
-kvs_result kvs_get_device_utilization(kvs_device_handle dev_hd, int32_t *dev_util);
-
-/*! Get device total size in a KV NMVe Device
- * \param dev_hd device handle
- * \return int64_t : total device size in bytes
- */
-kvs_result kvs_get_device_capacity(kvs_device_handle dev_hd, int64_t *dev_capa);
-
-kvs_result kvs_get_min_key_length (kvs_device_handle dev_hd, int32_t *min_key_length);
-
-kvs_result kvs_get_max_key_length (kvs_device_handle dev_hd, int32_t *max_key_length);
-
-kvs_result kvs_get_min_value_length (kvs_device_handle dev_hd, int32_t *min_value_length);
-
-kvs_result kvs_get_max_value_length (kvs_device_handle dev_hd, int32_t *max_value_length);
-
-kvs_result kvs_get_optimal_value_length (kvs_device_handle dev_hd, int32_t *opt_value_length);
-
-  
-/*! Returns an error string
- *
- *  It interpretes the return value of the functions listed here.
- *
- *\ingroup KV_API
- */
-const char *kvs_errstr(int32_t errorno);
-  
-#else
-
 /*
 * \defgroup device_interfaces
 */
@@ -749,6 +491,10 @@ kvs_result kvs_retrieve_kvp(kvs_key_space_handle ks_hd, kvs_key *key, kvs_option
   IN ks_hd Key Space handle
   IN key Key of the key value pair to get value
   IN opt retrieval option. It may be NULL. In that case, the default retrieval option is used.
+  IN private1 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
+  IN private2 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
   OUT value value to receive the key value pair's value from device
   IN post_fn post process function pointer
 
@@ -766,7 +512,8 @@ kvs_result kvs_retrieve_kvp(kvs_key_space_handle ks_hd, kvs_key *key, kvs_option
   KVS_ERR_OPTION_INVALID the option is not supported
   KVS_ERR_KEY_NOT_EXIST Key does not exist
 */
-kvs_result kvs_retrieve_kvp_async(kvs_key_space_handle ks_hd, kvs_key *key, kvs_option_retrieve *opt, kvs_value *value, kvs_postprocess_function post_fn);
+kvs_result kvs_retrieve_kvp_async(kvs_key_space_handle ks_hd, kvs_key *key, 
+  kvs_option_retrieve *opt, void *private1, void *private2, kvs_value *value, kvs_postprocess_function post_fn);
 
 /*
 * \ingroup key_space_interfaces
@@ -811,6 +558,10 @@ kvs_result kvs_store_kvp(kvs_key_space_handle ks_hd, kvs_key *key, kvs_value *va
   IN key Key of the key value pair to store into Key Space
   IN value Value of the key value pair to store into Key Space
   IN opt Store option. It may be NULL. In that case, the kvs_store_type of KVS_STORE_POST is used.
+  IN private1 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
+  IN private2 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
   IN post_fn post process function pointer
 
   RETURNS
@@ -828,7 +579,8 @@ kvs_result kvs_store_kvp(kvs_key_space_handle ks_hd, kvs_key *key, kvs_value *va
   KVS_ERR_VALUE_UPDATE_NOT_ALLOWED a key exists but overwrite is not permitted
   KVS_ERR_VALUE_LENGTH_INVALID given value is not supported (e.g., length)
 */
-kvs_result kvs_store_kvp_async(kvs_key_space_handle ks_hd, kvs_key *key, kvs_value *value, kvs_option_store *opt, kvs_postprocess_function post_fn);
+kvs_result kvs_store_kvp_async(kvs_key_space_handle ks_hd, kvs_key *key, kvs_value *value, 
+  kvs_option_store *opt, void *private1, void *private2, kvs_postprocess_function post_fn);
 
 /*
 * \ingroup key_space_interfaces
@@ -862,6 +614,10 @@ kvs_result kvs_delete_kvp(kvs_key_space_handle ks_hd, kvs_key* key, kvs_option_d
   IN ks_hd Key Space handle
   IN key Key of the key value pair(s) to delete
   IN opt delete option
+  IN private1 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
+  IN private2 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
   IN post_fn post process function pointer
 
   RETURNS
@@ -874,7 +630,8 @@ kvs_result kvs_delete_kvp(kvs_key_space_handle ks_hd, kvs_key* key, kvs_option_d
   KVS_ERR_KEY_LENGTH_INVALID given key is not supported (e.g., length)
   KVS_ERR_KEY_NOT_EXIST key does not exist
 */
-kvs_result kvs_delete_kvp_async(kvs_key_space_handle ks_hd, kvs_key* key, kvs_option_delete *opt, kvs_postprocess_function post_fn);
+kvs_result kvs_delete_kvp_async(kvs_key_space_handle ks_hd, kvs_key* key, 
+  kvs_option_delete *opt, void *private1, void *private2, kvs_postprocess_function post_fn);
 
 /*
 * \ingroup key_space_interfaces
@@ -904,6 +661,10 @@ kvs_result kvs_delete_key_group(kvs_key_space_handle ks_hd, kvs_key_group_filter
   PARAMETERS
   IN ks_hd Key Space handle
   IN grp_fltr key group filter to delete
+  IN private1 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
+  IN private2 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
   IN post_fn post process function pointer
 
   RETURNS
@@ -914,7 +675,8 @@ kvs_result kvs_delete_key_group(kvs_key_space_handle ks_hd, kvs_key_group_filter
   KVS_ERR_PARAM_INVALID grp_fltr is NULL.
   KVS_ERR_SYS_IO Communication with device failed
 */
-kvs_result kvs_delete_key_group_async(kvs_key_space_handle ks_hd, kvs_key_group_filter *grp_fltr, kvs_postprocess_function post_fn);
+kvs_result kvs_delete_key_group_async(kvs_key_space_handle ks_hd, 
+  kvs_key_group_filter *grp_fltr, void *private1, void *private2, kvs_postprocess_function post_fn);
 
 /*
 * \ingroup key_space_interfaces
@@ -959,6 +721,10 @@ kvs_result kvs_exist_kv_pairs(kvs_key_space_handle ks_hd, uint32_t key_cnt, kvs_
   IN keys a set of keys to check
   IN buffer_size list buffer size in bytes
   OUT list a list indicates whether a corresponding key exists or not
+  IN private1 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
+  IN private2 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
   IN post_fn post process function pointer
 
   RETURNS
@@ -970,7 +736,8 @@ kvs_result kvs_exist_kv_pairs(kvs_key_space_handle ks_hd, uint32_t key_cnt, kvs_
   KVS_ERR_PARAM_INVALID keys or list parameter is NULL
   KVS_ERR_SYS_IO Communication with device failed
 */
-kvs_result kvs_exist_kv_pairs_async(kvs_key_space_handle ks_hd, uint32_t key_cnt, kvs_key *keys, kvs_exist_list *list, kvs_postprocess_function post_fn);
+kvs_result kvs_exist_kv_pairs_async(kvs_key_space_handle ks_hd, uint32_t key_cnt, 
+  kvs_key *keys, kvs_exist_list *list, void *private1, void *private2, kvs_postprocess_function post_fn);
 
 
 /*
@@ -1065,6 +832,10 @@ kvs_result kvs_iterate_next(kvs_key_space_handle ks_hd, kvs_iterator_handle iter
   IN iter_hd iterator handle
   IN buffer_size iterator buffer (iter_list) size in bytes
   OUT iter_list output buffer for a set of keys or key-value pairs
+  IN private1 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
+  IN private2 Structure passed that may be returned in the kvs_postprocess_context 
+    after the async IO is completed
   IN post_fn post process function pointer
 
   RETURNS
@@ -1076,9 +847,8 @@ kvs_result kvs_iterate_next(kvs_key_space_handle ks_hd, kvs_iterator_handle iter
   KVS_ERR_SYS_IO Communication with device failed
   KVS_ERR_ITERATOR_NOT_EXIST the iterator Key Group does not exist
 */
-kvs_result kvs_iterate_next_async(kvs_key_space_handle ks_hd, kvs_iterator_handle iter_hd , kvs_iterator_list *iter_list, kvs_postprocess_function post_fn);
-
-#endif
+kvs_result kvs_iterate_next_async(kvs_key_space_handle ks_hd, kvs_iterator_handle iter_hd , 
+  kvs_iterator_list *iter_list, void *private1, void *private2, kvs_postprocess_function post_fn);
 
 #ifdef __cplusplus
 } // extern "C"

@@ -102,7 +102,7 @@ struct bench_info {
     uint64_t vp_alignment;
     instance_info_t *instances;
     cpu_info *cpuinfo;
-
+  
     //kv bench
     char *device_path;
     char *kv_device_path;
@@ -127,12 +127,12 @@ struct bench_info {
     uint16_t as_port;
     uint32_t loop_capacity;
     char *name_space;
-
+  
     // spdk blobfs
     char *spdk_conf_file;
     //char *spdk_bdev;
     uint64_t spdk_cache_size;
-
+  
     int auto_compaction_threads; // ForestDB: Number of auto compaction threads
     uint64_t wbs_init;  // Level/RocksDB: write buffer size for bulk load
     uint64_t wbs_bench; // Level/RocksDB: write buffer size for normal benchmark
@@ -168,7 +168,7 @@ struct bench_info {
     uint8_t seq_fill;
     uint8_t pop_first;
     uint8_t pre_gen;
-
+  
     // key generation (prefix)
     size_t nlevel;
     size_t nprefixes;
@@ -204,7 +204,7 @@ struct bench_info {
     uint8_t read_query_byseq;
 
     // percentage
-    //size_t write_prob;
+  //size_t write_prob;
     size_t ratio[4]; //0:read, 1:write, 2: insert 3:delete
     size_t compact_thres;
     size_t compact_period;
@@ -372,8 +372,8 @@ int get_value_size_by_ratio(struct bench_info *binfo, size_t idx) {
   } else {
     value_size  = binfo->value_size[4];
   }
-
-  return value_size;
+  
+  return value_size; 
 }
 
 void _create_doc(struct bench_info *binfo,
@@ -384,8 +384,8 @@ void _create_doc(struct bench_info *binfo,
     int r, keylen = 0;
     uint32_t crc;
     Doc *doc = *pdoc;
-#if defined __FDB_BENCH || defined __WT_BENCH
-    DocInfo *info = *pinfo;  // FDB need meta info
+#if defined __FDB_BENCH || defined __WT_BENCH 
+    DocInfo *info = *pinfo;  // FDB need meta info 
 #endif
     char keybuf[MAX_KEYLEN];
 
@@ -410,7 +410,7 @@ void _create_doc(struct bench_info *binfo,
       fprintf(stderr, "No pool elem available for key - %d\n", kp->num_freeblocks);
       exit(1);
     }
-
+    
     if (binfo->keyfile) {
       doc->id.size = keyloader_get_key(&binfo->kl, idx, doc->id.buf);
     } else {
@@ -448,15 +448,17 @@ void _create_doc(struct bench_info *binfo,
       if (doc->data.buf == NULL || binfo->kv_write_mode == 0) {
 	      doc->data.buf = (char *)Allocate(vp);
       }
-    } else { // random length
-      crc = keygen_idx2crc(idx, 0);
-      BDR_RNG_VARS_SET(crc);
 
+    } else { // random length
+      
+      crc = keygen_idx2crc(idx, 0);
+      BDR_RNG_VARS_SET(crc); 	
+	
       BDR_RNG_NEXTPAIR;
       r = get_random(&binfo->bodylen, rngz, rngz2);
       if (r < 8) r = 8;
       else if(r > DATABUF_MAXLEN) r = DATABUF_MAXLEN;
-
+      
       doc->data.size = r;
       // align to 8 bytes (sizeof(uint64_t))
       doc->data.size = (size_t)((doc->data.size+1) / (sizeof(uint64_t)*1)) *
@@ -506,7 +508,8 @@ void _create_doc(struct bench_info *binfo,
     	*/
     } // end of random value
 
-#if defined __FDB_BENCH || defined __WT_BENCH
+    
+#if defined __FDB_BENCH || defined __WT_BENCH 
     if (!info)
         info = (DocInfo*)malloc(sizeof(DocInfo));
 
@@ -515,7 +518,7 @@ void _create_doc(struct bench_info *binfo,
     info->rev_meta.buf = (char *)metabuf;
     info->rev_meta.size = 4;
     info->content_meta = (binfo->compression)?(COUCH_DOC_IS_COMPRESSED):(0);
-    *pinfo = info;
+    *pinfo = info;      
 #endif
     *pdoc = doc;
 
@@ -633,17 +636,17 @@ void *pop_thread(void *voidargs){
   stopwatch_init_start(&sw_monitor);
 #if defined __AS_BENCH
   db_idx = args->n;
-#else
+#else  
   db_idx = args->n / binfo->pop_nthreads;
 #endif
   db = args->db[db_idx];
   c = (args->n % binfo->pop_nthreads) * batchsize;
 
-#if defined __KV_BENCH || defined __AS_BENCH
+#if defined __KV_BENCH || defined __AS_BENCH  
   if(binfo->kv_write_mode == 0)
     pass_lstat_to_db(db, NULL, l_stat, NULL);
 #endif
-
+  
   if(binfo->kv_write_mode == 1) { // sync mode
 
     docs = (Doc**)calloc(batchsize, sizeof(Doc*));
@@ -661,12 +664,12 @@ void *pop_thread(void *voidargs){
 		  args->socketid, args->keypool, args->valuepool, args->tid);
 #endif
     }
-
+        
     while(c < binfo->ndocs) {
-      for(i = c; (i < c + batchsize && i < binfo->ndocs); ++i) {
+      for(i = c; (i < c + batchsize && i < binfo->ndocs); ++i){
 #if defined __FDB_BENCH || defined __WT_BENCH
-        _create_doc(binfo, i, &docs[i-c], &infos[i-c], binfo->seq_fill,
-		      args->socketid, args->keypool, args->valuepool);
+	_create_doc(binfo, i, &docs[i-c], &infos[i-c], binfo->seq_fill,
+		    args->socketid, args->keypool, args->valuepool);
 #else
 	      _create_doc(binfo, i, &docs[i-c], NULL, binfo->seq_fill,
 		      args->socketid, args->keypool, args->valuepool, args->tid);
@@ -696,7 +699,7 @@ void *pop_thread(void *voidargs){
 #else
       couchstore_save_documents(db, docs, infos, i-c, binfo->compression);
 #endif
-
+      
       args->iocount.fetch_add(i-c, std::memory_order_release);
       //args->iocount += i - c;
       if (binfo->pop_commit) {
@@ -707,10 +710,10 @@ void *pop_thread(void *voidargs){
       	gap = stopwatch_get_curtime(&sw_latency);
       	l_stat->samples[cur_sample] = _timeval_to_us(gap);
       }
-
+      
       c += binfo->pop_nthreads * batchsize;
     } // end of while
-
+    
     if(!binfo->pop_commit) {
       couchstore_commit(db);
     }
@@ -756,10 +759,10 @@ void *pop_thread(void *voidargs){
       	  monitoring = 0;
       	}
 
-      	couchstore_save_documents(db, docs, NULL, 1, monitoring);
-      	args->cur_qdepth++;
+	couchstore_save_documents(db, docs, NULL, 1, monitoring);
+	args->cur_qdepth++;
 
-      	c += binfo->pop_nthreads * batchsize;
+	c += binfo->pop_nthreads * batchsize;
       }
 
       if (args->cur_qdepth > 0) {
@@ -844,11 +847,11 @@ void * pop_print_time(void *voidargs)
           }
       	}
 
-      	iops = (double)counter / (tv.tv_sec + tv.tv_usec/1000000.0);
-      	iops_i = (double)(counter - counter_prev) /
-      	  (tv_i.tv_sec + tv_i.tv_usec/1000000.0);
-      	counter_prev = counter;
-
+	iops = (double)counter / (tv.tv_sec + tv.tv_usec/1000000.0);
+	iops_i = (double)(counter - counter_prev) /
+	  (tv_i.tv_sec + tv_i.tv_usec/1000000.0);
+	counter_prev = counter;
+	
 #if defined (__ROCKS_BENCH) || defined (__BLOBFS_ROCKS_BENCH) || defined (__FDB_BENCH) || defined (__WT_BENCH) || defined (__LEVEL_BENCH) || defined(__KVDB_BENCH)
       	if (c % filesize_chk_term == 0) {
       	  bytes_written = print_proc_io_stat(buf, 0);
@@ -900,7 +903,7 @@ void population(Db **db, struct bench_info *binfo)
     struct timeval t1, t3;
     unsigned long long totalmicrosecs = 0;
     double iops = 0, latency_ms = 0;
-
+    
     int keylen = (binfo->keylen.type == RND_FIXED)? binfo->keylen.a : 0;
     gettimeofday(&t1, NULL);
 
@@ -908,7 +911,7 @@ void population(Db **db, struct bench_info *binfo)
     stopwatch_start(&sw);
     stopwatch_init(&sw_long);
     stopwatch_start(&sw_long);
-
+       
 #ifdef THREADPOOL
     threadpool thpool = thpool_init(binfo->pop_nthreads * binfo->nfiles);
 #endif
@@ -917,7 +920,7 @@ void population(Db **db, struct bench_info *binfo)
     cpu_set_t cpus;
     int db_idx, td_idx, nodeid;
     pool_info_t info_key, info_value;
-
+    
     // initialize keypool & value pool
     info_key.allocatortype = info_value.allocatortype = binfo->allocatortype;
     info_key.numunits = binfo->kp_numunits;
@@ -1033,7 +1036,7 @@ void population(Db **db, struct bench_info *binfo)
     iops = 1000000 / latency_ms;
     lprintf("\nThroughput(Insertion) %.2f latency=%lf\n", iops, latency_ms);
 
-    if(binfo->latency_rate) {
+    if(binfo->latency_rate){
 
       struct latency_stat l_stat;
       uint32_t *tmp;
@@ -1378,8 +1381,8 @@ int _dir_scan(struct bench_info *binfo, int *compaction_no)
     }
 
     strncpy(name, binfo->filename, filename_len);
-    strncpy(name + filename_len, "/dummy", 6); // TODO:
-    /*
+    strncpy(name + filename_len, "/dummy", 6); // TODO: 
+    /*    
     // backward search until find first '/'
     for (i=filename_len-1; i>=0; --i){
         if (binfo->filename[i] == '/') {
@@ -1394,7 +1397,7 @@ int _dir_scan(struct bench_info *binfo, int *compaction_no)
         strcpy(dirname, ".");
     }
     filename = binfo->filename + dirname_len;
-    */
+    */    
     strncpy(dirname, binfo->filename, filename_len);
     dirname[filename_len] = 0;
     filename = name + filename_len +1;
@@ -1530,7 +1533,7 @@ void * bench_thread(void *voidargs)
 
 #if defined (__FDB_BENCH) || defined(__WT_BENCH)
   DocInfo *rq_info = NULL;
-#endif
+#endif  
 
   rq_id.buf = NULL;
   db = args->db;
@@ -1539,7 +1542,7 @@ void * bench_thread(void *voidargs)
 #elif defined __BLOBFS_ROCKS_BENCH
   db_idx = args->id / singledb_thread_num;
 #else
-  db_idx = 0;
+  db_idx = 0; 
 #endif
   op_med = 0; //op_w = op_r = op_w_cum = op_r_cum = 0;
   elapsed_us = 0;
@@ -1548,7 +1551,7 @@ void * bench_thread(void *voidargs)
   if(binfo->kv_write_mode == 0)
     pass_lstat_to_db(db[db_idx], args->l_read, args->l_write, args->l_delete);
 #endif
-
+  
   /*
   write_mode_random.type = RND_UNIFORM;
   write_mode_random.a = 0;
@@ -1672,7 +1675,7 @@ void * bench_thread(void *voidargs)
       	}
       	cur_op_idx++;
       }
-
+      
       if(write_mode == 1 || write_mode == 5) { // write
         if (binfo->key_existing) {
           if (args->mode == 0) {
@@ -1959,7 +1962,7 @@ void * bench_thread(void *voidargs)
       }
 
     } else { // async mode
-
+      
 #if !defined __KV_BENCH && !defined __AS_BENCH
       fprintf(stderr, "Async is not supported in this application\n");
       exit(0);
@@ -2008,7 +2011,6 @@ void * bench_thread(void *voidargs)
       	  if (!couchstore_iterator_check_status(db[db_idx])) {
       	    if(couchstore_iterator_has_finish(db[db_idx])) {
       	      couchstore_iterator_next(db[db_idx]);
-      	      args->cur_qdepth++;
       	      iterator_send = 1;
       	    }
       	  }  /*else {
@@ -2203,8 +2205,9 @@ void * bench_thread(void *voidargs)
 	      usleep(1);
 #endif
     } // end of async
-
+    
   }   // big while
+
 
 #if defined __KV_BENCH || defined __AS_BENCH
   int nr = args->cur_qdepth;
@@ -2232,14 +2235,14 @@ void * bench_thread(void *voidargs)
     couchstore_iterator_close(db[db_idx]);
     fprintf(stdout, "Iterator close done \n");
   }
-
+    
 #endif
 
   args->b_stat->op_read.fetch_add(args->op_read.load(), std::memory_order_release);
   args->b_stat->op_write.fetch_add(args->op_write.load(), std::memory_order_release);
   args->b_stat->op_delete.fetch_add(args->op_delete.load(), std::memory_order_release);
   args->b_stat->op_iter_key.fetch_add(total_entries, std::memory_order_release);
-
+  
 #if defined(__FDB_BENCH) || defined(__WT_BENCH)
   if (rq_doc) {
     free(rq_doc->id.buf);
@@ -2459,7 +2462,7 @@ void _print_latency(struct bench_info *binfo,
 
 /*
   mode = 1: population
-  mode = 2: evaluation
+  mode = 2: evaluation  
  */
 void _print_percentile(struct bench_info *binfo,
 		       struct latency_stat *wl_stat,
@@ -2472,7 +2475,7 @@ void _print_percentile(struct bench_info *binfo,
     FILE *tmp;
 
     if(wl_stat) {
-      lprintf("\nwrite latency distribution\n");
+      lprintf("\nwrite latency distribution\n"); 
       _print_latency(binfo, wl_stat, unit);
     }
     if(rl_stat) {
@@ -2485,7 +2488,7 @@ void _print_percentile(struct bench_info *binfo,
     }
 
 
-    tmp = (mode == 1) ? insert_latency_fp : run_latency_fp;
+    tmp = (mode == 1) ? insert_latency_fp : run_latency_fp; 
     //TODO: add deletion stats
     if (tmp) { // log file: all percentiles
       fprintf(tmp, "pos,write,read,delete\n");
@@ -2534,7 +2537,7 @@ void db_env_setup(struct bench_info *binfo){
   couchstore_set_cache(binfo->cache_size);
   couchstore_set_compression(binfo->compression);
 #endif
-
+  
 #if defined(__FDB_BENCH)
   // ForestDB: set compaction mode, threshold, WAL size, index type
   couchstore_set_compaction(binfo->auto_compaction,
@@ -2548,7 +2551,7 @@ void db_env_setup(struct bench_info *binfo){
   // WiredTiger & ForestDB: set compaction period
   couchstore_set_chk_period(binfo->compact_period);
 #endif
-
+  
 #if defined(__ROCKS_BENCH) || defined(__BLOBFS_ROCKS_BENCH) || defined (__LEVEL_BENCH) || defined(__KVDB_BENCH)
   // RocksDB: set compaction style
 #if !defined (__LEVEL_BENCH)
@@ -2563,7 +2566,7 @@ void db_env_setup(struct bench_info *binfo){
   couchstore_set_split_pct(binfo->split_pct);
   couchstore_set_page_size(binfo->leaf_pg_size, binfo->int_pg_size);
 #endif
-
+  
 #if defined(__KV_BENCH)
   //if(binfo->kv_write_mode == 0) { // set aio context
     // set queuedepth, aiothreads, coremask
@@ -2612,13 +2615,13 @@ void do_bench(struct bench_info *binfo)
 #else
   Db *db[binfo->nfiles];
 #endif
-
+  
 #ifdef __FDB_BENCH
   Db *info_handle[binfo->nfiles];
 #endif
 #if defined(__KV_BENCH) || defined(__AS_BENCH) || defined(__KVROCKS_BENCH)
   //int32_t dev_id[binfo->nfiles];
-  char *dev_path[binfo->nfiles];
+  char *dev_path[binfo->nfiles]; 
 #endif
 #if defined(__AS_BENCH)
   // hosts & port
@@ -2662,7 +2665,7 @@ void do_bench(struct bench_info *binfo)
   } else {
     avg_docsize = (binfo->bodylen.a + binfo->bodylen.b)/2;
   }
-
+  
   if (binfo->keylen.type == RND_NORMAL || binfo->keylen.type == RND_FIXED) {
     avg_docsize += binfo->keylen.a;
   } else {
@@ -2675,8 +2678,8 @@ void do_bench(struct bench_info *binfo)
   spaces[80] = 0;
 
   db_env_setup(binfo);
-
-#if defined(__KV_BENCH) || defined (__KVROCKS_BENCH)
+  
+#if defined(__KV_BENCH) || defined (__KVROCKS_BENCH) 
   // open device only once
   //couchstore_setup_device(binfo->kv_device_path, NULL, NULL, binfo->nfiles, binfo->kv_write_mode);
   char *pt;
@@ -2835,7 +2838,7 @@ void do_bench(struct bench_info *binfo)
       }
 #elif defined (__AS_BENCH)
       //TODO: check whether need to open aerospike connection
-
+     
 #endif
     } // end of pop_first = false
   } else {
@@ -2856,14 +2859,14 @@ void do_bench(struct bench_info *binfo)
 #endif
   } // load existing files
 
-
+    
   // ==== perform benchmark ====
   lprintf("\nbenchmark\n");
   lprintf("opening DB instance .. \n");
 
   compaction_turn = 0;
 
-#if defined(__ROCKS_BENCH) || defined (__LEVEL_BENCH) || defined(__KVDB_BENCH) // || defined(__BLOBFS_ROCKS_BENCH)
+#if defined(__ROCKS_BENCH) || defined (__LEVEL_BENCH) || defined(__KVDB_BENCH) // || defined(__BLOBFS_ROCKS_BENCH) 
   couchstore_set_wbs_size(binfo->wbs_bench);
 #endif
 #if defined(__FDB_BENCH)
@@ -2891,7 +2894,7 @@ void do_bench(struct bench_info *binfo)
   // set signal handler
   old_handler = signal(SIGINT, signal_handler);
   b_stat.op_read = b_stat.op_write= b_stat.op_delete = b_stat.op_iter_key = 0;
-
+  
   // thread args
   /*
   if (binfo->nreaders + binfo->niterators + binfo->nwriters + binfo->ndeleters == 0){
@@ -2900,17 +2903,17 @@ void do_bench(struct bench_info *binfo)
     b_args = alca(struct bench_thread_args, bench_threads);
     bench_worker = alca(thread_t, bench_threads);
     b_args[0].mode = 5; // dummy thread
-  } */
+    } */
   singledb_thread_num = binfo->nreaders + binfo->niterators + binfo->nwriters + binfo->ndeleters;
   bench_threads = singledb_thread_num * binfo->nfiles;
 #if defined __KV_BENCH
   // only support one thread per device for kv
   //bench_threads = binfo->nfiles;
 #endif
-
+  
   b_args = alca(struct bench_thread_args, bench_threads);
   bench_worker = alca(thread_t, bench_threads);
-
+  
   //pthread_attr_t attr;
   pthread_attr_t attr[bench_threads];
   cpu_set_t cpus;
@@ -2926,9 +2929,9 @@ void do_bench(struct bench_info *binfo)
   info_value.numunits = binfo->vp_numunits;
   info_value.unitsize = binfo->vp_unitsize;
   info_value.alignment = binfo->vp_alignment;
-
+  
   for (i=0;i<bench_threads;++i){
-    if(total_ratio > 0 && total_ratio <= 100) {
+    if(total_ratio > 0 && total_ratio <= 100) {   
       b_args[i].mode = 0; // mixed workload in one thread
     } else { // no ratio control, dedicated thread for each operation
       if ((size_t)i % singledb_thread_num < binfo->nwriters) {
@@ -2955,7 +2958,7 @@ void do_bench(struct bench_info *binfo)
     b_args[i].l_delete->samples = (uint32_t*)malloc(sizeof(uint32_t) * binfo->latency_max);
     b_args[i].op_read = b_args[i].op_write = b_args[i].op_delete = b_args[i].op_iter_key = 0;
     b_args[i].cur_qdepth = 0;
-
+    
     //b_args[i].result = &result;
     b_args[i].zipf = &zipf;
     b_args[i].terminate_signal = 0;
@@ -2967,7 +2970,7 @@ void do_bench(struct bench_info *binfo)
 
     b_args[i].valuepool = (mempool_t *)malloc(sizeof(mempool_t));
     b_args[i].valuepool->base = b_args[i].valuepool->nextfreeblock = NULL;
-
+    
     //open db instances
 #if defined(__FDB_BENCH) || defined(__COUCH_BENCH) || defined(__WT_BENCH)
     b_args[i].db = (Db**)malloc(sizeof(Db*) * binfo->nfiles);
@@ -2987,7 +2990,7 @@ void do_bench(struct bench_info *binfo)
       }
 #endif
     }
-#elif defined(__ROCKS_BENCH) || defined (__LEVEL_BENCH) || defined(__KVDB_BENCH) //|| defined(__BLOBFS_ROCKS_BENCH)
+#elif defined(__ROCKS_BENCH) || defined (__LEVEL_BENCH) || defined(__KVDB_BENCH) //|| defined(__BLOBFS_ROCKS_BENCH) 
     if (i % singledb_thread_num ==0) {
       b_args[i].db = (Db**)malloc(sizeof(Db*));
       sprintf(curfile, "%s/%d", binfo->filename, i / singledb_thread_num);
@@ -3082,7 +3085,7 @@ void do_bench(struct bench_info *binfo)
   gap = stopwatch_stop(&sw);
   if(binfo->pop_first)
     LOG_PRINT_TIME(gap, " sec elapsed\n");
-
+  
   // timer for total elapsed time
   stopwatch_init(&sw);
   stopwatch_start(&sw);
@@ -3108,9 +3111,9 @@ void do_bench(struct bench_info *binfo)
       op_count_write += b_args[j].op_write.load();
       op_count_delete += b_args[j].op_delete.load();
     }
-
+      
     //i = b_stat.batch_count_a.load();
-
+    
     if (stopwatch_check_ms(&progress, print_term_ms)) {
       // for every 0.1 sec, print current status
       uint64_t cur_size = 0;
@@ -3160,7 +3163,7 @@ void do_bench(struct bench_info *binfo)
 		  // move a line upward
 		  printf("%c[1A%c[0C", 27, 27);
 		  printf("\r%s\r", spaces);
-
+		  
 		  if (!warmingup && binfo->nbatches > 0) {
 		    // batch count
 		    printf("%5.1f %% (", i*100.0 / (binfo->nbatches-1));
@@ -3251,7 +3254,7 @@ void do_bench(struct bench_info *binfo)
 		  // actual file size / live data size
 		  printf("(%s / %s) ", fsize1, fsize2);
 #endif
-
+		  
 #ifdef __PRINT_IOSTAT // only for linux
 		  uint64_t w_per_doc;
 		  uint64_t inst_written_doc;
@@ -3304,12 +3307,12 @@ void do_bench(struct bench_info *binfo)
 		      prev_op_count_delete = op_count_delete = 0;
 		      written_init = written_final;
 		      /*
-		      // atomic
+		      // atomic 
 		      b_stat.op_read = 0;
 		      b_stat.op_write = 0;
 		      b_stat.op_delete = 0;
 		      b_stat.batch_count_a = 0;
-
+		      
 		      spin_lock(&l_read.lock);
 		      l_read.cursor = 0;
 		      l_read.nsamples = 0;
@@ -3336,7 +3339,7 @@ void do_bench(struct bench_info *binfo)
 		      //if(run_ops_fp)
 		      //fprintf(run_ops_fp, "time,ops_avg,ops_i,read_cnt,write_cnt,bytes_written\n");
 		    }
-
+		    
 		    if(!startlog) {
 		      startlog = true;
 		    }
@@ -3371,7 +3374,7 @@ void do_bench(struct bench_info *binfo)
   for (i=0;i<bench_threads;++i){
     thread_join(bench_worker[i], &bench_worker_ret[i]);
   }
-
+  
 #if defined (__KV_BENCH) || defined (__AS_BENCH)
 
   // each thread will check outstanding IOs individually
@@ -3416,7 +3419,7 @@ void do_bench(struct bench_info *binfo)
   if(op_count_iter_key > 0) {
     lprintf("Throughput(Iterator)  %.2f keys/sec; total %ld keys\n", (double)(op_count_iter_key) / gap_double, op_count_iter_key);
   }
-
+  
   if(op_count_read + op_count_write + op_count_delete > 0) {
     lprintf("average latency %f\n", gap_double * 1000000 /
 	    ( op_count_read + op_count_write + op_count_delete));
@@ -3428,7 +3431,7 @@ void do_bench(struct bench_info *binfo)
 	    total_compaction, (total_compaction>1)?("s"):(""));
     LOG_PRINT_TIME(sw_compaction.elapsed, " sec elapsed\n");
   }
-#endif
+#endif   
 
 #if !defined __KV_BENCH && !defined __AS_BENCH
   written_final = print_proc_io_stat(cmd, 1);
@@ -3501,11 +3504,11 @@ void do_bench(struct bench_info *binfo)
 		      (d_stat.nsamples == 0? NULL : &d_stat), "us", 2);
     free(w_stat.samples);
     free(r_stat.samples);
-    free(d_stat.samples);
+    free(d_stat.samples);    
   }
 
   lprintf("\n");
-
+  
   keygen_free(&binfo->keygen);
   if (binfo->keyfile) {
     keyloader_free(&binfo->kl);
@@ -3569,7 +3572,7 @@ void do_bench(struct bench_info *binfo)
 #if defined(__WT_BENCH) || defined(__FDB_BENCH)
   couchstore_close_conn();
 #endif
-
+  
   lprintf("\n");
   stopwatch_stop(&sw);
   gap = sw.elapsed;
@@ -3619,8 +3622,9 @@ void _print_benchinfo(struct bench_info *binfo)
     }
 
     lprintf("# threads: ");
-    lprintf("reader %d, iterator %d", (int)binfo->nreaders,
-                                      (int)binfo->niterators);
+    lprintf("reader %d", (int)binfo->nreaders);
+    /*lprintf("reader %d, iterator %d", (int)binfo->nreaders,
+                                      (int)binfo->niterators);*/
     //if (binfo->write_prob > 100) {
     if (binfo->ratio[1] > 100) {
         if (binfo->reader_ops) {
@@ -3886,7 +3890,7 @@ void init_cpu_aff(struct bench_info *binfo){
   for(i = 0; i < binfo->cpuinfo->num_numanodes; i++) {
     binfo->cpuinfo->cpulist[i] = (int*)calloc(1, sizeof(int) * binfo->cpuinfo->num_cores_per_numanodes);
   }
-
+  
   while(fgets(line, sizeof line, fp)!= NULL ){
     if(line_num == 0) {line_num++; continue;}
     sscanf(line, "%d,%d,%d,%d", &nodeid, &coreid, &insid_load, &insid_perf);
@@ -3961,7 +3965,7 @@ void init_cpu_aff(struct bench_info *binfo){
       printf("%d ", binfo->instances[i].coreids_bench[j]);
     printf("\n");
   }
-
+  
   if(fp) fclose(fp);
 }
 
@@ -3989,7 +3993,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
       get_cpuinfo(binfo.cpuinfo, 0);
 
     }
-
+    
     char *dbname = (char*)malloc(64);
     char *filename = (char*)malloc(256);
     char *init_filename = (char*)malloc(256);
@@ -4046,7 +4050,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     sprintf(dbname, "unknown");
     sprintf(dbname_postfix, "unknown");
 #endif
-
+    
     //memset(&binfo, 0x0, sizeof(binfo));
     binfo.dbname = dbname;
     binfo.filename = filename;
@@ -4060,7 +4064,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     binfo.spdk_conf_file = spdk_conf_file;
     //binfo.spdk_bdev = spdk_bdev;
     binfo.name_space = name_space;
-
+    
     binfo.ndocs = iniparser_getint(cfg, (char*)"document:ndocs", 10000);
 
     str = iniparser_getstring(cfg, (char*)"document:key_file", (char*)"");
@@ -4072,7 +4076,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
         binfo.keyfile = NULL;
     }
     binfo.amp_factor = iniparser_getdouble(cfg, (char*)"document:amp_factor", 1);
-
+    
     pool_info_t info;
     str = iniparser_getstring(cfg, (char*)"system:allocator", (char*)"default");
     //#if !defined __KV_BENCH
@@ -4166,13 +4170,13 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     }
 
     binfo.aiothreads_per_device = iniparser_getint(cfg, (char*)"kvs:aiothreads_per_device", 2);
-
+    
     str = iniparser_getstring(cfg, (char*)"kvs:core_ids", (char*)"1");
     strcpy(binfo.core_ids, str);
-
+    
     str = iniparser_getstring(cfg, (char*)"kvs:cq_thread_ids", (char*)"2");
     strcpy(binfo.cq_thread_ids, str);
-
+    
     binfo.mem_size_mb = iniparser_getint(cfg, (char*)"kvs:mem_size_mb", 1024);
     str = iniparser_getstring(cfg, (char*)"kvs:device_path", (char*)"");
     strcpy(binfo.kv_device_path, str);
@@ -4190,7 +4194,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
 #endif
     str = iniparser_getstring(cfg, (char*)"kvs:emul_configfile", (char*)"/tmp/kvemul.conf");
     strcpy(binfo.kv_emul_configfile, str);
-
+    
     str = iniparser_getstring(cfg, (char*)"kvs:with_iterator", (char*)"false");
     if (str[0] == 't' || str[0] == 'T') {
       /* Run iterator with read/write mixed workload */
@@ -4211,7 +4215,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
       /* Default: iterator retrieve key only */
       binfo.iterator_mode = 0;
     }
-    fprintf(stdout, "with iterator %d - mode %d\n", binfo.with_iterator, binfo.iterator_mode);
+    //fprintf(stdout, "with iterator %d - mode %d\n", binfo.with_iterator, binfo.iterator_mode);
     /*
     str = iniparser_getstring(cfg, (char*)"kvs:is_polling", (char*)"true");
     if (str[0] == 't' || str[0] == 'T') {
@@ -4232,7 +4236,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     str = iniparser_getstring(cfg, (char*)"aerospike:namespace", (char*)"test");
     strcpy(binfo.name_space, str);
 #endif
-
+    
 #if defined(__BLOBFS_ROCKS_BENCH)
     str = iniparser_getstring(cfg, (char*)"blobfs:spdk_conf_file", (char*)"");
     strcpy(binfo.spdk_conf_file, str);
@@ -4241,7 +4245,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     binfo.spdk_cache_size = iniparser_getint(cfg, (char*)"blobfs:spdk_cache_size", 4096);
     fprintf(stderr, "SPDK Conf file: %s, cache size: %lu.\n", binfo.spdk_conf_file, binfo.spdk_cache_size);
 #endif
-
+    
     str = iniparser_getstring(cfg, (char*)"log:filename", (char*)"");
     strcpy(binfo.log_filename, str);
 
@@ -4368,7 +4372,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     str = iniparser_getstring(cfg, (char*)"population:pre_gen",
 			      (char*)"false");
     binfo.pre_gen = (str[0]=='t')?(1):(0);
-
+    
     str = iniparser_getstring(cfg, (char*)"population:seq_fill",
 			      (char*)"false");
     binfo.seq_fill = (str[0]=='t')?(1):(0);
@@ -4499,7 +4503,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
     binfo.nwriters = 1;
 #endif
     init_cpu_aff(&binfo);
-
+    
     // create keygen structure
     _set_keygen(&binfo);
 
@@ -4583,7 +4587,7 @@ struct bench_info get_benchinfo(char* bench_config_filename, int config_only)
       iniparser_free(cfg);
       exit(1);
     }
-
+    
     if(binfo.vp_unitsize < max_body_buf) {
       fprintf(stderr, "WARN: Please set 'value_pool_unit' to be equal to or larger than the largest possible value size in your config: %d\n", max_body_buf);
       iniparser_free(cfg);
@@ -4835,7 +4839,7 @@ int main(int argc, char **argv){
     struct option   long_opt[] =
     {
         {"database",      no_argument,       NULL, 'e'},
-	      {"config",        no_argument,       NULL, 'c'},
+	    {"config",        no_argument,       NULL, 'c'},
         {"help",          no_argument,       NULL, 'h'},
         {"file",          optional_argument, NULL, 'f'},
         {NULL,            0,                 NULL, 0  }
@@ -4860,14 +4864,14 @@ int main(int argc, char **argv){
 
       	    case 'c':
       	        printf("Generating CPU file only\n");
-      		      config_only = 1;
-		            break;
+      		    config_only = 1;
+		        break;
 
             case 'h':
                 printf("Usage: %s [OPTIONS]\n", argv[0]);
                 printf("  -f file                   file\n");
                 printf("  -e, --database            use existing database file\n");
-		            printf("  -c, --config only         generate CPU config file\n");
+		printf("  -c, --config only         generate CPU config file\n");
                 printf("  -h, --help                print this help and exit\n");
                 printf("\n");
                 return(0);

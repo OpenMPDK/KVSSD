@@ -2010,7 +2010,7 @@ static bool check_for_single_phyaddress(void __user* address, unsigned length) {
 	unsigned count = 0;
 	offset = offset_in_page(address);
 	count = DIV_ROUND_UP(offset + length, PAGE_SIZE);
-	if (count > 1 && ((unsigned long)address & KV_QUEUE_DAM_ALIGNMENT)) {
+	if (count > 1 || ((unsigned long)address & KV_QUEUE_DAM_ALIGNMENT)) {
 		return false;
 	}
 	return true;

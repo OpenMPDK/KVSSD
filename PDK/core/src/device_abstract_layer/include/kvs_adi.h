@@ -179,7 +179,7 @@ typedef enum cmd_opcode_t {
  * This type is used to represent a key length. Currently uint8_t is
  * used to represent a key which can grow up to KV_MAX_KEY_LEN bytes.
  */
-typedef uint8_t kv_key_t;
+typedef uint16_t kv_key_t;
 
 /** 
  * This type is used to represent a value length. Currently uint32_t is
@@ -312,9 +312,7 @@ typedef enum {
  */
 typedef enum {
   KV_RETRIEVE_OPT_DEFAULT    = 0x00, ///< [DEFAULT] retrieving value as it is written (even compressed value is also retrieved in its compressed form)
-  KV_RETRIEVE_OPT_DECOMPRESS = 0x01, 
-  KV_RETRIEVE_OPT_DELETE = 0x02, 
-  KV_RETRIEVE_OPT_DECOMPRESS_DELETE = 0x03, 
+  KV_RETRIEVE_OPT_DELETE = 0x01,  
 } kv_retrieve_option; 
 
 // kv_sanitize_option
@@ -337,10 +335,6 @@ typedef enum {
 
   KV_STORE_OPT_UPDATE_ONLY = 0x03,
   KV_STORE_OPT_APPEND = 0x04,
-  KV_STORE_OPT_POST_WITH_COMPRESS = 0x05,
-  KV_STORE_OPT_UPDATE_ONLY_COMPRESS = 0x06,
-  KV_STORE_OPT_NOOVERWRITE_COMPRESS = 0x07,
-  KV_STORE_OPT_APPEND_COMPRESS = 0x08,
 } kv_store_option;
 
 /**
@@ -409,9 +403,9 @@ typedef struct {
   */
 typedef struct {
   uint32_t num_entries;   ///< the number of iterator entries in the list
+  bool   end;           ///< represent if there are more keys to iterate (end = 0) or not (end = 1)
   uint32_t size;      ///< buffer size
-  bool_t   end;    ///< represent if there are more keys to iterate (end = 0) or not (end = 1)
-  void    *it_list;  ///< iterator list buffer
+  uint8_t  *it_list;  ///< iterator list buffer
 } kv_iterator_list;
 
 

@@ -37,7 +37,7 @@ class KvsTransContext;
 class KvsReadContext;
 class KvsSyncWriteContext;
 class CephContext;
-typedef uint8_t kv_key_t;
+typedef uint16_t kv_key_t;
 typedef uint32_t kv_value_t;
 typedef int kv_result;
 

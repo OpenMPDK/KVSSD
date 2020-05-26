@@ -37,7 +37,7 @@
 
 #include <algorithm>
 #include <stdio.h>
-#include <private_api.h>
+#include <kvs_api.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <iostream>
@@ -47,9 +47,8 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <numa.h>
-#include <private_types.h>
+//#include <private_types.h>
 
-namespace api_private {
 inline void yprintf(std::ostream &stream, const char* fmt, ...)
 {
     static char buffer[1024] = "";
@@ -278,7 +277,7 @@ static inline int32_t validate_kv_pair_(
       return KVS_ERR_VALUE_LENGTH_INVALID;
     }
     if(value->offset & (KVS_ALIGNMENT_UNIT - 1)) {
-      return KVS_ERR_MISALIGNED_VALUE_OFFSET;
+      return KVS_ERR_VALUE_OFFSET_MISALIGNED;
     }
     if(value->value == NULL && value->length > 0){
       WRITE_WARNING("value buffer inputted is NULL\n");
@@ -289,6 +288,5 @@ static inline int32_t validate_kv_pair_(
 }
 static inline int32_t validate_request(const kvs_key *key, const kvs_value *value) {
   return validate_kv_pair_(key, value, KVS_MAX_VALUE_LENGTH);
-}
 }
 #endif /* INCLUDE_KVS_UTILS_H_ */

@@ -2,7 +2,7 @@
 KV-Benchmark is a benchmark program for embedded key-value storage engines, based on a sophisticated workload generation which is more realistic than performing a bunch of read/write operations. It is based on ForestDB-benchmark tool, with an extension of KVS API support.
 
 
-BUILD ==========================================================================
+BUILD ========================================================================== 
 0. Install libraries
    0.1  sudo apt-get install libsnappy-dev libev-dev libbz2-dev liblz4-dev libzstd-dev libjemalloc-dev libnuma-dev libgflags-dev libssl-dev libz-dev
    0.2 (CentOS) sudo yum install snappy-devel libev-devel bzip2-devel lz4-devel gflags-devel jemalloc-devel openssl-devel zlib-devel
@@ -46,8 +46,7 @@ BUILD ==========================================================================
     mkdir build_kv && cd build_kv
     cmake -DCMAKE_INCLUDE_PATH=/KVSSD/PDK/core/include -DCMAKE_LIBRARY_PATH=/KVSSD/PDK/core/build/libkvapi.so ../
     * INCLUDE_PATH and LIBRARY_PATH must be updated based on user directories
-    * Use kvbench with SAMSUNG API need to add marco SAMSUNG_API
-        cmake -DSAMSUNG_API=ON -DCMAKE_INCLUDE_PATH=/KVSSD/PDK/core/include -DCMAKE_LIBRARY_PATH=/KVSSD/PDK/core/build/libkvapi.so ../
+        cmake -DCMAKE_INCLUDE_PATH=/KVSSD/PDK/core/include -DCMAKE_LIBRARY_PATH=/KVSSD/PDK/core/build/libkvapi.so ../
 
     make kv_bench
 
@@ -83,7 +82,7 @@ Step 2. modify bench_config.ini for workloads
     2.1 For kv_bench using spdk driver, cpu affinity in cpu.txt must be configured for each device (instance) same way as the coremask in the bench_config.ini. For example, in bench_config.ini:
     [kvs]
     core_ids = 0,2,4
-    If the core_ids is configured as above which means three devices (instances) will be used in the test, each uses core 0, 2 and 4 respectively. Accordingly, cpu affinity in cpu.txt should be configured as below. So device (instance) 0, 1 ,2 will use core 0, 2, 4 for both 'load' and 'perf' phases.
+    If the core_ids is configured as above which means three devices (instances) will be used in the test, each uses core 0, 2 and 4 respectively. Accordingly, cpu affinity in cpu.txt should be configured as below. So device (instance) 0, 1 ,2 will use core 0, 2, 4 for both 'load' and 'perf' phases. 
     nodeid,coreid,dbid_load,dbid_perf
     0,	   0,	   0,	    0
     0,	   2,	   1,	    1
@@ -94,13 +93,13 @@ Step 3. Setup environment
   * RocksdDB on Linux filesystem
     Make sure files system are properly mounted onto the block devices.
     e.g. in bench_config.ini, if:
-    "[db_file]
+    "[db_file] 
      filename = /mnt/rocksdb"
-     RockDB data will be loaded to /mnt/rocksdb/0, ..., /mnt/rocksdb/N, N is the number of total block devices set in bench_config.ini (e.g. [system] device_path = /dev/nvme0n1,/dev/nvme1n1). File system needs to be created and mounted accordingly before starting kvbench.
+     RockDB data will be loaded to /mnt/rocksdb/0, ..., /mnt/rocksdb/N, N is the number of total block devices set in bench_config.ini (e.g. [system] device_path = /dev/nvme0n1,/dev/nvme1n1). File system needs to be created and mounted accordingly before starting kvbench. 
 
   * RocksDB on SPDK
     - Prepare the spdk configuration file
-      # cp /KVSSD/application/kvbench/spdk/spdk/etc/spdk/rocksdb.conf.in /tmp/rocksdb.conf
+      # cp /KVSSD/application/kvbench/spdk/spdk/etc/spdk/rocksdb.conf.in /tmp/rocksdb.conf 
       # /KVSSD/application/kvbench/spdk/spdk/scripts/gen_nvme.sh >> /tmp/rocksdb.conf
     - Reserve hugepage
       cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages
@@ -120,7 +119,7 @@ Step 3. Setup environment
 
   * Aerospike
     - start aerospike server:
-      service aerospike start
+      service aerospike start	
 
 Step 4. run benchmark
     sudo LD_LIBRARY_PATH=<YOUR_SIRIUS_LIB_DIR> ./kv_bench -f bench_config.ini
@@ -145,7 +144,7 @@ CONFIGURATION ==================================================================
    column 2 (coreid): cpu core id
    column 3 (dbid_load): DB instances id run on the corresponding cpu core during load
    column 4 (dbid_perf): DB instances id run on the corresponding cpu core during benchmark
-   e.g. the sample cpu.txt in the kvbench main directory shows a server having two numa nodes with total 48 logical cores. Two device instances (id: 0,1) will be tested. At `load` phase, device (DB) 0 will have one client thread using core 0 to generate workload, DB 1 will have one thread using core 2. At 'benchmark', each DB will have two threads. DB 0 is attached to core 0 & 2, DB 1 is attached to core 4 & 6. If no coreid is specified (default '-1' for all DBs), user threads can use all available cores on the node. For KV using spdk driver, the coreid configuration must match the field in "[kvs] cq_thread_ids" which could not be '-1'.
+   e.g. the sample cpu.txt in the kvbench main directory shows a server having two numa nodes with total 48 logical cores. Two device instances (id: 0,1) will be tested. At `load` phase, device (DB) 0 will have one client thread using core 0 to generate workload, DB 1 will have one thread using core 2. At 'benchmark', each DB will have two threads. DB 0 is attached to core 0 & 2, DB 1 is attached to core 4 & 6. If no coreid is specified (default '-1' for all DBs), user threads can use all available cores on the node. For KV using spdk driver, the coreid configuration must match the field in "[kvs] cq_thread_ids" which could not be '-1'. 
 
 2. bench_config.ini
 [document]
@@ -153,7 +152,7 @@ ndocs = 100000  # insert 100k kv pairs during `load`
 
 [system]
 allocator = posix   # 'posix' or 'numa' for block device; 'spdk' for KV SSD only
-key_pool_size = 128 # number of units to create for key mempool. This value should be equal to or larger than the queue depth if async IO is used in kv_bench or as_bench. For sync IO, any value larger than 1 works.
+key_pool_size = 128 # number of units to create for key mempool. This value should be equal to or larger than the queue depth if async IO is used in kv_bench or as_bench. For sync IO, any value larger than 1 works. 
 key_pool_unit = 16  # size of units per key mempool; this should match the key length; If testing with various key lengths, this unit should be equal to or larger than the maximum key size;
 key_pool_alignment = 4096  # memory will be aligned in this unit
 value_pool_size = 128  # same as above. This value should be equal to or larger than the queue depth if async IO is used in kv_bench or as_bench. For sync IO, any value larger than 1 works.
@@ -165,14 +164,8 @@ device_path = /dev/nvme0n1,/dev/nvme3n1  # kernel device path for block devices
 device_path = 0000:06:00.0 # device path for kv ssd. When using KV SSD, 'device_path' under [system] & [kvs] should both be set properly. If using kernel driver, [kvs] device_path should be like '/dev/nvme0n1'
 core_ids = 0,2,4    # core ids for submission queue when using spdk driver, one core per device. In this case, core 0 for device 0, core 2 for device 1, and core 4 for device 2. This core ids should match the configuration in cpu.txt.
 emul_configfile = /tmp/kvemul.conf  # path to the emulator configiguretion file, it must be updated to the right kvemul.conf
-cq_thread_ids = 2,4,6 # core ids for completion queue when using spdk driver.
+cq_thread_ids = 2,4,6 # core ids for completion queue when using spdk driver. 
 write_mode = sync  # sync/async IO mode for kv/aerospike, sync mode for rocksdb
-with_iterator = true   # running iterator mixed with read/write workloads
-	      = false  # no iterator
-	      = alone  # running iterator alone without other workloads until end of the iteration
-
-iterator_mode = key    # [DEFAULT] iterator command gets only key entries without values
-	      = value  # iterator command gets key and value pairs
 
 [aerospike]
 hosts = 127.0.0.1  # aerospike host ip
@@ -214,7 +207,7 @@ batch_distribution = uniform # key space distribution: uniform; zipfian;
 read_write_insert_delete = 50:50:0:0 # operation ratios for read/write/insert/delete, see above [threads] config. If 'insert' ratio is larger than 0, set 'nops' instead of 'duration' for benchmark test.
 
 
-Benchmark Result  =====================================================================
+Benchmark Result  ===================================================================== 
 
 Performance measurement result files are in ./logs directory.
     - KVS-ops.txt: result summary that is same as those printed to the screen, including configuration parameters, total run time, average throughput, tail latency, etc.

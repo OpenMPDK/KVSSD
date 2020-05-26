@@ -124,11 +124,11 @@ enum kv_store_option {
  * @brief options used for retrieve operation
  */
 enum kv_retrieve_option {
-	KV_RETRIEVE_DEFAULT = 0x00,		/**< [DEFAULT] retrieving value as it is written(even compressed value is retrieved in its compressed form) */
-	KV_RETRIEVE_DECOMPRESSION = 0x01,	/**< returning value after decompressing it */
-//	KV_RETRIEVE_VALUE_SIZE = 0x02,          /**< [Suspended] get value size of the key stored (no data transfer) */
-};		
-		
+  KV_RETRIEVE_DEFAULT = 0x00, /**< [DEFAULT] retrieving value as it is written(even compressed value is retrieved in its compressed form) */
+  KV_RETRIEVE_DECOMPRESSION = 0x01, /**< returning value after decompressing it */
+  //KV_RETRIEVE_VALUE_SIZE = 0x02,          /**< [Suspended] get value size of the key stored (no data transfer) */
+};
+
 /**
  * @brief options used for delete operation
  */

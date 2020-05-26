@@ -1,5 +1,10 @@
-
 Release History
+---   v1.6.0
+   Refactor the SNIA API
+   Remove the SAMSUNG KVAPI
+   Add initialization configuration from environment variables
+   Bug fix
+
 ---   v1.5.0
    Support multiple-thread for KVBench (RocksDB and KVAPI)
 
@@ -39,7 +44,7 @@ Release History
 ---   v0.7.0
    KV API support for user space driver (uNVMe) v18.11
    Support options for retrieve/store/delete/iterator (refer to Samsung API spec).
-
+   
 
 ---   v0.6.0
    Revised KV API based on SNIA standard

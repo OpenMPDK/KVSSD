@@ -47,7 +47,6 @@
 #include <queue>
 #include <kv_types.h>
 
-namespace api_private {
 class KUDDriver: public KvsDriver
 {
   uint64_t handle;
@@ -64,9 +63,9 @@ class KUDDriver: public KvsDriver
 public:
   
   typedef struct {
-    kvs_callback_context iocb;
+    kvs_postprocess_context iocb;
     KUDDriver *owner;
-    kvs_callback_function on_complete;
+    kvs_postprocess_function on_complete;
     kvs_iterator_list *iter_list;
   } kv_udd_context;
   
@@ -75,23 +74,21 @@ public:
   //std::queue<kv_udd_context*> udd_context_pool;
   
 public:
-  KUDDriver(kv_device_priv *dev, kvs_callback_function user_io_complete_);
+  KUDDriver(kv_device_priv *dev, kvs_postprocess_function user_io_complete_);
   virtual ~KUDDriver();
   virtual int32_t init(const char*devpath, bool syncio, uint64_t sq_core, uint64_t cq_core, uint32_t mem_size_mb, int queue_depth) override;
-  virtual int16_t _get_queue_id(kvs_container_handle cont_hd);
   virtual int32_t process_completions(int max) override;
-  virtual int32_t store_tuple(kvs_container_handle cont_hd, const kvs_key *key, const kvs_value *value, kvs_store_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
-  virtual int32_t retrieve_tuple(kvs_container_handle cont_hd, const kvs_key *key, kvs_value *value, kvs_retrieve_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
-  virtual int32_t delete_tuple(kvs_container_handle cont_hd, const kvs_key *key, kvs_delete_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
-  virtual int32_t exist_tuple(kvs_container_handle cont_hd, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
-  virtual int32_t open_iterator(kvs_container_handle cont_hd, kvs_iterator_option option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) override;
-  virtual int32_t close_iterator(kvs_container_handle cont_hd, kvs_iterator_handle hiter) override;
-  virtual int32_t close_iterator_all(kvs_container_handle cont_hd) override;
-  virtual int32_t list_iterators(kvs_container_handle cont_hd, kvs_iterator_info *kvs_iters, uint32_t count) override;
-  virtual int32_t iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) override;
+  virtual int32_t store_tuple(kvs_key_space_handle ks_hd, const kvs_key *key, const kvs_value *value, kvs_option_store option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_postprocess_function cbfn = NULL) override;
+  virtual int32_t retrieve_tuple(kvs_key_space_handle ks_hd, const kvs_key *key, kvs_value *value, kvs_option_retrieve option, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_postprocess_function cbfn = NULL) override;
+  virtual int32_t delete_tuple(kvs_key_space_handle ks_hd, const kvs_key *key, kvs_option_delete option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_postprocess_function cbfn = NULL) override;
+  virtual int32_t exist_tuple(kvs_key_space_handle ks_hd, uint32_t key_cnt, const kvs_key *keys, kvs_exist_list *list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_postprocess_function cbfn = NULL) override;
+  virtual int32_t create_iterator(kvs_key_space_handle ks_hd, kvs_option_iterator option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) override;
+  virtual int32_t delete_iterator(kvs_key_space_handle ks_hd, kvs_iterator_handle hiter) override;
+  virtual int32_t delete_iterator_all(kvs_key_space_handle ks_hd) override;
+  virtual int32_t iterator_next(kvs_key_space_handle ks_hd, kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_postprocess_function cbfn = NULL) override;
   virtual float get_waf() override;
-  virtual int32_t get_used_size(int32_t *dev_util) override;
-  virtual int32_t get_total_size(int64_t *dev_capa) override;
+  virtual int32_t get_used_size(uint32_t *dev_util) override;
+  virtual int32_t get_total_size(uint64_t *dev_capa) override;
   virtual int32_t get_device_info(kvs_device *dev_info) override;
   
 private:
@@ -99,11 +96,11 @@ private:
   bool ispersist;
   std::string datapath;
 
-  kv_udd_context* prep_io_context(int opcode, kvs_container_handle cont_hd, const kvs_key *key, const kvs_value *value, void *private1, void *private2, bool syncio, kvs_callback_function cbfn);
+  kv_udd_context* prep_io_context(kvs_context opcode, kvs_key_space_handle ks_hd, const kvs_key *key, const kvs_value *value, void *private1, void *private2, bool syncio, kvs_postprocess_function cbfn);
   int32_t trans_iter_type(uint8_t dev_it_type, uint8_t* kvs_it_type);
-  int32_t trans_store_cmd_opt(kvs_store_option kvs_opt, int *kv_opt);
+  int32_t trans_store_cmd_opt(kvs_option_store kvs_opt, int *kv_opt);
+  int16_t _get_queue_id(kvs_key_space_handle ks_hd);
 };
-}
 
 #endif
 

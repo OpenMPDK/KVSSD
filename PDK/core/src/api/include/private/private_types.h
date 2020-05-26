@@ -41,8 +41,10 @@
 #include <string>
 #include <mutex>
 #include <list>
+#include <map>
 #include <condition_variable>
-#include "private_api.h"
+#include "kvs_api.h"
+
 
 #ifndef WITH_SPDK
 #include "kvs_adi.h"
@@ -55,7 +57,6 @@ extern "C" {
 const int MAX_DEV_PATH_LEN = 256;
 
 
-namespace api_private {
 // max sub-command number in a batch command
 const int MAX_SUB_CMD_NUM = 8;
 // max value size of sub-command in a batch command */
@@ -63,7 +64,7 @@ const int MAX_SUB_CMD_VALUE_LEN = 8192;
 
 /* the max number of container that supported currently, as currently kv ssd only support two 
 keyspace: 0 */ 
-const int NR_MAX_CONT = 1; 
+const int KS_MAX_CONT = 1; 
 const int META_DATA_KEYSPACE_ID = 0; //use keyspace 0 as meta data key space
 const int USER_DATA_KEYSPACE_START_ID = 1; //start keyspace id that used for user containers 
 //extern const cf_digest cf_digest_zero;
@@ -71,6 +72,18 @@ extern const char* KEY_SPACE_LIST_KEY_NAME; //the key of kv pair that store key
                                             //spaces name list
 const int PAGE_ALIGN = 4096; //page align (4KB)
 const int DMA_ALIGN = 4; //DMA required size align(4B)
+#ifndef WITH_SPDK
+extern std::map<kv_result, kvs_result> code_map;
+
+inline kvs_result convert_return_code(kv_result kv_return_code)
+{
+  if(code_map.count(kv_return_code)!=0) {
+    return code_map[kv_return_code];
+  } else {
+    return KVS_ERR_SYS_IO;
+  }
+}
+#endif
 
 class kv_device_priv {
 public:
@@ -114,12 +127,12 @@ public:
 class KvsDriver {
 public:
   kv_device_priv *dev;
-  kvs_callback_function user_io_complete;
-  std::list<kvs_container*> list_containers;
-  std::list<kvs_container_handle> open_containers;
+  kvs_postprocess_function user_io_complete;
+  std::list<kvs_key_space*> list_containers;
+  std::list<kvs_key_space_handle> open_containers;
 
  public:
- KvsDriver(kv_device_priv *dev_, kvs_callback_function user_io_complete_):
+ KvsDriver(kv_device_priv *dev_, kvs_postprocess_function user_io_complete_):
 	  dev(dev_), user_io_complete(user_io_complete_) {}
 
   virtual ~KvsDriver() {}
@@ -146,21 +159,27 @@ public:
   virtual int32_t init(const char* devpath, bool syncio, uint64_t sq_core, uint64_t cq_core, uint32_t mem_size_mb, int queue_depth) {return 0;}
   virtual int32_t init(const char* devpath, bool syncio) {return 0;}
   virtual int32_t process_completions(int max) =0;
-  virtual int32_t store_tuple(kvs_container_handle cont_hd, const kvs_key *key,
-    const kvs_value *value, kvs_store_option option, void *private1=NULL,
-    void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
-  virtual int32_t retrieve_tuple(kvs_container_handle cont_hd, const kvs_key *key, kvs_value *value, kvs_retrieve_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
-  virtual int32_t delete_tuple(kvs_container_handle cont_hd, const kvs_key *key, kvs_delete_option option/*uint8_t option*/, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
-  virtual int32_t exist_tuple(kvs_container_handle cont_hd, uint32_t key_cnt, const kvs_key *keys, uint32_t buffer_size, uint8_t *result_buffer, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
-  virtual int32_t open_iterator(kvs_container_handle cont_hd, kvs_iterator_option option, uint32_t bitmask, uint32_t bit_pattern, kvs_iterator_handle *iter_hd) = 0;
-  virtual int32_t close_iterator(kvs_container_handle cont_hd, kvs_iterator_handle hiter) = 0;
-  virtual int32_t close_iterator_all(kvs_container_handle cont_hd) = 0;
-  virtual int32_t list_iterators(kvs_container_handle cont_hd, kvs_iterator_info *kvs_iters, uint32_t count) = 0;
-  virtual int32_t iterator_next(kvs_container_handle cont_hd, kvs_iterator_handle hiter, kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_callback_function cbfn = NULL) = 0;
+
+  //SNIA API
+  virtual int32_t store_tuple(kvs_key_space_handle ks_hd, const kvs_key *key,const kvs_value *value, 
+    kvs_option_store option, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_postprocess_function cbfn = NULL) = 0;
+  virtual int32_t retrieve_tuple(kvs_key_space_handle ks_hd, const kvs_key *key, 
+  	kvs_value *value, kvs_option_retrieve option, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_postprocess_function cbfn = NULL) = 0;
+  virtual int32_t delete_tuple(kvs_key_space_handle ks_hd, const kvs_key *key, 
+  	kvs_option_delete option, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_postprocess_function cbfn = NULL) = 0;
+  virtual int32_t exist_tuple(kvs_key_space_handle ks_hd, uint32_t key_cnt, const kvs_key *keys, 
+  	kvs_exist_list *list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_postprocess_function cbfn = NULL) = 0;
+  virtual int32_t create_iterator(kvs_key_space_handle ks_hd, kvs_option_iterator option, uint32_t bitmask, 
+    uint32_t bit_pattern, kvs_iterator_handle *iter_hd) = 0;
+  virtual int32_t delete_iterator(kvs_key_space_handle ks_hd, kvs_iterator_handle hiter) = 0;
+  virtual int32_t delete_iterator_all(kvs_key_space_handle ks_hd) = 0;
+  virtual int32_t iterator_next(kvs_key_space_handle ks_hd, kvs_iterator_handle hiter, 
+    kvs_iterator_list *iter_list, void *private1=NULL, void *private2=NULL, bool sync = false, kvs_postprocess_function cbfn = NULL) = 0;
   virtual float get_waf() {return 0.0;}
-  virtual int32_t get_used_size(int32_t *dev_util) {return 0;}
-  virtual int32_t get_total_size(int64_t *dev_capa) {return 0;}
+  virtual int32_t get_used_size(uint32_t *dev_util) {return 0;}
+  virtual int32_t get_total_size(uint64_t *dev_capa) {return 0;}
   virtual int32_t get_device_info(kvs_device *dev_info) {return 0;}
+  
   std::string path;
 };
 
@@ -168,42 +187,70 @@ struct _kvs_device_handle {
   kv_device_priv * dev;
   KvsDriver* driver;
   char* dev_path;
-  kvs_container_handle meta_cont_hd;
-  std::list<kvs_container_handle> open_cont_hds; //containers opened by user
+  kvs_key_space_handle meta_ks_hd;
+  std::list<kvs_key_space_handle> open_ks_hds; //containers opened by user
 };
 
-struct _kvs_container_handle {
+struct _kvs_key_space_handle {
   uint8_t container_id;
   uint8_t keyspace_id; //corresponding keyspace id in KVSSD
   kvs_device_handle dev;
-  char name[MAX_CONT_PATH_LEN];
+  char name[MAX_CONT_PATH_LEN + 1];
 };
 
-struct _kvs_iterator_handle{
-  /*
-#ifndef WITH_SPDK  
-  kv_iterator_handle iterh_adi;
-#endif
-  */
-  uint32_t iterator;
-};
+typedef struct {
+  struct {
+    int use_dpdk;                 /*!< use DPDK as a memory allocator. It should be 1 if SPDK driver is in use. */
+    int dpdk_mastercoreid;        /*!< specify a DPDK master core ID */
+    int nr_hugepages_per_socket;  /*!< number of 2MB huge pages per socket available in the socket mask */
+    uint16_t socketmask;          /*!< a bitmask for CPU sockets to be used */
+    uint64_t max_memorysize_mb;   /*!< the maximum amount of memory */
+    uint64_t max_cachesize_mb;    /*!< the maximum cache size in MB */
+  } memory;
+  
+  struct {
+    uint64_t iocoremask;          /*!< a bitmask for CPUs to be used for I/O */
+    uint32_t queuedepth;          /*!< a maximum queue depth */
+  } aio;
 
-  
-class ContainHandle {
- public:
-  kvs_device_handle dev;
-  char container_name[256];
-  
- public:  
-  ContainHandle(kvs_device_handle _dev):
-    dev(_dev)
-    {}
+  //int ssd_type;
+  struct {
+    char core_mask_str[256];
+    char cq_thread_mask[256];
+    uint32_t mem_size_mb;
+    int syncio;
+  } udd;
+    char *emul_config_file;
+} kvs_init_options;
 
-    ~ContainHandle();
-  
-};
-  
-}
+// key space data strucure
+typedef uint8_t keyspace_id_t;
+typedef uint8_t ks_opened_t;
+typedef uint8_t ks_key_order_t;
+typedef uint64_t ks_capacity_t;
+typedef uint64_t ks_free_size_t;
+typedef uint64_t ks_kv_count_t;
+typedef struct {
+  keyspace_id_t keyspace_id;    // the keyspace id that this key space is corresponding
+  ks_opened_t opened;         // is this key space opened, 1:open, 0:close
+  ks_key_order_t key_order;   // key order, 0:default(order not defined), 1:ascend, 2:descend
+  ks_capacity_t capacity;     // key space capacity in bytes
+  ks_free_size_t free_size;   // available space of key space in bytes
+  ks_kv_count_t kv_count;     // # of Key Value tuples that exist in this key space
+  const char* name;             // key space name
+} ks_metadata;
+
+typedef struct {
+  char names_buffer[MAX_CONT_PATH_LEN + 1];
+  keyspace_id_t keyspace_id;
+} ks_list_entry;
+
+typedef uint8_t key_space_id_t;
+typedef struct {
+  key_space_id_t ks_num;
+  ks_list_entry entries[KS_MAX_CONT];
+} ks_list;
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
