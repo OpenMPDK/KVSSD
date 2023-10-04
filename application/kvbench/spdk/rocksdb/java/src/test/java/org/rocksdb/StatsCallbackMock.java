@@ -18,3 +18,4 @@ public class StatsCallbackMock implements StatisticsCollectorCallback {
     histCallbackCount++;
   }
 }
+
