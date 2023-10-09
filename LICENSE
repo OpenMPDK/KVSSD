@@ -1,4 +1,6 @@
 KVSSD
+VSSD
+KVSSDKVSSD
 
 This Software is originally developed by OpenMPDK.
 THIS SOFTWARE USE FOLLOWING OPEN SOURCE COMPONENTS
@@ -8,3 +10,4 @@ THIS SOFTWARE USE FOLLOWING OPEN SOURCE COMPONENTS
    through Linux system calls.
 
 Please see application/kvbench/LICENSE, PDK/core/LICENSE and PDK/driver/PCIe/kernel_driver/LICENSE.
+
