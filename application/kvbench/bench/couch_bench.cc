@@ -508,6 +508,11 @@ void _create_doc(struct bench_info *binfo,
     	*/
     } // end of random value
 
+    // increase value data entropy
+    for (int i = 0; i < doc->data.size; i += sizeof(int)) {
+	if ((doc->data.size - i) < sizeof(int)) break;
+	*(int *)&doc->data.buf[i] = rand();
+    }
     
 #if defined __FDB_BENCH || defined __WT_BENCH 
     if (!info)
